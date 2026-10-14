@@ -38,7 +38,7 @@ def test_a_site_is_read_through_its_searches_and_text_is_fetched_only_when_asked
     assert all(job.detail_skipped and not job.description for job in counted) and board.details() == []
 
     jobs = {job.source_id: job for job in S.fetch(client(board), SEARCHED, lambda job: S.NEW)}
-    assert board.details() == ["R1", "R2"] and not any(job.detail_skipped for job in jobs.values())
+    assert board.details() == ["R2", "R1"] and not any(job.detail_skipped for job in jobs.values())  # newest first
     two = jobs["R2"]
     assert (two.title, two.location, two.posted_at, two.employment_type) == (
         "UX Researcher",
@@ -65,8 +65,9 @@ def test_every_page_is_read_and_anything_short_of_the_total_fails_the_source(mon
     with pytest.raises(SourceError, match="short of its total"):
         S.fetch(Client(short, sleep=lambda s: None, retries=0), SEARCHED)
     for bad, problem in (
-        (dict(SEARCHED, host="initech.example.com"), "Workday needs host"),
-        (dict(SEARCHED, site="../x"), "Workday needs host"),
+        (dict(SEARCHED, host="initech.example.com"), "Workday needs a host"),
+        (dict(SEARCHED, site="../x"), "Workday needs a host"),
+        (dict(SEARCHED, host="wd1.myworkdaysite.com"), "Workday needs a host"),  # a shared host needs the tenant
         (dict(INITECH), "searches"),  # no queries, and none filled in from the criteria
     ):
         with pytest.raises(SourceError, match=problem):
@@ -75,7 +76,7 @@ def test_every_page_is_read_and_anything_short_of_the_total_fails_the_source(mon
     with pytest.raises(SourceError, match="unsafe"):
         S.fetch(client(board), SEARCHED)
     monkeypatch.setattr(workday, "MAX_PER_QUERY", 20)
-    with pytest.raises(SourceError, match="narrower queries"):
+    with pytest.raises(SourceError, match="set `categories`"):
         S.fetch(client(board), SEARCHED)
 
 
@@ -87,12 +88,13 @@ def test_new_postings_wait_for_their_text_and_settled_ones_need_none(repo):
         return good_assessment(job, fit=20 if senior else 82, role_match="adjacent" if senior else "direct")
 
     root = repo(sources=(dict(INITECH, max_details=2),))
-    full_tick(root, board, assess=assess)
-    assert board.details() == ["R1", "R2"] and sorted(rows(root, "initech")) == ["R1", "R2"]  # R3 waits outside
-    full_tick(root, board, assess=assess)  # the new one before the listed ones
-    assert board.details() == ["R3", "R1"] and rows(root, "initech")["R3"].status == "R"
-    full_tick(root, board, assess=assess)  # the settled one needs no text; the listed ones get it if there is room
+    full_tick(root, board, assess=assess)  # the newest requisitions first
+    assert board.details() == ["R3", "R2"] and sorted(rows(root, "initech")) == ["R2", "R3"]  # R1 waits outside
+    assert rows(root, "initech")["R3"].status == "R"
+    full_tick(root, board, assess=assess)  # the new one before the listed one
     assert board.details() == ["R1", "R2"] and set(positions(root)) == {"initech:R1", "initech:R2"}
+    full_tick(root, board, assess=assess)  # the settled one needs no text; the listed ones get it if there is room
+    assert board.details() == ["R2", "R1"]
 
 
 def test_a_posting_without_its_text_this_update_is_neither_judged_nor_rewritten(repo):
@@ -126,3 +128,23 @@ def test_searches_default_to_the_wanted_roles_and_stage_0_saves_the_text_request
     full_tick(root, board)
     assert ("search", "Design Researcher") in board.requests
     assert rows(root, "initech")["R1"].miss == 0  # a new search holds closures for one update
+    full_tick(root, board)
+    assert rows(root, "initech")["R1"].miss == 1  # the same search again: now it counts
+    sources = [dict(INITECH, categories=["Research"])]
+    Layout(root).sources.write_text(json.dumps(sources))
+    full_tick(root, board)
+    assert rows(root, "initech")["R1"].miss == 1  # new categories are a new search too
+
+
+def test_categories_narrow_a_broad_search_and_a_shared_host_builds_its_own_links():
+    board = site(
+        wd_posting("R1"),
+        wd_posting("R2", "UX Researcher, Hardware", category="Engineering"),
+    )
+    narrowed = S.fetch(client(board), dict(SEARCHED, categories=["research"]), lambda job: S.NEW)  # any case
+    assert [job.source_id for job in narrowed] == ["R1"]
+    with pytest.raises(SourceError, match="no job category 'Design'"):
+        S.fetch(client(board), dict(SEARCHED, categories=["Design"]))
+    shared = dict(SEARCHED, host="wd1.myworkdaysite.com", tenant="initech")
+    job = S.fetch(client(board), shared, lambda job: S.NEW)[0]
+    assert job.url.startswith("https://wd1.myworkdaysite.com/recruiting/initech/External/job/")

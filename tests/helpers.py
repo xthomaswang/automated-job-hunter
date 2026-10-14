@@ -46,7 +46,7 @@ def posting(jid, title="UX Researcher", location="Remote, US", text=None, publis
     }
 
 
-def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=None):
+def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=None, category="Research"):
     """A posting on the fake Workday site: its listing row, and the text its detail returns."""
     where = places[0] if len(places) == 1 else f"{len(places)} Locations"
     slug = re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")
@@ -60,6 +60,7 @@ def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=No
         },
         "places": list(places),
         "text": text or prose(sum(map(ord, jid))),
+        "category": category,
     }
 
 
@@ -67,7 +68,8 @@ class Boards:
     """Fake job boards. Tests change `jobs` and `status` between ticks.
 
     `workday` holds the fake Workday site's postings by id. Its search matches a title containing
-    the query, and `workday_down` lists ids whose detail request fails.
+    the query, within the job categories asked for, and `workday_down` lists ids whose detail
+    request fails.
     """
 
     def __init__(self, **boards):
@@ -79,9 +81,17 @@ class Boards:
         if method == "POST":
             ask = json.loads(body)
             self.requests.append(("search", ask["searchText"]))
-            rows = [p["row"] for p in self.workday.values() if ask["searchText"].lower() in p["row"]["title"].lower()]
+            wanted = set(ask["appliedFacets"].get("jobFamilyGroup", []))
+            matched = [p for p in self.workday.values() if ask["searchText"].lower() in p["row"]["title"].lower()]
+            rows = [p["row"] for p in matched if not wanted or f"cat-{p['category']}" in wanted]
             page = rows[ask["offset"] : ask["offset"] + ask["limit"]]
-            return 200, {}, json.dumps({"total": len(rows) if ask["offset"] == 0 else 0, "jobPostings": page}).encode()
+            counts = {}
+            for p in matched:
+                counts[p["category"]] = counts.get(p["category"], 0) + 1
+            values = [{"descriptor": name, "id": f"cat-{name}", "count": n} for name, n in sorted(counts.items())]
+            facets = [{"facetParameter": "jobFamilyGroup", "descriptor": "Job Category", "values": values}]
+            listing = {"total": len(rows) if ask["offset"] == 0 else 0, "jobPostings": page, "facets": facets}
+            return 200, {}, json.dumps(listing).encode()
         jid = url.rsplit("_", 1)[-1]
         self.requests.append(("detail", jid))
         if jid in self.workday_down or jid not in self.workday:
@@ -107,7 +117,7 @@ class Boards:
         return asked
 
     def transport(self, method, url, headers, body, timeout):
-        if ".myworkdayjobs.com/wday/cxs/" in url:
+        if ".myworkdayjobs.com/wday/cxs/" in url or ".myworkdaysite.com/wday/cxs/" in url:
             return self._workday(method, url, body)
         if "remotive.com" in url:
             self.requests.append("remotive")

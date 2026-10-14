@@ -96,8 +96,11 @@ request per posting for it; one old source alone took 937. So such a source is r
 search (`queries`, by default the wanted and related roles), and `collect` gives the adapter a rank
 function built from state. The adapter fetches text, at most `max_details` (100) per source per
 update and one request a second, in this order: postings about to be judged, new ones, ones whose
-listing changed, and listed ones (for their briefs). A settled posting, or one stage 0 drops on what
-the listing shows, needs none. A new posting whose text was not fetched is left out of the snapshot,
+listing changed, and listed ones (for their briefs); within each, the newest requisition first, so
+postings whose text keeps failing sink to the end. A settled posting, or one stage 0 drops on what
+the listing shows, needs none. The rank is built before the read, so a posting `unblock` or
+`requeue` sends back waits one more update for its text. On a very large site, `categories` (the
+site's own job categories) narrows each search, which otherwise matches any of its words. A new posting whose text was not fetched is left out of the snapshot,
 so it enters state only with its text; nothing knew it, so nothing closes. A known one comes back
 with `detail_skipped`: it is not judged, and its brief is not rewritten, until an update fetches its
 text. Title and place come from the listing on every update, so the change fingerprint compares like

@@ -172,8 +172,8 @@ published, a clean tree and one commit, in about a minute for $0.18.
 
 ## E8: Workday and SmartRecruiters, as they answer today
 
-2026-10-14, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. Sixteen requests to
-public endpoints by hand, before writing the readers (#37). No model was involved.
+2026-10-14, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. About twenty requests to
+public endpoints by hand while writing the readers (#37). No model was involved.
 
 **Workday** (one large tenant's public career site, `<tenant>.wd5.myworkdayjobs.com/<site>`):
 
@@ -192,6 +192,15 @@ public endpoints by hand, before writing the readers (#37). No model was involve
   (ISO), `timeType`, `jobReqId`, `externalUrl`, `canApply` and `posted`.
 - Search is broad: `user research` matched 441 postings, mostly unrelated research roles, and
   quoting the phrase changed nothing. `UX researcher` matched 1. Queries work best as role titles.
+- Every listing also returns `facets`. One is `jobFamilyGroup` ("Job Category"), the site's own
+  categories with ids and counts, such as Engineering 257 and Research 25 for that search. It
+  can be sent back in `appliedFacets` to keep a search to those categories. Others are job type,
+  time type and location.
+- An empty search on that site reported exactly 2,000 postings, while its category counts add up to
+  over 2,700: the total is capped at 2,000. Hence the reader refuses any search matching over 1,000
+  rather than trusting a total near the cap.
+- The bare host (`https://<tenant>.wd5.myworkdayjobs.com/`) answers 406, with an HTML or JSON
+  Accept header alike, so the site name cannot be found from it.
 - `robots.txt` on that host allows `/<site>/`, disallows a few other paths, and says nothing about
   `/wday/`. This is the only terms fact checked; each employer's site has its own terms.
 

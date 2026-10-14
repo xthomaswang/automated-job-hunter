@@ -12,6 +12,7 @@ from . import criteria as C
 from . import sources as S
 from .http import Client
 from .layout import Layout
+from .model import SourceError
 from .sources import ats, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
@@ -35,8 +36,10 @@ UNSUPPORTED = (
     (r"(^|\.)personio\.(de|com)$", "Personio"),
     (r"(^|\.)(ultipro|ukg)\.com$", "UKG"),
     (r"(^|\.)dayforcehcm\.com$", "Dayforce"),
-    (r"(^|\.)(linkedin|indeed)\.com$", "LinkedIn or Indeed, whose terms forbid automated reading"),
 )
+# Never read, whose terms forbid it. Named only for a URL probed directly: almost every careers page
+# links to them in its footer, which says nothing about where its postings are.
+_FORBIDDEN = re.compile(r"(^|\.)(linkedin|indeed)\.com$")
 _LINK = re.compile(r"https?://[^\s\"'<>()\\]+", re.I)
 _LOCALE = re.compile(r"[a-z]{2}-[A-Z]{2}\Z")
 
@@ -78,10 +81,16 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
             }
         elif len(parts) == 3 and parts[0] in workday.KINDS:
             _, target, company = parts
-            host, _, name = target.partition("/")
+            pieces = target.split("/")  # host/site, or host/tenant/site on a shared host
+            host, name = pieces[0], pieces[-1]
             entry = {"id": "", "company": company, "ats": "workday", "host": host, "site": name}
-            workday.site(entry)  # refuses anything but a Workday host and a plain site name
-            tenant = workday.HOST.match(host).group(1)  # type: ignore[union-attr]
+            if len(pieces) == 3:
+                entry["tenant"] = pieces[1]
+            elif len(pieces) != 2:
+                raise SourceError(f"A Workday entry is workday:<host>/<site>:Company, not {item!r}")
+            workday.site(entry)  # refuses anything but a Workday host and plain tenant and site names
+            own = workday.HOST.match(host)
+            tenant = entry.get("tenant") or (own.group(1) if own else "")
             entry["id"] = re.sub(r"[^a-z0-9]+", "-", tenant.lower()).strip("-")
             other = current.get(entry["id"])
             if other and (other.get("host"), other.get("site")) != (host, name):  # a second site of one tenant
@@ -169,6 +178,15 @@ def _system(url: str) -> dict[str, Any] | None:
     elif workday.HOST.match(host):
         name = next((segment for segment in path if not _LOCALE.match(segment)), None)
         return {"system": "Workday", "ats": "workday", "host": host, "site": name}
+    elif workday.SHARED_HOST.match(host):
+        tenant, name = (path[1], path[2]) if len(path) >= 3 and path[0] == "recruiting" else (None, None)
+        return {"system": "Workday", "ats": "workday", "host": host, "tenant": tenant, "site": name}
+    elif _FORBIDDEN.search(host):
+        return {
+            "system": "LinkedIn or Indeed, whose terms forbid automated reading",
+            "supported": False,
+            "forbidden": True,
+        }
     else:
         for pattern, system in UNSUPPORTED:
             if re.search(pattern, host):
@@ -183,10 +201,24 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
         return found
     try:
         if found["ats"] == "workday":
+            if not found.get("site"):
+                return {
+                    **{k: v for k, v in found.items() if v is not None},
+                    "supported": True,
+                    "error": "This Workday address has no site name. Open one posting on the careers site and probe "
+                    "that posting's URL: the site name follows the host (…myworkdayjobs.com/<site>/job/…).",
+                }
             source = {"id": "probe", "company": company, "ats": "workday", "host": found["host"], "site": found["site"]}
+            if found.get("tenant"):
+                source["tenant"] = found["tenant"]
             data = workday.search(client, workday.site(source)[2], "", limit=3)
             count, sample = data["total"], [row.get("title") for row in data["jobPostings"]]
-            add = f"workday:{found['host']}/{found['site']}:{company}"
+            target = "/".join(p for p in (found["host"], found.get("tenant"), found["site"]) if p)
+            add = f"workday:{target}:{company}"
+            ranked = sorted(workday.categories(data).items(), key=lambda item: -item[1][1])
+            listed = [{"name": name, "postings": n} for _, (_, n, name) in ranked[:15]]
+            return {**{k: v for k, v in found.items() if v is not None}, "supported": True, "postings": count,
+                    "sample": sample[:3], "add": add, "categories": listed}  # fmt: skip
         else:
             jobs = ats.fetch_board(
                 client, {"id": "probe", "company": company, "ats": found["ats"], "slug": found["slug"]}
@@ -217,8 +249,10 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
         systems, seen = [], set()
         for link in _LINK.findall(page):
             system = _system(link)
-            label = system and json.dumps(system, sort_keys=True)
-            if system and label not in seen and len(systems) < 10:
+            if not system or system.get("forbidden"):  # a footer link says nothing about where postings are
+                continue
+            label = json.dumps(system, sort_keys=True)
+            if label not in seen and len(systems) < 10:
                 seen.add(label)
                 systems.append(system)
     results = [_try(system, name, client) for system in systems]

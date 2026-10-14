@@ -20,7 +20,8 @@ from ..model import Job, SourceError
 from ..textutil import html_to_text
 
 KINDS = ("workday",)
-HOST = re.compile(r"([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com\Z")
+HOST = re.compile(r"([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com\Z")  # <tenant>.wd5.myworkdayjobs.com/<site>
+SHARED_HOST = re.compile(r"wd\d+\.myworkdaysite\.com\Z")  # wd1.myworkdaysite.com/recruiting/<tenant>/<site>
 _TOKEN = re.compile(r"[A-Za-z0-9_-]+\Z")
 _PATH = re.compile(r"/job/[^?#\\\s]+\Z")
 _ID = re.compile(r"_([A-Za-z0-9-]+)\Z")
@@ -31,18 +32,29 @@ DELAY = 1.0  # seconds between requests to one site
 
 
 def site(source: Mapping[str, Any]) -> tuple[str, str, str]:
-    """(host, site, cxs root) of a source, checked so that no request goes anywhere else."""
+    """(host, public base, cxs root) of a source, checked so that no request goes anywhere else.
+
+    A site is on its tenant's own host, or on a shared host with the tenant in the path. Both
+    answer the same cxs requests on the host they are on.
+    """
     host, name = source.get("host") or "", source.get("site") or ""
-    found = HOST.match(host)
-    tenant = source.get("tenant") or (found.group(1) if found else "")
-    if not found or not _TOKEN.match(name) or not _TOKEN.match(tenant):
-        raise SourceError(f"Workday needs host <tenant>.wd<N>.myworkdayjobs.com and a site name, not {host!r}/{name!r}")
-    return host, name, f"https://{host}/wday/cxs/{tenant}/{name}"
+    own = HOST.match(host)
+    tenant = source.get("tenant") or (own.group(1) if own else "")
+    if not (own or SHARED_HOST.match(host)) or not _TOKEN.match(name) or not _TOKEN.match(tenant):
+        raise SourceError(
+            "Workday needs a host such as <tenant>.wd5.myworkdayjobs.com (or wd1.myworkdaysite.com with a tenant) "
+            f"and a site name, not {host!r}/{name!r}"
+        )
+    base = f"https://{host}/{name}" if own else f"https://{host}/recruiting/{tenant}/{name}"
+    return host, base, f"https://{host}/wday/cxs/{tenant}/{name}"
 
 
-def search(client: Client, root: str, query: str, limit: int = PAGE, offset: int = 0) -> dict[str, Any]:
+def search(
+    client: Client, root: str, query: str, limit: int = PAGE, offset: int = 0, applied: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     reply = client.post(
-        root + "/jobs", json_body={"appliedFacets": {}, "limit": limit, "offset": offset, "searchText": query}
+        root + "/jobs",
+        json_body={"appliedFacets": dict(applied or {}), "limit": limit, "offset": offset, "searchText": query},
     )
     data = reply.raise_for_status().json()
     if (
@@ -54,19 +66,43 @@ def search(client: Client, root: str, query: str, limit: int = PAGE, offset: int
     return data
 
 
-def _listing(client: Client, root: str, query: str) -> list[dict[str, Any]]:
+def categories(data: Mapping[str, Any]) -> dict[str, tuple[str, int, str]]:
+    """A listing's job categories, as {folded name: (id, postings, the site's own name)}."""
+    found: dict[str, tuple[str, int, str]] = {}
+    for facet in data.get("facets") or []:
+        if isinstance(facet, dict) and facet.get("facetParameter") == "jobFamilyGroup":
+            for value in facet.get("values") or []:
+                if isinstance(value, dict) and isinstance(value.get("descriptor"), str) and value.get("id"):
+                    name = value["descriptor"]
+                    found[name.casefold()] = (str(value["id"]), value.get("count") or 0, name)
+    return found
+
+
+def _narrowed(client: Client, root: str, names: list[str]) -> dict[str, Any]:
+    """The facet that keeps a search to these job categories. An unknown name fails the source."""
+    known = categories(search(client, root, "", limit=1))
+    missing = [name for name in names if name.casefold() not in known]
+    if missing:
+        raise SourceError(
+            f"This Workday site has no job category {missing[0]!r}; `sources probe` lists the ones it has"
+        )
+    return {"jobFamilyGroup": [known[name.casefold()][0] for name in names]}
+
+
+def _listing(client: Client, root: str, query: str, applied: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Every posting one search matches. Anything short of its total aborts the snapshot."""
     rows: dict[str, dict[str, Any]] = {}
     total: int | None = None
     offset = 0
     while True:
-        data = search(client, root, query, offset=offset)
+        data = search(client, root, query, offset=offset, applied=applied)
         if total is None:
             total = data["total"]
             if total > MAX_PER_QUERY:
                 raise SourceError(
-                    f"Workday search {query!r} matches {total} postings, more than {MAX_PER_QUERY}: "
-                    "use narrower queries"
+                    f"Workday search {query!r} matches {total} postings, more than {MAX_PER_QUERY}. Its search "
+                    "matches any of the words, so rewording does not narrow it: set `categories` on this source "
+                    "to the site's job categories for these roles (`sources probe` lists them), or use fewer queries"
                 )
         elif data["total"] not in (0, total):  # later pages report 0; any other number means it moved
             raise SourceError("Workday listing changed while it was read; the next update retries")
@@ -84,7 +120,7 @@ def _listing(client: Client, root: str, query: str) -> list[dict[str, Any]]:
     return list(rows.values())
 
 
-def _listed(source: Mapping[str, Any], host: str, name: str, row: Mapping[str, Any]) -> Job:
+def _listed(source: Mapping[str, Any], base: str, row: Mapping[str, Any]) -> Job:
     """A posting as the listing shows it. Its title and place are the ones change is measured on."""
     path = row["externalPath"]
     found = _ID.search(path)
@@ -98,7 +134,7 @@ def _listed(source: Mapping[str, Any], host: str, name: str, row: Mapping[str, A
         company=source["company"],
         title=row.get("title") or "",
         location=row.get("locationsText") or "unknown",
-        url=f"https://{host}/{name}{path}",
+        url=base + path,
     )
 
 
@@ -132,19 +168,24 @@ def _detail(client: Client, root: str, job: Job, path: str) -> Job | None:
 
 
 def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None, new: int) -> list[Job]:
-    host, name, root = site(source)
+    host, base, root = site(source)
     client.space(host, DELAY)
-    queries = source.get("queries")
+    queries, names = source.get("queries"), source.get("categories") or []
     if not isinstance(queries, list) or not queries or not all(isinstance(q, str) and q.strip() for q in queries):
         raise SourceError("Workday is read through searches: set queries, or wanted roles in the criteria")
+    if not isinstance(names, list) or not all(isinstance(n, str) and n.strip() for n in names):
+        raise SourceError("Workday categories must be a list of the site's job category names")
+    applied = _narrowed(client, root, names) if names else {}
     listed: dict[str, tuple[Job, str]] = {}
     for query in dict.fromkeys(q.strip() for q in queries):
-        for row in _listing(client, root, query):
-            job = _listed(source, host, name, row)
+        for row in _listing(client, root, query, applied):
+            job = _listed(source, base, row)
             listed.setdefault(job.source_id, (job, row["externalPath"]))
 
     ranks = {jid: rank(job) for jid, (job, _) in listed.items()} if rank else {}
-    wanted = sorted((r, jid) for jid, r in ranks.items() if r is not None)
+    # Within a rank, the newest requisition first, so that postings whose text keeps failing sink to
+    # the end instead of using the budget every update.
+    wanted = sorted(sorted(((r, jid) for jid, r in ranks.items() if r is not None), reverse=True), key=lambda w: w[0])
     budget = source.get("max_details", DETAILS)
     detailed: dict[str, Job] = {}
     for _, jid in wanted[: budget if isinstance(budget, int) and budget >= 0 else DETAILS]:

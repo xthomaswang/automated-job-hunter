@@ -133,7 +133,8 @@ def reconcile(
 
     # Hold closures for one tick when the board shrank sharply or its search scope changed: a
     # half-working feed looks exactly like many postings closing at once.
-    scope = digest(source.get("queries"))[:12] if source.get("queries") else None
+    queries, narrowed = source.get("queries"), source.get("categories")
+    scope = digest({"queries": queries, "categories": narrowed} if narrowed else queries)[:12] if queries else None
     rebaselined = not first_snapshot and info.get("scope") != scope
     if scope:
         info["scope"] = scope

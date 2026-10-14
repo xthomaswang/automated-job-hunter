@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -204,3 +205,56 @@ def test_shipped_text_names_no_person_or_machine_and_the_contract_documents_ever
     handoff = (SKILL / "assets/template/HANDOFF.md").read_text()
     for field in feed.build_record(job, "2026-10-13", None, criteria, 1):
         assert f"`{field}`" in handoff or field in ("v", "source", "source_label"), field
+
+
+def run_judging_step(tmp_path, step, **secrets):
+    """Run one judging step's script from a fresh workflow, with a stand-in judge.sh that lists the
+    credential variables it received. GitHub passes a secret that is not set as an empty string."""
+    root = tmp_path / "feed"
+    if not root.exists():
+        scaffold.init(root)
+    workflow = (root / scaffold.WORKFLOW).read_text()
+    script = textwrap.dedent(workflow.split(f"id: {step}\n")[1].split("\n      - name:")[0].split("run: |\n")[1])
+    stub = tmp_path / "stub" / ".hunter" / "engine" / "judge.sh"
+    stub.parent.mkdir(parents=True, exist_ok=True)
+    stub.write_text("env | grep -E '^(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|OAUTH_TOKEN|API_KEY)=' | cut -d= -f1\n")
+    env = {"PATH": "/usr/bin:/bin", "OAUTH_TOKEN": "", "API_KEY": "", **secrets}
+    return subprocess.run(["bash", "-e", "-c", script], cwd=stub.parents[2], env=env, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("step", ["judge_triage", "judge_assess"])
+def test_a_judging_step_uses_whichever_secret_is_set(tmp_path, step):
+    subscription = run_judging_step(tmp_path, step, OAUTH_TOKEN="token")
+    assert subscription.returncode == 0 and subscription.stdout.split() == ["CLAUDE_CODE_OAUTH_TOKEN"]
+    api_key = run_judging_step(tmp_path, step, API_KEY="key")
+    assert api_key.returncode == 0 and api_key.stdout.split() == ["ANTHROPIC_API_KEY"]
+    both = run_judging_step(tmp_path, step, OAUTH_TOKEN="token", API_KEY="key")
+    assert both.returncode == 0 and both.stdout.split() == ["ANTHROPIC_API_KEY"]
+    neither = run_judging_step(tmp_path, step)
+    assert neither.returncode == 1 and neither.stdout.startswith("::error::No Claude secret is set")
+    assert "ANTHROPIC_API_KEY\n" not in neither.stdout  # judge.sh never ran
+
+
+def test_a_failed_judging_step_fails_the_run_after_the_work_is_published(tmp_path):
+    scaffold.init(tmp_path / "feed")
+    workflow = (tmp_path / "feed" / scaffold.WORKFLOW).read_text()
+    for step in ("judge_triage", "judge_assess"):
+        block = workflow.split(f"id: {step}\n")[1].split("\n      - name:")[0]
+        assert "OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" in block
+        assert "API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}" in block
+        assert "continue-on-error: true" in block  # so that apply and publish still run
+    report = workflow.split("- name: Report a failed judging step")[1]
+    assert "steps.judge_triage.outcome == 'failure'" in report and "steps.judge_assess.outcome == 'failure'" in report
+    assert "always()" in report and "exit 1" in report
+    assert workflow.index("hunter.py publish") < workflow.index("Report a failed judging step")  # the work lands first
+
+
+def test_upgrade_says_when_it_rewrote_the_workflow(tmp_path):
+    root = tmp_path / "feed"
+    scaffold.init(root)
+    assert "workflow_changed" not in scaffold.upgrade(root)
+    path = root / scaffold.WORKFLOW
+    path.write_text(path.read_text().replace("timeout-minutes: 45", "timeout-minutes: 90"))
+    result = scaffold.upgrade(root)
+    assert result["workflow_changed"] is True and "git diff" in result["note"]
+    assert "timeout-minutes: 45" in path.read_text()

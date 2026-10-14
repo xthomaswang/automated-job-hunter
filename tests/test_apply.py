@@ -467,6 +467,7 @@ def test_a_floor_for_direct_matches_and_new_tier_bounds_reach_listed_postings(re
     summary = full_tick(root, board, triage=triage, assess=assess)  # nothing to judge
     feed = positions(root)
     assert set(feed) == {"acme:1"} and feed["acme:1"]["tier"] == "good"  # 88 is below the new strong bound
+    assert "Fit: 88 (good)" in (root / feed["acme:1"]["brief"]).read_text()  # the brief follows
     log = [json.loads(line) for line in (Layout(root).feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
     assert (log[-1]["event"], log[-1]["key"]) == ("removed", "acme:2")  # below a floor: no longer a match
     assert (summary["added"], summary["rescored"]) == (0, 0)

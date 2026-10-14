@@ -3,6 +3,7 @@ name: Job hunter
 
 on:
   schedule:
+    # In UTC. `hunter upgrade` keeps this one line as written; `upgrade --cadence` replaces it.
     - cron: "__CRON__"
   workflow_dispatch: {}
   push:

@@ -16,7 +16,8 @@ already answer:
 - Hard limits: employment type (full time, internship, contract...), and which countries.
 - Whether they need visa sponsorship in those countries.
 - Companies they especially want, and any they want left out.
-- How often the feed should update: every hour, 4 hours (the default), or 8 hours.
+- How often the feed should update: every hour, 4 hours (the default) or 8 hours, or at set times
+  of day. For set times, also ask their time zone: the schedule runs in UTC.
 
 Also run `gh --version` now. If the GitHub CLI is missing, tell them at this point that putting the
 feed on GitHub (step 7) needs it, and how to get it, so they can install it while you work through
@@ -91,6 +92,9 @@ python3 <this skill>/scripts/hunter.py --repo <directory> init --cadence 4h
 cd <directory>
 python3 .hunter/engine/hunter.py sources add <id> <id> ...
 ```
+
+`--cadence` is `1h`, `4h` or `8h`, or for set times the UTC hours as a list such as `6,10,14,20`
+(see "When it runs" in [schedule.md](schedule.md)).
 
 Write `profile/profile.md` and `profile/criteria.json` there, then check and commit:
 

@@ -96,14 +96,31 @@ def _workflow(root: Path, cadence: str | None) -> bool:
     if cadence is None and existing:
         cron = existing.group(1)
     else:
-        if (cadence or "4h") not in CADENCES:
-            raise ScaffoldError(f"cadence must be one of {', '.join(CADENCES)}")
-        # an arbitrary minute keeps many feed repos from all starting on the hour
-        cron = CADENCES[cadence or "4h"].format(minute=random.randint(3, 57))
+        # An arbitrary minute keeps many feed repos from all starting on the hour, when GitHub is
+        # busiest. Set times of day stay early in their hour, close to the time that was asked for.
+        cadence = cadence or "4h"
+        minute = random.randint(3, 57 if cadence in CADENCES else 20)
+        cron = cron_for(cadence, minute)
     template = (ASSETS / "template" / "job-hunter.yml").read_text(encoding="utf-8")
     after = template.replace("__CRON__", cron).replace("__CLAUDE_CODE_VERSION__", claude_code_version())
     write_text(path, after)
     return after != before
+
+
+def cron_for(cadence: str, minute: int) -> str:
+    """The cron line for a cadence: `1h`, `4h` or `8h`, or UTC hours such as `6,10,14,20`.
+
+    GitHub reads the schedule in UTC and has no time zones.
+    """
+    if cadence in CADENCES:
+        return CADENCES[cadence].format(minute=minute)
+    try:
+        hours = sorted({int(hour) for hour in cadence.split(",")})
+    except ValueError:
+        hours = []
+    if not hours or not 0 <= hours[0] <= hours[-1] <= 23:
+        raise ScaffoldError(f"cadence must be {', '.join(CADENCES)}, or UTC hours such as 6,10,14,20; got {cadence!r}")
+    return f"{minute} {','.join(map(str, hours))} * * *"
 
 
 def claude_code_version() -> str:
@@ -114,6 +131,7 @@ def claude_code_version() -> str:
 def init(directory: Path | str, cadence: str = "4h") -> dict[str, Any]:
     """Create a feed repo. Refuses a directory that already holds something else."""
     root = Path(directory).expanduser().resolve()
+    cron_for(cadence, 0)  # refuse a bad cadence before creating anything
     load_agents()
     if root.exists() and any(root.iterdir()) and not (root / ".hunter").exists():
         entries = sorted(p.name for p in root.iterdir() if p.name != ".git")
@@ -138,6 +156,8 @@ def upgrade(directory: Path | str, cadence: str | None = None) -> dict[str, Any]
     version = root / ".hunter" / "VERSION"
     if not version.exists():
         raise ScaffoldError(f"{root} is not a feed repo (no .hunter/VERSION); use `init` first")
+    if cadence is not None:
+        cron_for(cadence, 0)  # refuse a bad cadence before changing anything
     previous = version.read_text(encoding="utf-8").strip()
     updated = _vendor(root)
     result = {"root": str(root), "from": previous, "to": __version__, "updated": [*updated, WORKFLOW]}

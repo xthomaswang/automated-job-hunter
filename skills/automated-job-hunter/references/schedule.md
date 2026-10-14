@@ -40,9 +40,25 @@ Things to tell the user:
 - Private repositories have a monthly allowance of Actions minutes. A run that only reads the
   boards takes about a minute; one that judges takes a few. Every 4 hours fits comfortably; every
   hour uses most of a free allowance.
-- To change how often it runs: `scripts/hunter.py --repo <feed repo> upgrade --cadence 1h` (or `4h`,
-  `8h`) from this skill's copy, then commit and push.
 - To pause it: `gh workflow disable job-hunter.yml`.
+
+### When it runs
+
+The schedule is the one `cron:` line in `.github/workflows/job-hunter.yml`. GitHub reads it in UTC
+and has no time zones. To change it, run one of these from this skill's copy, then commit and push:
+
+- Every 1, 4 or 8 hours: `scripts/hunter.py --repo <feed repo> upgrade --cadence 4h` (or `1h`, `8h`).
+- At set times of day: convert the user's local times to UTC hours and pass the list, for example
+  `upgrade --cadence 6,10,14,20` for 08:00, 12:00, 16:00 and 22:00 at UTC+2. The engine adds a
+  random minute between :03 and :20, so runs start at, say, 06:14, 10:14, 14:14 and 20:14 UTC: the
+  top of the hour is when GitHub is busiest. GitHub may also start a run some minutes late. `init`
+  takes the same `--cadence` values.
+
+Where clocks change for daylight saving, the local times move by an hour when the clocks do. To keep
+the same local times, run `upgrade --cadence` again with the new UTC hours after each change.
+
+The line may also be edited by hand. `upgrade` keeps the first `cron:` line exactly as written (only
+`--cadence` replaces it), so keep the whole schedule on that one line and off the top of the hour.
 
 ## Alternatives
 

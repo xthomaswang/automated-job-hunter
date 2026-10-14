@@ -35,9 +35,10 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code@__CLAUDE_CODE_VERSION__
 
       # Set one repository secret: CLAUDE_CODE_OAUTH_TOKEN (your Claude subscription) or
-      # ANTHROPIC_API_KEY (billed per use). If both are set, the API key is used. No edit to this
-      # file is needed. A secret that is not set arrives as an empty string, so each judging step
-      # passes on only the one in use, and stops at once when neither is set.
+      # ANTHROPIC_API_KEY (billed per use; create the key inside a workspace). If both are set, the
+      # API key is used. No edit to this file is needed. A secret that is not set arrives as an
+      # empty string, so each judging step passes on only the one in use, and stops at once when
+      # neither is set.
       - name: Judge (triage)
         id: judge_triage
         if: steps.collect.outputs.triage_packets != '0'
@@ -84,10 +85,10 @@ jobs:
           python3 .hunter/engine/hunter.py apply --seal "${{ steps.advance.outputs.seal || steps.collect.outputs.seal }}"
           python3 .hunter/engine/hunter.py publish
 
-      # A judging step may fail without stopping the run, so that what was judged still lands.
-      # It must not look like success: mark the run failed, which also sends GitHub's failed-run notice.
+      # A judging step may fail without stopping the run, so that what was judged still lands, but
+      # the run must not look like success: fail it here, which also sends GitHub's failure notice.
       - name: Report a failed judging step
         if: always() && (steps.judge_triage.outcome == 'failure' || steps.judge_assess.outcome == 'failure')
         run: |
-          echo "::error::A judging step failed; see its log. What was judged has been published, and the rest stays queued for the next run."
+          echo "::error::A judging step failed; see its log. Postings it did not judge stay queued for the next run."
           exit 1

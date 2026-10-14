@@ -59,10 +59,10 @@ file.
   the seniority, the countries, the employment types or the visa need assesses every assessed
   posting again: about $2 for every hundred postings already assessed, spread over the next
   updates.
-- **Hard requirements**: leave out postings that require more years than you have or are more
-  senior than you want, and set a lowest fit for the roles you want. These are applied to each
-  posting's assessment, so a posting is still assessed once, but changing them assesses nothing
-  again.
+- **Hard requirements**: leave out postings that require more years than you have, are more senior
+  than you want, or require a degree, current enrollment, a credential or a license you do not
+  have; and set a lowest fit for the roles you want. These are applied to each posting's
+  assessment, so a posting is still assessed once, but changing them assesses nothing again.
 - **Your decisions**: in the feed repo, `python3 .hunter/engine/hunter.py decide applied <key>`
   marks a posting "✅ applied" in the feed and stops judging it, and `... decide declined <key>`
   takes it out for good. Commit and push `profile/decisions.jsonl` afterwards. An agent that
@@ -85,6 +85,7 @@ Measured cost at API prices: about $0.14 per 1,000 postings screened and $0.02 p
 assessed. An update working through a backlog at the default caps costs about $1.7 to $2; one that
 finds nothing new uses no model at all. See [docs/spikes.md](docs/spikes.md).
 
+- What changed in each version: [CHANGELOG.md](CHANGELOG.md)
 - Design: [docs/DESIGN.md](docs/DESIGN.md)
 - Measurements: [docs/spikes.md](docs/spikes.md)
 - Contributor rules: [AGENTS.md](AGENTS.md)

@@ -293,6 +293,8 @@ def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
     """Postings left out by a hard requirement that today's thresholds no longer impose: assess again.
 
     Their assessment was not kept, so they go back to the queue rather than straight to the list.
+    The tag holds every fact the requirements look at, so one that another requirement still leaves
+    out stays where it is.
     """
     freed = []
     for sid in state.source_ids():
@@ -300,9 +302,8 @@ def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
             reason = tag(row, "blk")
             if row.status != "R" or reason is None:
                 continue
-            what, _, value = reason.partition("=")
-            stated: dict[str, Any] = {"required_years": float(value)} if what == "years" else {"seniority": value}
-            if not feed.hard_limit(stated, thresholds):
+            stated = feed.stated_by_tag(reason)
+            if stated is not None and not feed.hard_limit(stated, thresholds):
                 row.status, row.fit, row.ag, row.dsh, row.note = "K", "-", 0, "-", "-"
                 freed.append(f"{sid}:{jid}")
     return freed

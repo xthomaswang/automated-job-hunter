@@ -3,7 +3,7 @@ import re
 
 import pytest
 from ajh import criteria as C
-from ajh import packets
+from ajh import packets, rubric
 from ajh.layout import Layout
 from ajh.model import Job
 from ajh.textutil import find_span
@@ -117,6 +117,12 @@ def test_an_assessment_packet_carries_the_profile_and_the_full_text(tmp_path):
     # a quote copied from the wrapped, indented packet still matches the stored posting
     copied = "\n".join(text.split("text:\n")[1].split("\n")[3:6])
     assert find_span(job(1).description, copied) is not None
+
+
+def test_the_assessment_rubric_names_every_unmet_kind_and_shows_no_unmet_line_in_its_example():
+    for kind in C.UNMET_KINDS:
+        assert f"\n  - {kind}: " in rubric.ASSESS
+    assert "unmet" not in rubric.ASSESS.split("## Output")[1]  # an example line would invite one in every answer
 
 
 def test_posting_text_cannot_imitate_packet_structure(tmp_path):

@@ -7,12 +7,13 @@ verdict changes, so a tick that changes nothing rewrites nothing.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from .criteria import SENIORITY, employment_kinds
+from .criteria import SENIORITY, UNMET_KINDS, employment_kinds
 from .model import Job, path_id
 from .rubric import ASSESS_VERSION
 from .rules import parse_date, posting_flags
@@ -40,19 +41,60 @@ def tier_of(assessment: Mapping[str, Any], thresholds: Mapping[str, int]) -> str
     return "strong" if fit >= thresholds["strong"] else "good" if fit >= thresholds["good"] else "stretch"
 
 
+def _stated_years(item: Mapping[str, Any]) -> float | None:
+    years = item.get("required_years")
+    return years if isinstance(years, (int, float)) and not isinstance(years, bool) else None
+
+
+def unmet_kinds(item: Mapping[str, Any]) -> list[str]:
+    """The kinds of unmet requirement an assessment quoted. A record from before rubric v2 has none."""
+    return sorted({entry["kind"] for entry in item.get("unmet") or []})
+
+
 def hard_limit(item: Mapping[str, Any], thresholds: Mapping[str, Any]) -> str | None:
     """Why a scored posting breaks a hard requirement, as a tag value, or None when it does not.
 
-    Only what the posting states counts: years it does not state, or a seniority the assessment
-    could not tell, never leave it out. Preferred years never count.
+    The value holds every fact a hard requirement looks at, such as `years=7+seniority=senior` or
+    `unmet=degree,enrollment`, not only the one that broke, so that relaxing one requirement frees
+    only the postings that no other one still leaves out. Only what the posting states counts:
+    years it does not state, or a seniority the assessment could not tell, never leave it out.
+    Preferred years never count.
     """
-    years, most = item.get("required_years"), thresholds.get("max_required_years")
-    if most is not None and isinstance(years, (int, float)) and not isinstance(years, bool) and years > most:
-        return f"years={years:g}"
+    years, most = _stated_years(item), thresholds.get("max_required_years")
     level, cap = item.get("seniority"), thresholds.get("max_seniority")
-    if cap is not None and level in SENIORITY and SENIORITY.index(level) > SENIORITY.index(cap):
-        return f"seniority={level}"
-    return None
+    kinds = unmet_kinds(item)
+    broken = (
+        (most is not None and years is not None and years > most)
+        or (cap is not None and level in SENIORITY and SENIORITY.index(level) > SENIORITY.index(cap))
+        or bool(set(kinds) & set(thresholds.get("unmet_requirements") or ()))
+    )
+    if not broken:
+        return None
+    facts = [f"years={years:g}"] if years is not None else []
+    facts += [f"seniority={level}"] if level in SENIORITY else []
+    facts += ["unmet=" + ",".join(kinds)] if kinds else []
+    return "+".join(facts)
+
+
+def stated_by_tag(value: str) -> dict[str, Any] | None:
+    """The facts a `hard_limit` tag value holds, in the shape `hard_limit` reads them.
+
+    None when it holds a fact this version cannot read, as one written by a newer engine may: that
+    posting is left where it is rather than judged again on part of its facts.
+    """
+    stated: dict[str, Any] = {}
+    for fact in value.split("+"):
+        what, _, found = fact.partition("=")
+        kinds = [kind for kind in found.split(",") if kind]
+        if what == "years" and re.fullmatch(r"\d+(?:\.\d+)?", found):
+            stated["required_years"] = float(found)
+        elif what == "seniority" and found in SENIORITY:
+            stated["seniority"] = found
+        elif what == "unmet" and kinds and all(kind in UNMET_KINDS for kind in kinds):
+            stated["unmet"] = [{"kind": kind} for kind in kinds]
+        else:
+            return None
+    return stated
 
 
 def build_record(
@@ -92,6 +134,7 @@ def build_record(
             matches=[],
             gaps=[],
             notes=[],
+            unmet=[],
         )
         unverified = 0
     else:
@@ -110,6 +153,7 @@ def build_record(
                     "matches",
                     "gaps",
                     "notes",
+                    "unmet",
                 )
             },
         )
@@ -176,6 +220,10 @@ def brief_text(record: Mapping[str, Any], description: str) -> str:
             if record[name]:
                 lines += ["", f"## {heading}", ""]
                 lines += [f"- **{_md(item['label'])}**: “{norm_ws(item['quote'])}”" for item in record[name]]
+        unmet = record.get("unmet") or []  # a record from before rubric v2 has none
+        if unmet:
+            lines += ["", "## Unmet requirements", ""]
+            lines += [f"- **{item['kind']}**: “{norm_ws(item['quote'])}”" for item in unmet]
     else:
         lines += [
             "",
@@ -248,13 +296,16 @@ def append_events(feed_dir: Path, events: Iterable[Mapping[str, Any]]) -> None:
 def _row(record: Mapping[str, Any], recent_from: str) -> str:
     flags = record["flags"]
     marks = ", ".join(
-        mark
-        for on, mark in (
-            (record["first_seen"] > recent_from, "new"),
-            (flags["sponsorship_not_offered"], "no sponsorship"),
-            (flags["citizenship_required"], "citizenship required"),
-        )
-        if on
+        [
+            mark
+            for on, mark in (
+                (record["first_seen"] > recent_from, "new"),
+                (flags["sponsorship_not_offered"], "no sponsorship"),
+                (flags["citizenship_required"], "citizenship required"),
+            )
+            if on
+        ]
+        + [f"unmet {kind}" for kind in unmet_kinds(record)]
     )
     fit = "–" if record["fit"] is None else str(record["fit"])
     title = f"{_applied(record.get('applied'))}[{_md(record['title'])}]({record['brief']})"
@@ -366,7 +417,14 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
         )
     if counts.get("blocked"):
         lines.append(
-            f"- Left out for a hard requirement in `thresholds` (required years or seniority): {counts['blocked']}."
+            "- Left out for a hard requirement in `thresholds` (required years, seniority or an unmet "
+            f"requirement): {counts['blocked']}."
+        )
+    if meta.get("unmet"):
+        lines.append(
+            "- Assessed postings with an unmet requirement: "
+            + ", ".join(f"{count} {kind}" for kind, count in meta["unmet"].items())
+            + ". Listed ones are flagged; `thresholds.unmet_requirements` leaves out the kinds it names."
         )
     if counts.get("applied") or counts.get("declined"):
         lines.append(

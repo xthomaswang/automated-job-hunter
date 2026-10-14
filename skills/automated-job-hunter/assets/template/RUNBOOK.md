@@ -70,5 +70,9 @@ until their new assessment arrives.
 - **`PublishBlocked: Audit failed`**: the profile or config contains what the message names.
 - **A source keeps failing**: `README.md` lists it under Status. `hunter sources test` shows the
   error. A failing source keeps its last known postings; nothing is closed because of an outage.
+- **Judging failed**: `README.md` says so at the top, and `feed/meta.json` has `judging_failed`
+  with the day it started, the stages, and the first line of the error. New postings wait in the
+  queue and are judged once it works again. In the scheduled workflow, the judging step's log has
+  the full error; a missing or expired Claude secret is the usual cause.
 - **`stale_base` from publish**: the remote has commits this run did not start from. Nothing was
   pushed or lost; the next tick starts from the new state.

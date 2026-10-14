@@ -284,9 +284,15 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
     recent_from = (date.fromisoformat(as_of) - timedelta(days=NEW_DAYS)).isoformat()
     by_tier = {tier: _ranked(r for r in records.values() if r["tier"] == tier) for tier in (*TIERS, "unscored")}
     summary = ", ".join(f"{len(by_tier[tier])} {tier}" for tier in (*TIERS, "unscored") if by_tier[tier]) or "none yet"
+    failed = meta.get("judging_failed")
     lines = [
         "# Job feed",
         "",
+        *(
+            [f"> **Judging has failed since {failed['since']}**, so new postings wait to be judged. See Status.", ""]
+            if failed
+            else []
+        ),
         f"Open postings matched to your profile, kept up to date by automated-job-hunter. As of {as_of}: "
         f"**{len(records)} open matches** ({summary}).",
         "",
@@ -316,6 +322,11 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
     ]
     if counts["parked"]:
         lines.append(f"- Parked as older than the backfill limit: {counts['parked']}.")
+    if failed:
+        lines.append(
+            f"- Judging failed ({' and '.join(failed['stages'])}) on every update since {failed['since']}. "
+            f"Last error: {_md(failed['detail'])}"
+        )
     canary = meta["canary"]
     if canary["sampled"]:
         lines.append(

@@ -186,6 +186,39 @@ def test_a_cut_off_judging_stage_still_lands_what_was_judged(repo):
     assert done["published"] == 1 and done["unanswered"] == 2 and rows(root)["2"].status == "K"
 
 
+def test_judging_that_got_no_answers_is_reported_in_the_feed_until_answers_come_back(repo):
+    root, board = repo(), boards()
+    layout = Layout(root)
+    client = Client(board.transport, sleep=lambda s: None, retries=0)
+    first = collect.run(root, client, NOW)
+    day = json.loads(layout.plan.read_text())["as_of"]
+    layout.results.mkdir(parents=True, exist_ok=True)  # what `hunter judge` leaves when no packet got an answer
+    leaked = "sk-ant-api03-" + "x" * 40
+    (layout.results / "_judging-triage.json").write_text(
+        json.dumps({"failures": [f"API Error: 401 invalid x-api-key {leaked} see https://example.com/help"]})
+    )
+    apply.run(root, advance.run(root, first["seal"])["seal"])
+    meta = json.loads(layout.feed_meta.read_text())
+    assert meta["judging_failed"] == {
+        "since": day,
+        "stages": ["triage"],
+        "detail": "API Error: 401 invalid x-api-key [removed] see [link removed]",
+    }
+    readme = layout.readme.read_text()
+    assert f"> **Judging has failed since {day}**" in readme and "Last error: API Error: 401" in readme
+    assert leaked not in readme
+
+    again = collect.run(root, client, NOW + timedelta(days=1))  # fails again, this time without a report
+    apply.run(root, advance.run(root, again["seal"])["seal"])
+    meta = json.loads(layout.feed_meta.read_text())
+    assert meta["judging_failed"]["since"] == day  # still the day it started
+    assert meta["judging_failed"]["detail"] == "No answers came back; the judging step's log says why."
+
+    full_tick(root, board, now=NOW + timedelta(days=2), triage=triage, assess=assess)
+    assert "judging_failed" not in json.loads(layout.feed_meta.read_text())
+    assert "Judging has failed" not in layout.readme.read_text()
+
+
 def test_other_listings_of_the_same_opening_are_attached_to_its_record(repo):
     root = repo(sources=(ACME, REMOTIVE))
     same = prose(50)

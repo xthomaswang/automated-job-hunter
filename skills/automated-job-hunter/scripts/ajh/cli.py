@@ -151,7 +151,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"error": type(error).__name__, "detail": str(error), "needs": "a person"}))
         return 2
     print(json.dumps(result, ensure_ascii=False))
-    return 1 if result.get("state") == "push_failed" else 0  # a failed push fails the run; a moved remote does not
+    # A failed push fails the run, and so does a judging stage that got no answer at all. A moved remote
+    # does not, nor does a stage with some answers: its missing packets are issued again next time.
+    return 1 if result.get("state") == "push_failed" or result.get("judging_failed") else 0
 
 
 if __name__ == "__main__":

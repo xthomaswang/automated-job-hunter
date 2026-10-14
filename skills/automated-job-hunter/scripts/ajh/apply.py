@@ -19,7 +19,7 @@ from .collect import job_of, split_key
 from .layout import Layout
 from .state import State, dump_json, read_json, set_tag, tag, write_text
 from .textutil import simhash64
-from .verdicts import read_assess
+from .verdicts import clean_text, read_assess
 
 
 def check_tree(layout: Layout) -> None:
@@ -184,6 +184,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
 
     state.save(layout.state_next, as_of)
     failing = {sid: info["fail_since"] for sid, info in state.sources.items() if info.get("fail_since")}
+    judging_failed = _judging_failed(layout, plan.get("triage") or {}, counts, old_meta.get("judging_failed"), as_of)
     meta = {
         "schema_version": feed.SCHEMA_VERSION,
         "as_of": as_of,
@@ -191,6 +192,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         "canary": canary,
         "generations": generations,
         "sources": {"total": len(state.sources), "failing": failing},
+        **({"judging_failed": judging_failed} if judging_failed else {}),
     }
     write_text(layout.feed_meta, dump_json(meta))
     write_text(layout.readme, feed.readme_text(meta, records))
@@ -202,4 +204,32 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         **counts,
         "open_matches": len(records),
         **{kind: sum(item["event"] == kind for item in events) for kind in order},
+    }
+
+
+def _judging_failed(
+    layout: Layout, triage: dict[str, int], assess: dict[str, int], previous: dict[str, Any] | None, as_of: str
+) -> dict[str, Any] | None:
+    """The judging stages that were asked for verdicts this tick and got none back, or None.
+
+    The detail is the first line of the error `hunter judge` recorded, made safe to publish. A tick
+    that asked for no verdicts says nothing new, so an earlier failure stays reported until a stage
+    gets answers again.
+    """
+    asked = {
+        "triage": sum(triage.get(name, 0) for name in ("kept", "dropped", "rejected", "escalated", "unanswered")),
+        "assess": sum(assess[name] for name in ("published", "below_threshold", "rejected", "unscored", "unanswered")),
+    }
+    unanswered = {"triage": triage.get("unanswered", 0), "assess": assess["unanswered"]}
+    if not any(asked.values()):
+        return previous
+    stages = [stage for stage in ("triage", "assess") if asked[stage] and unanswered[stage] == asked[stage]]
+    if not stages:
+        return None
+    record = read_json(layout.results / f"_judging-{stages[0]}.json", {})
+    detail = clean_text(next(iter(record.get("failures") or []), ""), 200)
+    return {
+        "since": previous["since"] if previous else as_of,
+        "stages": stages,
+        "detail": detail or "No answers came back; the judging step's log says why.",
     }

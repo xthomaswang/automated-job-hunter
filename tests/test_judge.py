@@ -75,24 +75,17 @@ def test_an_empty_result_file_is_not_an_answer(tmp_path):
     assert judge.run(tmp_path, invoke)["missing"] == ["T-002"]
 
 
-def test_an_orchestrator_that_fails_is_reported_even_if_results_exist(tmp_path, monkeypatch):
+def test_an_orchestrator_error_is_listed_but_only_missing_results_make_the_stage_incomplete(tmp_path, monkeypatch):
     manifest(tmp_path, 2)
-    invoke, _ = orchestrator(ok=False)
+    invoke, _ = orchestrator(ok=False)  # it errored, yet both results were written
     report = judge.run(tmp_path, invoke)
-    assert (
-        report["ok"] is False
-        and report["results"] == 2
-        and report["failures"] == ["the orchestrator reported an error"]
-    )
+    assert (report["ok"], report["results"], report["failures"]) == (True, 2, ["the orchestrator reported an error"])
     monkeypatch.setattr(judge, "CLAUDE", "no-such-command-for-this-test")
     for path in Layout(tmp_path).results.glob("T-*.txt"):
         path.unlink()
     missing_cli = judge.run(tmp_path)
-    assert (
-        missing_cli["ok"] is False
-        and missing_cli["failures"][0] == "FileNotFoundError"
-        and missing_cli["missing"] == ["T-001", "T-002"]
-    )
+    assert (missing_cli["ok"], missing_cli["missing"]) == (False, ["T-001", "T-002"])
+    assert missing_cli["failures"][0] == "FileNotFoundError"
 
 
 def test_nothing_to_judge_is_a_complete_stage(tmp_path):

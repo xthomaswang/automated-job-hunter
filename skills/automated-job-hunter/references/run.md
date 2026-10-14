@@ -20,8 +20,10 @@ Read the JSON it prints and tell the user, in plain words:
 - any source that failed (`collect.sources.failures`);
 - whether a judging stage is complete: `judge_triage.ok` and `judge_assess.ok` are true only when
   every packet got an answer. `packets` and `results` are counted by the engine, and `missing` names
-  any packet still without a result after one retry. Unanswered work is not lost: whatever was
-  judged is kept and the rest is asked again on the next update.
+  any packet still without a result after one retry. `failures`, when present, lists orchestrator
+  errors along the way, including ones the retry recovered from; with `ok` true, nothing is missing.
+  Unanswered work is not lost: whatever was judged is kept and the rest is asked again on the next
+  update.
 
 Then show what is new from `feed/latest.md`.
 

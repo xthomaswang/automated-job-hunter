@@ -80,7 +80,11 @@ def claude_invoke(root: Path, manifest: str) -> dict[str, Any]:
 
 
 def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> dict[str, Any]:
-    """Judge every packet in the manifest. `ok` is true only when every packet has a result file."""
+    """Judge every packet in the manifest.
+
+    `ok` is true when every packet has a result file, whether the first pass or the retry produced it.
+    `failures` lists any orchestrator error along the way, including ones the retry recovered from.
+    """
     layout = Layout(root)
     invoke = invoke or claude_invoke
     rows = manifest_rows(layout)
@@ -103,7 +107,7 @@ def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> d
         todo = [row for row in todo if row.split(" | ")[0] in left]
     unanswered = missing(layout, rows)
     return {
-        "ok": not unanswered and not failures,
+        "ok": not unanswered,
         "packets": len(rows),
         "results": len(rows) - len(unanswered),
         "missing": unanswered[:20],

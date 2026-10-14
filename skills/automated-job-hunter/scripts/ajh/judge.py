@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from .layout import Layout
-from .state import write_text
+from .packets import AGENTS
+from .state import dump_json, write_text
 
 BATCH = 20
+STAGES = {agent: stage for stage, agent in AGENTS.items()}
 PASSES = 2  # the first pass, then one more for any packet still without a result
 TIMEOUT = 1800
 CLAUDE = "claude"
@@ -72,11 +74,16 @@ def claude_invoke(root: Path, manifest: str) -> dict[str, Any]:
         report = json.loads(done.stdout)
     except ValueError:
         return {"ok": False, "detail": (done.stderr.strip().splitlines() or ["no output"])[-1][:200]}
-    return {
-        "ok": done.returncode == 0 and not report.get("is_error"),
+    ok = done.returncode == 0 and not report.get("is_error")
+    reply = {
+        "ok": ok,
         "cost_usd": report.get("total_cost_usd") or 0.0,
         "denied": len(report.get("permission_denials") or []),
     }
+    if not ok:  # Claude Code's own first line, for example "API Error: 400 ..."
+        lines = str(report.get("result") or "").strip().splitlines()
+        reply["detail"] = (lines or ["the orchestrator reported an error"])[0][:300]
+    return reply
 
 
 def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> dict[str, Any]:
@@ -84,6 +91,9 @@ def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> d
 
     `ok` is true when every packet has a result file, whether the first pass or the retry produced it.
     `failures` lists any orchestrator error along the way, including ones the retry recovered from.
+    `judging_failed` is set when not one packet got a result: that fails the command, and the report
+    is left in the results folder for `apply` to put in the feed. Some answers are not a failure; the
+    packets still missing are issued again next time.
     """
     layout = Layout(root)
     invoke = invoke or claude_invoke
@@ -106,7 +116,7 @@ def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> d
         left = set(missing(layout, todo))
         todo = [row for row in todo if row.split(" | ")[0] in left]
     unanswered = missing(layout, rows)
-    return {
+    report: dict[str, Any] = {
         "ok": not unanswered,
         "packets": len(rows),
         "results": len(rows) - len(unanswered),
@@ -116,3 +126,10 @@ def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> d
         "denied": sum(c.get("denied", 0) for c in calls),
         **({"failures": failures[:5]} if failures else {}),
     }
+    if rows:
+        if not report["results"]:
+            report["judging_failed"] = True
+        stage = STAGES.get(rows[0].rsplit(" | ", 1)[-1].strip(), "judging")
+        # Under results/: outside the seal, and not a packet's result file.
+        write_text(layout.results / f"_judging-{stage}.json", dump_json(report))
+    return report

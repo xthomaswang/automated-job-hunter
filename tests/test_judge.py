@@ -1,6 +1,9 @@
 """The judging stage: fixed batches, a retry for unanswered packets, and counts the engine checked."""
 
+import json
+
 from ajh import judge
+from ajh.cli import main
 from ajh.layout import Layout
 
 
@@ -62,6 +65,7 @@ def test_a_packet_still_unanswered_after_the_retry_makes_the_stage_incomplete(tm
     report = judge.run(tmp_path, invoke)
     assert calls == [["T-001", "T-002", "T-003"], ["T-002"]]
     assert (report["ok"], report["results"], report["missing"]) == (False, 2, ["T-002"])
+    assert "judging_failed" not in report  # some answers: the rest are issued again next time
 
 
 def test_an_empty_result_file_is_not_an_answer(tmp_path):
@@ -112,3 +116,27 @@ def test_batch_manifests_stay_outside_the_seal_and_are_never_read_as_answers(tmp
     judge.run(tmp_path, invoke)
     assert sorted(p.name for p in layout.results.glob("_batch-*")) == ["_batch-1-1.md", "_batch-1-2.md"]
     assert seal_of(layout.work) == before
+
+
+def test_a_stage_with_no_answer_at_all_fails_and_leaves_its_report_for_apply(tmp_path):
+    layout = manifest(tmp_path, 3)
+    error = "API Error: 400 This API key is not scoped to a workspace"
+    report = judge.run(tmp_path, lambda root, path: {"ok": False, "cost_usd": 0.0, "denied": 0, "detail": error})
+    assert (report["judging_failed"], report["results"], report["batches"]) == (True, 0, 2)
+    assert report["failures"] == [error, error]  # the first pass and the retry
+    assert json.loads((layout.results / "_judging-triage.json").read_text()) == report
+
+
+def test_claude_codes_own_error_line_is_kept_and_fails_the_command(tmp_path, monkeypatch, capsys):
+    manifest(tmp_path, 2)
+    reply = tmp_path / "reply.json"
+    reply.write_text(json.dumps({"type": "result", "is_error": True, "total_cost_usd": 0,
+                                 "result": "API Error: 400 This API key is not scoped to a workspace\nmore"}))  # fmt: skip
+    stub = tmp_path / "claude"
+    stub.write_text(f"#!/bin/sh\ncat '{reply}'\nexit 1\n")
+    stub.chmod(0o755)
+    monkeypatch.setattr(judge, "CLAUDE", str(stub))
+    assert main(["--repo", str(tmp_path), "judge"]) == 1
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["judging_failed"] is True
+    assert printed["failures"][0] == "API Error: 400 This API key is not scoped to a workspace"

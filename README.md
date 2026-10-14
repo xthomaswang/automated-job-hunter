@@ -5,8 +5,9 @@ matched to your experience. A deterministic engine fetches public job boards and
 publishes the feed; the agent's cheap subagents judge fit.
 
 **Status: in testing.** Tested end to end: installing from GitHub, setting up a feed, updates on one
-machine, and scheduled GitHub Actions runs billed to a Claude subscription or to an API key. The
-skill file is written to be portable to Codex, but nothing has been run there yet. Please
+machine on a Claude subscription, and scheduled GitHub Actions runs billed to an API key. The
+workflow also accepts a subscription token, but no Actions run has used one yet. The skill file is
+written to be portable to Codex, but nothing has been run there yet. Please
 [open an issue](https://github.com/xthomaswang/automated-job-hunter/issues) for anything that breaks.
 
 ## Install
@@ -15,6 +16,12 @@ In Claude Code:
 
 ```
 /plugin install automated-job-hunter --marketplace xthomaswang/automated-job-hunter
+```
+
+Or the same from a normal shell:
+
+```sh
+claude plugin install automated-job-hunter --marketplace xthomaswang/automated-job-hunter
 ```
 
 On a version that does not accept that one-step form, add the marketplace first:
@@ -34,9 +41,10 @@ file.
 
 1. `setup` reads your résumé, asks what you want, and writes a contact-free profile and search
    criteria into a new private feed repo, together with a pinned copy of the engine.
-2. Every update, the engine reads the job boards you chose, drops what breaks your hard limits, and
-   hands the rest to subagents: a cheap one screens each posting on its title and a snippet, a
-   stronger one assesses the survivors against your profile.
+2. Every update, the engine reads the job boards you chose, drops postings at companies you left
+   out or outside the employment types and countries you want, and hands the rest to subagents: a
+   cheap one screens each posting on its title and a snippet, a stronger one assesses the survivors
+   against your profile.
 3. The engine checks everything the models wrote (every quote must be in the posting), updates
    `README.md`, `positions.jsonl` and one brief per posting, and commits.
 4. A GitHub Actions workflow in the feed repo runs the updates on a schedule: every 1, 4 or 8
@@ -47,14 +55,21 @@ file.
 
 - **What it looks for**: roles you want, related roles, roles to avoid, seniority, employment type,
   countries, visa sponsorship, companies to prefer or leave out, and the profile text itself. The
-  skill says what each change judges again, and what it costs.
+  skill says what each change judges again, and what it costs. Changing the profile text, the roles,
+  the seniority, the countries, the employment types or the visa need assesses every assessed
+  posting again: about $2 for every hundred postings already assessed, spread over the next
+  updates.
 - **Hard requirements**: leave out postings that require more years than you have or are more
-  senior than you want, and set a lowest fit for the roles you want. These judge nothing again.
-- **Your decisions**: `hunter decide applied <key>` marks a posting "✅ applied" in the feed and
-  stops judging it; `hunter decide declined <key>` takes it out for good.
+  senior than you want, and set a lowest fit for the roles you want. These are applied to each
+  posting's assessment, so a posting is still assessed once, but changing them assesses nothing
+  again.
+- **Your decisions**: in the feed repo, `python3 .hunter/engine/hunter.py decide applied <key>`
+  marks a posting "✅ applied" in the feed and stops judging it, and `... decide declined <key>`
+  takes it out for good. Commit and push `profile/decisions.jsonl` afterwards. An agent that
+  applies for you should record its decisions the same way.
 - **Cost**: every update that judged is logged with its tokens and Claude Code's list-price
-  estimate, in `feed/usage.jsonl` and the feed's README. A monthly budget pauses judging once it
-  is reached.
+  estimate, in `feed/usage.jsonl` and the feed's README. A monthly budget
+  (`caps.max_usd_per_month` in `profile/criteria.json`) pauses judging once it is reached.
 
 A model never touches git or a link, never sees a credential, and in a scheduled run has no shell
 and no network: it can read packets and write result files, nothing else.

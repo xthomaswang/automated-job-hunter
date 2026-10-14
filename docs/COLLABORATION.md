@@ -36,6 +36,24 @@ title with `(fixes #N)`, and its body says `Fixes #N` so GitHub closes the issue
 - A person merges. Whoever verified a fix comments on the pull request, starting with
   `Verified on <branch>:` or `Still failing on <branch>:`.
 
+## Screenshots
+
+Pull requests are read by people, so anything a person can see gets a picture: the README or a
+brief before and after, the command output that changed, a rendered docs section, or a small
+diagram of how a change works.
+
+- **Test data only.** Render from a feed repo built for testing with a synthetic profile, or from
+  numbers a tester reported. Never screenshot a real person's feed, profile or briefs: the fit
+  reasons describe the person.
+- **Making them:** `tools/screenshot.py` renders Markdown the way GitHub does, terminal text, or an
+  HTML fragment to a trimmed PNG (macOS; run it with `uv run --with pillow`).
+- **Hosting them:** commit the images to the `pr-assets` branch, in a folder named `pr-<number>`,
+  and link them from the description as
+  `https://raw.githubusercontent.com/xthomaswang/automated-job-hunter/pr-assets/pr-<number>/<name>.png`.
+  That branch is never merged, so images stay out of `main`.
+- Put them in a **Screenshots** section after the summary, with one line saying what each shows
+  and where its data came from.
+
 ## Agents working together
 
 Two Claude Code sessions on different machines, logged in to the same account and connected through

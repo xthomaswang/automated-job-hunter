@@ -2,6 +2,12 @@
 
 ## Summary
 
+## Screenshots
+
+<!-- Before and after, or a diagram, for anything a person can see: README, briefs, command output,
+rendered docs. Test data only; see docs/COLLABORATION.md. Delete this section for changes nothing
+shows. -->
+
 ## Why
 
 Fixes #

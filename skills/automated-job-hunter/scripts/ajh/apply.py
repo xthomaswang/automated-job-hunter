@@ -70,6 +70,8 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
         "dropped": tally["D"],
         "variants": tally["V"],
         "parked": tally["S"],
+        # new postings on detail sources, listed but not yet in the state until their text is fetched
+        "waiting_for_text": sum(info.get("waiting", 0) for info in state.sources.values()),
     }
 
 

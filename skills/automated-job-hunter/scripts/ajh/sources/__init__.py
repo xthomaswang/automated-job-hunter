@@ -6,8 +6,9 @@ postings without their text and needs one more request per posting for it, so it
 through searches and its text is fetched only where `collect` needs it. `collect` passes a rank
 function for that: it returns None for a posting whose text would not be used this update, or
 one of the ranks below, and the adapter fetches text in rank order within its per-update budget.
-A posting it did not fetch text for comes back with `detail_skipped`, except a new one, which is
-left out until an update fetches its text: it was never known, so nothing closes.
+A posting it did not fetch text for comes back with `detail_skipped`. `collect` keeps a new one out
+of the state until an update brings its text (it was never known, so nothing closes) and counts it
+as waiting for its text.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Rank | None = None) -
     if kind == "aggregator":
         return aggregators.fetch_aggregator(client, source)
     if kind in workday.KINDS:
-        return workday.fetch(client, source, rank, NEW)
+        return workday.fetch(client, source, rank)
     if kind in smartrecruiters.KINDS:
-        return smartrecruiters.fetch(client, source, rank, NEW)
+        return smartrecruiters.fetch(client, source, rank)
     raise SourceError(f"Unknown source type {kind!r} for {source.get('id')!r}")

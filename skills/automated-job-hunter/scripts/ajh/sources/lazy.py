@@ -20,16 +20,15 @@ def budget(source: Mapping[str, Any], default: int) -> int:
 def complete(
     listed: Mapping[str, tuple[Job, Extra]],
     rank: Callable[[Job], int | None] | None,
-    new: int,
     limit: int,
     detail: Callable[[Job, Extra], Job | None],
 ) -> list[Job]:
     """The postings to return, with text where it was asked for and fetched.
 
     Texts are fetched in rank order and, within a rank, newest id first, so postings whose text
-    keeps failing sink to the end instead of using the budget every update. A known posting
-    without its text comes back `detail_skipped`; a new one is left out until it has its text.
-    Without `rank` (counting only), nothing is fetched.
+    keeps failing sink to the end instead of using the budget every update. A posting without its
+    text comes back `detail_skipped`; `collect` keeps a new one out of the state until it has its
+    text. Without `rank` (counting only), nothing is fetched.
     """
     ranks = {jid: rank(job) for jid, (job, _) in listed.items()} if rank else {}
     wanted = sorted(sorted(((r, jid) for jid, r in ranks.items() if r is not None), reverse=True), key=lambda w: w[0])
@@ -43,6 +42,6 @@ def complete(
     for jid, (job, _) in listed.items():
         if jid in detailed:
             jobs.append(detailed[jid])
-        elif ranks.get(jid) != new:  # a new posting waits for its text; nothing knew it, so nothing closes
+        else:
             jobs.append(replace(job, detail_skipped=True))
     return jobs

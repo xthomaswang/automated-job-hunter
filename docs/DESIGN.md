@@ -100,11 +100,14 @@ listing changed, and listed ones (for their briefs); within each, the newest req
 postings whose text keeps failing sink to the end. A settled posting, or one stage 0 drops on what
 the listing shows, needs none. The rank is built before the read, so a posting `unblock` or
 `requeue` sends back waits one more update for its text. On a very large site, `categories` (the
-site's own job categories) narrows each search, which otherwise matches any of its words. A new posting whose text was not fetched is left out of the snapshot,
-so it enters state only with its text; nothing knew it, so nothing closes. A known one comes back
-with `detail_skipped`: it is not judged, and its brief is not rewritten, until an update fetches its
-text. Title and place come from the listing on every update, so the change fingerprint compares like
-with like; the detail's extra places and its employment type go into the text.
+site's own job categories) narrows each search, which otherwise matches any of its words.
+
+A posting whose text was not fetched comes back with `detail_skipped`. If it is new, `collect` keeps
+it out of the state until an update brings its text (nothing knew it, so nothing closes) and counts
+it as waiting for its text in `feed/meta.json` and the README. A known one is not judged, and its
+brief is not rewritten, until an update fetches its text. Title and place come from the listing on
+every update, so the change fingerprint compares like with like; the detail's extra places and its
+employment type go into the text.
 
 **Measured cost.** At API list prices (Haiku 5.5 $0.10/$0.50 and Sonnet 5.5 $2/$10 per million
 input/output tokens, price table dated 2026-10-06), triage costs about $0.14 per 1,000 postings and

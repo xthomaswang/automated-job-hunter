@@ -10,9 +10,11 @@ import os
 import sys
 from typing import Any
 
-from . import collect
+from . import advance, collect
+from .advance import WorkError
 from .collect import ConfigError
 from .criteria import CriteriaError
+from .packets import ProfileTooLong
 from .state import StateError
 
 
@@ -28,7 +30,14 @@ def _collect(args: argparse.Namespace) -> dict[str, Any]:
     summary = collect.run(args.repo)
     if args.github_output:
         _github_output({"judge_needed": str(summary["judge_needed"]).lower(), "seal": summary["seal"],
-                        "triage_queued": summary["queued"]["triage"], "assess_queued": summary["queued"]["assess"]})
+                        "triage_packets": summary["triage_packets"]})
+    return summary
+
+
+def _advance(args: argparse.Namespace) -> dict[str, Any]:
+    summary = advance.run(args.repo, args.seal)
+    if args.github_output:
+        _github_output({"assess_packets": summary["assess_packets"], "seal": summary["seal"]})
     return summary
 
 
@@ -39,10 +48,14 @@ def main(argv: list[str] | None = None) -> int:
     step = commands.add_parser("collect", help="read every source and propose the next state")
     step.add_argument("--github-output", action="store_true", help="also write step outputs for GitHub Actions")
     step.set_defaults(run=_collect)
+    step = commands.add_parser("advance", help="fold in triage results and prepare assessment packets")
+    step.add_argument("--seal", help="the seal the previous step printed; defaults to the one on disk")
+    step.add_argument("--github-output", action="store_true", help="also write step outputs for GitHub Actions")
+    step.set_defaults(run=_advance)
     args = parser.parse_args(argv)
     try:
         result = args.run(args)
-    except (CriteriaError, ConfigError, StateError) as error:
+    except (CriteriaError, ConfigError, StateError, WorkError, ProfileTooLong) as error:
         print(json.dumps({"error": type(error).__name__, "detail": str(error), "needs": "a person"}))
         return 2
     print(json.dumps(result, ensure_ascii=False))

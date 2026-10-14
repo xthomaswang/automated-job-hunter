@@ -52,6 +52,27 @@ class Row:
         return "\t".join(str(getattr(self, name)) for name in COLUMNS)
 
 
+def tag(row: Row, name: str) -> str | None:
+    """A tag from a pending row's note, which holds `;`-separated `name` or `name:value` entries.
+
+    Tags: `was:<status>` (a published posting being re-judged), `fb:<codes>` (why the last answer was
+    rejected), `canary` (a triage drop sent to assessment to measure what triage misses).
+    """
+    for part in row.note.split(";"):
+        key, _, value = part.partition(":")
+        if key == name:
+            return value
+    return None
+
+
+def set_tag(row: Row, name: str, value: str | None) -> None:
+    """Set a tag, or remove it when `value` is None."""
+    parts = [p for p in row.note.split(";") if p and p != "-" and p.partition(":")[0] != name]
+    if value is not None:
+        parts.append(f"{name}:{value}" if value else name)
+    row.note = ";".join(sorted(parts)) or "-"
+
+
 def write_text(path: Path, text: str) -> None:
     """Write through a temporary file so a crash never leaves a half-written state file."""
     path.parent.mkdir(parents=True, exist_ok=True)

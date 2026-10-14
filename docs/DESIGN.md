@@ -67,13 +67,15 @@ engine      subagents         engine      subagents         engine    engine
 | Stage | Who | Sees | Decides |
 |---|---|---|---|
 | 0 | engine | every posting | Drops only on positive evidence against the user's explicit hard constraints (excluded companies, employment type, location/remote). Unknown passes. No relevance regexes. A posting's age never drops it: boards keep postings open for a year or more, so age only orders the queue (newest first) and is shown in the feed. |
-| 1 Triage | Haiku subagent | title, company, location, department, and a ~1,200-char description snippet anchored at the role section; 40–50 per packet | `keep`, `drop`, or `drop_title` (unrelated whatever the duties). Only `drop_title` is cached. 2% of drops are sent to stage 2 as a recall canary, and the miss rate is shown in the README. |
+| 1 Triage | Haiku subagent | title, company, location, department, and a ~1,200-char description snippet anchored at the role section; about 33 per packet at that snippet size (the 48 KB cap), 45 at most | `keep`, `drop`, or `drop_title` (unrelated whatever the duties). Only `drop_title` is cached, and only when every posting with that title got it. One in fifty drops, chosen by the posting's key, is sent to stage 2 as a recall canary, and the miss rate is shown in the README. |
 | 2 Assess | Sonnet subagent | full posting, up to 5 per packet | Fit 0–100, role match, seniority, required/preferred years, 1–4 matches and 0–4 gaps each with a verbatim quote, quoted notes. Tier is computed in code from thresholds. |
 
-Why triage sees a snippet: in the old labeled data only about 23% of relevant jobs had a telling
-keyword in the title, and later postings repeat an earlier title only about 25% of the time. So
-title-only triage would lose recall and a title cache would save little. The saving comes from
-roughly 350 tokens per job on Haiku instead of roughly 2,000 on a larger model.
+Why triage sees a snippet: measured on 500 postings labeled by the old radar (spike E1 in
+[spikes.md](spikes.md)), Haiku kept 149 of 150 core-role postings at every snippet size, and the
+snippet mainly bought precision: 94.5% of off-target postings dropped with a snippet against 87% on
+titles alone. Later postings repeat an earlier title only about 25% of the time, so a title cache
+saves little; the saving comes from roughly 400 tokens per job on Haiku instead of roughly 2,000 on
+a larger model. Measured cost: about $0.13 per 1,000 postings triaged.
 
 Per-run caps (`max_triage` 1,500, `max_assess` 100) with a persistent priority queue (newest and
 preferred companies first) let a first backfill drain over several ticks.
@@ -248,8 +250,8 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
 - **Fingerprint.** `gk` hashes company and title (postings that may be the same opening). `tfp`
   hashes the normalized title, company and location. `dsh` is a 64-bit
   simhash of the description, frozen when the job is judged. A job is re-judged only when `tfp`
-  changes or the simhash distance exceeds 16. Measured on old snapshots: promo-phrase noise stays at
-  14 or below, real rewrites land at 26–32.
+  changes or the simhash distance exceeds 12. Measured across five old snapshots (spike E5): 99.9%
+  of 8,425 cosmetic edits stay at 12 or below, and real rewrites land at 26–32.
 - **Published records are state.** A source that was skipped or failed this tick has no descriptions
   available, so the feed is updated incrementally and `positions.jsonl` plus the briefs are the
   canonical store of matched-job facts. README is re-rendered from them.
@@ -379,7 +381,7 @@ Each phase ends in something runnable and tested.
 
 | Phase | Deliverable | Verification |
 |---|---|---|
-| 0 Spikes | Answers to E1–E4 below; repo scaffold (git, manifests, uv dev tooling, contributor rules) | Written results in [spikes.md](spikes.md); go/no-go on snippet size, packet size, and tool-rule syntax. Scaffold, E2 and E4 are done; E1 and E3 are open. |
+| 0 Spikes | Answers to E1–E4 below; repo scaffold (git, manifests, uv dev tooling, contributor rules) | Written results in [spikes.md](spikes.md); go/no-go on snippet size, packet size, and tool-rule syntax. All go; only E3 (a scheduled run on a GitHub runner) is still open. |
 | 1 Core + ATS | `model`, `textutil`, `http`, `rules`, four ATS adapters | Ported adapter, experience and integrity tests on Python 3.9 and 3.13; live fetch of three boards |
 | 2 State + stage 0 | Text state, aggregators, grouping, `collect` end to end | Two-fresh-clone test covering new, changed, closed, revived, gating and the shrink breaker; replay of the old DB snapshots shows near-zero re-judges on a noisy aggregator (needs spike E5) |
 | 3 Packets + verdicts | Packet and manifest writing, `advance`, result validation, rubric templates | Scripted fake runner feeding malformed, partial, wrong-nonce and injected results; cut-off and resume |
@@ -403,11 +405,11 @@ Each phase ends in something runnable and tested.
 
 | Risk | Experiment |
 |---|---|
-| E1: Haiku triage recall with a snippet is unmeasured | Run 500 stratified jobs from the old labeled DB (read-only) through triage at 0, 600 and 1,200 chars |
+| E1: Haiku triage recall with a snippet | **Resolved**, see [spikes.md](spikes.md): 149 of 150 core-role postings kept; 1,200 characters stays the default |
 | E2: Headless named subagents: is `model: haiku` honored, do 20 run in parallel, do path-scoped write rules apply? | **Resolved**, see [spikes.md](spikes.md): yes to all three, with `Edit(...)` as the rule form |
 | E3: Pinned CLI versus `claude-code-action` on a scheduled trigger | A ten-line smoke workflow |
 | E4: Read-tool size cap for packets | **Resolved**, see [spikes.md](spikes.md): 25,000 tokens per read; the 48 KB cap holds |
-| E5: The simhash threshold comes from one snapshot pair | Replay all three old DB backups |
+| E5: The simhash threshold comes from one snapshot pair | **Resolved**, see [spikes.md](spikes.md): threshold set to 12 from 8,643 changed pairs across five snapshots |
 | E6: Aggregators may rate-limit shared runner IPs | Three runner fetches a day apart |
 | E7: Subscription usage limits during a backfill | Measure tokens per packet in Phase 6 and tune the caps |
 

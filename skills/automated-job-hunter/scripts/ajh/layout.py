@@ -17,4 +17,7 @@ class Layout:
         self.state_next = self.work / "state-next"
         self.plan = self.work / "plan.json"
         self.seal = self.work / "seal"
-        self.results = self.work / "results"
+        self.packets = self.work / "packets"
+        self.packet_index = self.packets / "index.json"
+        self.manifest = self.work / "manifest.md"  # what the judging orchestrator reads
+        self.results = self.work / "results"  # the only place a judging subagent may write

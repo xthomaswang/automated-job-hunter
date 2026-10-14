@@ -90,11 +90,60 @@ whether triage recall holds with it.
 The same fetch showed a Greenhouse posting first published in January 2025 that is still listed,
 which is why posting age never drops a live posting (see DESIGN.md, the funnel's stage 0).
 
+## E1: triage recall by snippet size
+
+**Verdict: go, with the 1,200-character snippet as the default.**
+
+500 postings labeled by the old radar (its model read full descriptions under a deliberately broad
+research policy), rebuilt from its raw snapshots with this engine's adapters so they have real line
+structure, then triaged by Haiku subagents through the headless path from E2. Criteria: the old
+policy's fifteen target phrases, six as wanted roles and nine as "also open to".
+
+| Snippet | Core-role postings kept | "Adjacent" postings kept | Off-target postings dropped | Cost for 500 |
+|---|---|---|---|---|
+| none (title only) | 148 / 150 (98.7%) | 118 / 150 (78.7%) | 174 / 200 (87.0%) | $0.030 |
+| 600 chars | 149 / 150 (99.3%) | 121 / 150 (80.7%) | 189 / 200 (94.5%) | $0.051 |
+| 1,200 chars | 149 / 150 (99.3%) | 126 / 150 (84.0%) | 189 / 200 (94.5%) | $0.066 |
+
+- No result line was invalid or missing across 40 packets, so the line format holds up.
+- The one core-role posting dropped at 1,200 characters was a paid app-testing gig.
+- The 24 "adjacent" postings dropped at 1,200 characters were 12 product-management roles, 3
+  marketing or creative roles, and 9 others (analytics, data science, partnerships, strategy,
+  operations, management). They carry the old label because the old policy was deliberately broad.
+  One of the nine, a research-advisor role, is arguably a real miss.
+- The snippet buys precision more than recall: 7.5 points more off-target postings dropped, which
+  is assessment work saved.
+- The role section was found in 391 of the 500 postings; the rest used the top of the posting.
+
+Limits: one run per size, 150 to 200 postings per class (so each percentage is good to roughly
+plus or minus 5 points), one field (UX research), and labels produced by another model. The built-in
+canary keeps measuring this on real runs.
+
+## E5: fingerprint threshold
+
+**Verdict: re-judge when the simhash distance exceeds 12.**
+
+Across five snapshots of the old database, 8,643 postings had a description that changed between
+consecutive snapshots. Each pair was classed by word overlap and measured with this engine's
+64-bit simhash.
+
+| Change | Pairs | Distance 8 or less | 12 or less | 16 or less |
+|---|---|---|---|---|
+| Cosmetic (word overlap 0.9 or more) | 8,425 | 97.6% | 99.9% | 100% |
+| In between | 145 | 17.2% | 58.6% | 86.2% |
+| Large (word overlap under 0.7) | 73 | 2.7% | 27.4% | 46.6% |
+
+- At a distance of 16 the noisiest old feed kept its verdict on 7,622 of 7,633 changed pairs, where
+  the old design discarded every one. Moving to 12 re-judges about 60 more pairs across all sources.
+- Most "large" changes at small distances were one employer adding the same 409-character block to
+  every posting. Not re-judging those is the intended behaviour, so the bottom row overstates what a
+  threshold misses.
+- 12 rather than 16 costs almost nothing (7 extra re-judgments in 8,425 cosmetic edits) and catches
+  more partial rewrites.
+
 ## Still open
 
 | Spike | Needs |
 |---|---|
-| E1: triage recall at 0 / 600 / 1,200-char snippets | Read-only access to the labeled jobs in the old `uxr-job-radar` database |
 | E3: the same CLI invocation on a scheduled GitHub Actions runner | A throwaway private repo and an Actions secret |
-| E5: simhash threshold across more snapshots | The old database backups, read-only |
 | E6: aggregator rate limits from runner IPs | The throwaway repo |

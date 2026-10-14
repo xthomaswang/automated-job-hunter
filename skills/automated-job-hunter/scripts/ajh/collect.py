@@ -16,19 +16,20 @@ from pathlib import Path
 from typing import Any
 
 from . import criteria as C
+from . import packets
 from . import sources as S
 from .http import Client, HttpError
 from .layout import Layout
 from .model import Job, digest
 from .rules import age_days, parse_date
-from .state import SOURCE_ID, Row, State, dump_json, read_json, write_text
+from .state import SOURCE_ID, Row, State, dump_json, read_json, set_tag, tag, write_text
 from .textutil import company_key, hamming, simhash64, words_key
 
 MISS_LIMIT = 2  # consecutive absences before a posting is closed
 TOMBSTONE_DAYS = 14  # how long a closed posting's verdict is kept in case it reappears
 ROLLING_TTL_DAYS = 45  # rolling feeds list only recent postings, so theirs expire by age
 SHRINK_RATIO, SHRINK_FLOOR = 0.6, 20  # a board that loses over 40% of its postings is held one tick
-NEAR = 16  # simhash bits; cosmetic edits stay under this, rewrites land well above
+NEAR = 12  # simhash bits: 99.9% of measured cosmetic edits are at or under this (docs/spikes.md, E5)
 WORKERS = 4
 JUDGED = "DKARU"
 PUBLISHED = "AU"
@@ -152,13 +153,15 @@ def reconcile(source: Mapping[str, Any], jobs: list[Job], rows: dict[str, Row], 
             row.gk, row.tfp = item.gk, item.tfp
             if was in JUDGED:  # judge it again as if new; a published record is refreshed, not dropped
                 row.status, row.dsh, row.fit, row.tg, row.ag, row.attempts = "P", "-", "-", 0, 0, 0
-                row.note = f"was:{was}" if was in PUBLISHED else "-"
+                row.note = "-"
+                if was in PUBLISHED:
+                    set_tag(row, "was", was)
                 events["changed"].append(f"{sid}:{jid}")
 
     for jid in [j for j in rows if j not in seen]:
         row = rows[jid]
         if jid in listed:  # still listed, but it no longer passes the hard constraints
-            if row.status in PUBLISHED or row.note.startswith("was:"):
+            if row.status in PUBLISHED or tag(row, "was"):
                 events["removed"].append(f"{sid}:{jid}")
             del rows[jid]
         elif row.status == "X":
@@ -175,7 +178,7 @@ def reconcile(source: Mapping[str, Any], jobs: list[Job], rows: dict[str, Row], 
 
 
 def _close(row: Row, sid: str, today: date, events: dict[str, Any]) -> None:
-    if row.status in PUBLISHED or row.note.startswith("was:"):
+    if row.status in PUBLISHED or tag(row, "was"):
         events["closed"].append(f"{sid}:{row.id}")
     _tombstone(row, today)
 
@@ -189,7 +192,7 @@ def retire(sid: str, rows: dict[str, Row], today: date) -> list[str]:
             if (today - _day(row.note.split("@")[1])).days > TOMBSTONE_DAYS:
                 del rows[jid]
             continue
-        if row.status in PUBLISHED or row.note.startswith("was:"):
+        if row.status in PUBLISHED or tag(row, "was"):
             closed.append(f"{sid}:{jid}")
         _tombstone(row, today)
     return closed
@@ -260,7 +263,7 @@ def advance_generations(state: State, hashes: Mapping[str, str]) -> dict[str, in
     return generations
 
 
-def build_queue(state: State, seen: Mapping[str, Mapping[str, Seen]], criteria: Mapping[str, Any],
+def build_queue(state: State, jobs: Mapping[str, Mapping[str, Job]], criteria: Mapping[str, Any],
                 generations: Mapping[str, int]) -> dict[str, Any]:
     """What to judge this tick, most valuable first, within the per-tick caps.
 
@@ -270,19 +273,20 @@ def build_queue(state: State, seen: Mapping[str, Mapping[str, Seen]], criteria: 
     triage, assess = [], []
     waiting = {"triage": 0, "assess": 0}
     for sid in state.source_ids():
-        items = seen.get(sid, {})
+        listed = jobs.get(sid, {})
         for jid, row in state.rows(sid).items():
             stage = ("triage" if row.status == "P" else
                      "assess" if row.status == "K" or (row.status in "ARU" and row.ag < generations["assess"])
                      else None)
             if stage is None:
                 continue
-            item = items.get(jid)
-            if item is None or (stage == "assess" and not item.job.description):
+            job = listed.get(jid)
+            if job is None or (stage == "assess" and not job.description):
                 waiting[stage] += 1
                 continue
-            posted = parse_date(item.job.posted_at)
-            rank = (not row.note.startswith("was:"), company_key(item.job.company) not in preferred,
+            posted = parse_date(job.posted_at)
+            # refresh a published posting first; spend what is left of the cap on canaries last
+            rank = (tag(row, "was") is None, tag(row, "canary") is not None, company_key(job.company) not in preferred,
                     -(posted.toordinal() if posted else 0), f"{sid}:{jid}")
             (triage if stage == "triage" else assess).append(rank)
     caps = criteria["caps"]
@@ -292,6 +296,27 @@ def build_queue(state: State, seen: Mapping[str, Mapping[str, Seen]], criteria: 
             "assess": [rank[-1] for rank in assess[:caps["max_assess"]]],
             "deferred": {"triage": max(0, len(triage) - caps["max_triage"]) + waiting["triage"],
                          "assess": max(0, len(assess) - caps["max_assess"]) + waiting["assess"]}}
+
+
+def split_key(key: str) -> tuple[str, str]:
+    sid, _, jid = key.partition(":")
+    return sid, jid
+
+
+def job_of(jobs: Mapping[str, Mapping[str, Job]], key: str) -> Job:
+    sid, jid = split_key(key)
+    return jobs[sid][jid]
+
+
+def feedback_of(state: State, keys: list[str]) -> dict[str, list[str]]:
+    """Why each posting's last answer was rejected, for the ones that have such a note."""
+    out = {}
+    for key in keys:
+        sid, jid = split_key(key)
+        codes = tag(state.rows(sid)[jid], "fb")
+        if codes:
+            out[key] = codes.split(",")
+    return out
 
 
 def seal_of(work: Path) -> str:
@@ -388,7 +413,8 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
             row = state.rows(sid)[jid]
             if row.status == "P" and state.titles.get(words_key(item.job.title)) == generations["triage"]:
                 row.status, row.tg = "D", generations["triage"]
-    plan["queue"] = build_queue(state, seen, criteria, generations)
+    jobs = {sid: {jid: item.job for jid, item in items.items()} for sid, items in seen.items()}
+    plan["queue"] = build_queue(state, jobs, criteria, generations)
 
     if layout.work.exists():
         shutil.rmtree(layout.work)
@@ -397,11 +423,14 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
                    json.dumps({jid: item.job.to_dict() for jid, item in sorted(items.items())}, ensure_ascii=False))
     state.save(layout.state_next, today.isoformat())
     write_text(layout.plan, dump_json(plan))
+    index = packets.write_packets(layout, "triage", [(key, job_of(jobs, key)) for key in plan["queue"]["triage"]],
+                                  criteria, feedback=feedback_of(state, plan["queue"]["triage"]))
     seal = seal_of(layout.work)
     write_text(layout.seal, seal + "\n")
 
     queue = plan["queue"]
     summary.update(live=sum(row.status != "X" for sid in state.source_ids() for row in state.rows(sid).values()),
                    queued={"triage": len(queue["triage"]), "assess": len(queue["assess"])},
-                   deferred=queue["deferred"], judge_needed=bool(queue["triage"] or queue["assess"]), seal=seal)
+                   deferred=queue["deferred"], judge_needed=bool(queue["triage"] or queue["assess"]),
+                   triage_packets=len(index), seal=seal)
     return summary

@@ -20,5 +20,6 @@ changing the code. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   files byte-identical.
 - This repo is public. No résumé, applicant data, credentials or private job-search notes in code,
   fixtures or docs. Fixtures are synthetic or public posting facts.
-- Dev tooling: `uv sync`, then `uv run pytest`. The runtime needs nothing installed.
+- Dev tooling: `uv sync`, then `uv run pytest`. Format and lint with `uv run ruff format .` and
+  `uv run ruff check .` before committing. The runtime needs nothing installed.
 - Spike and benchmark notes record the macOS build, Xcode version and Claude Code version.

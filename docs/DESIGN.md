@@ -66,9 +66,9 @@ engine      subagents         engine      subagents         engine    engine
 
 | Stage | Who | Sees | Decides |
 |---|---|---|---|
-| 0 | engine | every posting | Drops only on positive evidence against the user's explicit hard constraints (excluded companies, employment type, location/remote). Unknown passes. No relevance regexes. A posting's age never drops it: boards keep postings open for a year or more, so age only orders the queue (newest first) and is shown in the feed. |
+| 0 | engine | every posting | Drops only on positive evidence against the user's explicit hard constraints (excluded companies, employment type, location/remote). A title that says "Intern" counts as evidence of an internship. Unknown passes. No relevance regexes. A posting's age never drops it: boards keep postings open for a year or more, so age only orders the queue (newest first) and is shown in the feed. |
 | 1 Triage | Haiku subagent | title, company, location, department, and a ~1,200-char description snippet anchored at the role section; about 33 per packet at that snippet size (the 48 KB cap), 45 at most | `keep`, `drop`, or `drop_title` (unrelated whatever the duties). Only `drop_title` is cached, and only when every posting with that title got it. One in fifty drops, chosen by the posting's key, is sent to stage 2 as a recall canary, and the miss rate is shown in the README. |
-| 2 Assess | Sonnet subagent | full posting, up to 5 per packet | Fit 0–100, role match, seniority, required/preferred years, 1–4 matches and 0–4 gaps each with a verbatim quote, quoted notes. Tier is computed in code from thresholds. |
+| 2 Assess | Sonnet subagent | full posting, up to 5 per packet | Fit 0–100, role match, seniority, required/preferred years, 1–4 matches and 0–4 gaps each with a verbatim quote, quoted notes. Tier is computed in code: a posting whose work is a wanted role is always listed (as a stretch when the fit is low), related work is listed from `publish_min` up, and unrelated work never. |
 
 Why triage sees a snippet: measured on 500 postings labeled by the old radar (spike E1 in
 [spikes.md](spikes.md)), Haiku kept 149 of 150 core-role postings at every snippet size, and the
@@ -94,13 +94,12 @@ old source alone took 937). The engine fetches a detail only for ids not yet in 
 queued for assessment this tick, and for known ids whose listing fields changed, under a per-tick
 request budget.
 
-**Cost estimate, to be verified in E7.** At API list prices (Haiku 5.5 $0.10/$0.50 and Sonnet 5.5
-$2/$10 per million input/output tokens, price table dated 2026-10-06), a fully capped backfill tick
-is about 1,500 × 400 Haiku tokens ($0.06) plus 100 × 3,000 Sonnet input tokens ($0.60) and about
-40,000 Sonnet output tokens ($0.40): roughly $1 before overhead. Measured overhead is about 10,000
-mostly-cached input tokens per subagent and a few cents per orchestrator invocation on Haiku (see
-[spikes.md](spikes.md)). A steady-state tick with tens of new postings is a few cents, and most
-ticks are fetch-only. On a subscription token the same work draws on plan usage instead.
+**Measured cost.** At API list prices (Haiku 5.5 $0.10/$0.50 and Sonnet 5.5 $2/$10 per million
+input/output tokens, price table dated 2026-10-06), triage costs about $0.14 per 1,000 postings and
+assessment about $0.017 per posting, orchestrator included (see [spikes.md](spikes.md)). A fully
+capped tick of 1,500 triaged and 100 assessed is therefore about $2; a steady-state tick with a few
+dozen new postings is a few cents, and most ticks are fetch-only and cost nothing. On a
+subscription token the same work draws on plan usage instead.
 
 ### Packet protocol (generalizes `uxr_radar/batch.py`)
 
@@ -120,8 +119,8 @@ ticks are fetch-only. On a subscription token the same work draws on plan usage 
   ids are re-issued at no charge; invalid ones are re-queued with feedback from a fixed vocabulary;
   after 3 attempts the job is published as an unscored, source-only record. Re-issues happen on the
   next tick, or in the same session when a person runs the skill interactively.
-- Published quotes are the source's own span, not the model's rendering. URLs never pass through the
-  model. Sponsorship and citizenship flags come from fixed rules over the posting text.
+- Published quotes are the source's own span, not the model's rendering, completed to the end of
+  the sentence when the model stopped at a line wrap. URLs never pass through the model. Sponsorship and citizenship flags come from fixed rules over the posting text.
 
 ### Trust boundary for the model stage
 

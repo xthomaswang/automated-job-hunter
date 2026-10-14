@@ -11,6 +11,7 @@ Row status:
   S  parked: older than the backfill window when its source was first read
   X  tombstone: gone from its source (`note` holds "<previous status>@<day closed>")
 """
+
 from __future__ import annotations
 
 import json
@@ -173,5 +174,7 @@ class State:
         write_text(root / "titles.tsv", "".join(f"{key}\t{gen}\n" for key, gen in sorted(self.titles.items())))
         write_text(root / "sources.json", dump_json(self.sources))
         write_text(root / "profile.json", dump_json(self.profile))
-        write_text(root / "meta.json", dump_json(
-            {"schema_version": SCHEMA_VERSION, "engine_version": __version__, "as_of": as_of}))
+        write_text(
+            root / "meta.json",
+            dump_json({"schema_version": SCHEMA_VERSION, "engine_version": __version__, "as_of": as_of}),
+        )

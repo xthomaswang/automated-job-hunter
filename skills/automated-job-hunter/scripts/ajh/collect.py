@@ -3,6 +3,7 @@
 `run` writes only under `.hunter/work/`. The proposed state goes to `work/state-next/`; `apply` is
 the one step that moves it into the tracked tree. So a tick that dies part-way changes nothing.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,6 +43,7 @@ class ConfigError(ValueError):
 @dataclass
 class Seen:
     """A posting from this tick's snapshot that passed stage 0."""
+
     job: Job
     gk: str
     tfp: str
@@ -94,14 +96,29 @@ def _near(a: int | None, b: int | None) -> bool:
     return a is not None and b is not None and hamming(a, b) <= NEAR
 
 
-def reconcile(source: Mapping[str, Any], jobs: list[Job], rows: dict[str, Row], info: dict[str, Any],
-              stage0: C.Stage0, today: date, backfill_days: int | None) -> tuple[dict[str, Seen], dict[str, Any]]:
+def reconcile(
+    source: Mapping[str, Any],
+    jobs: list[Job],
+    rows: dict[str, Row],
+    info: dict[str, Any],
+    stage0: C.Stage0,
+    today: date,
+    backfill_days: int | None,
+) -> tuple[dict[str, Seen], dict[str, Any]]:
     """Fold one source's successful snapshot into its rows. Returns what was seen and what changed."""
     sid = source["id"]
     first_snapshot = not info.get("ok_day")
     rolling = source.get("membership_mode", "snapshot") == "rolling"
-    events: dict[str, Any] = {"new": 0, "parked": 0, "changed": [], "revived": [], "closed": [], "removed": [],
-                              "dropped": {}, "held": False}
+    events: dict[str, Any] = {
+        "new": 0,
+        "parked": 0,
+        "changed": [],
+        "revived": [],
+        "closed": [],
+        "removed": [],
+        "dropped": {},
+        "held": False,
+    }
 
     seen: dict[str, Seen] = {}
     listed = set()
@@ -123,8 +140,9 @@ def reconcile(source: Mapping[str, Any], jobs: list[Job], rows: dict[str, Row], 
     else:
         info.pop("scope", None)
     previous = info.get("count")
-    shrank = (not rolling and isinstance(previous, int) and previous > SHRINK_FLOOR
-              and len(jobs) < previous * SHRINK_RATIO)
+    shrank = (
+        not rolling and isinstance(previous, int) and previous > SHRINK_FLOOR and len(jobs) < previous * SHRINK_RATIO
+    )
     if shrank and not info.get("shrink_seen"):
         info["shrink_seen"] = True
         events["held"] = True
@@ -136,8 +154,11 @@ def reconcile(source: Mapping[str, Any], jobs: list[Job], rows: dict[str, Row], 
     for jid, item in seen.items():
         row = rows.get(jid)
         if row is None:
-            parked = (first_snapshot and backfill_days is not None
-                      and (age_days(item.job.posted_at, today) or 0) > backfill_days)
+            parked = (
+                first_snapshot
+                and backfill_days is not None
+                and (age_days(item.job.posted_at, today) or 0) > backfill_days
+            )
             rows[jid] = Row(jid, "S" if parked else "P", today.isoformat(), item.gk, item.tfp)
             events["parked" if parked else "new"] += 1
             continue
@@ -263,8 +284,9 @@ def advance_generations(state: State, hashes: Mapping[str, str]) -> dict[str, in
     return generations
 
 
-def build_queue(state: State, jobs: Mapping[str, Mapping[str, Job]], criteria: Mapping[str, Any],
-                generations: Mapping[str, int]) -> dict[str, Any]:
+def build_queue(
+    state: State, jobs: Mapping[str, Mapping[str, Job]], criteria: Mapping[str, Any], generations: Mapping[str, int]
+) -> dict[str, Any]:
     """What to judge this tick, most valuable first, within the per-tick caps.
 
     Only postings read this tick can be queued, because their text is not stored anywhere else.
@@ -275,9 +297,13 @@ def build_queue(state: State, jobs: Mapping[str, Mapping[str, Job]], criteria: M
     for sid in state.source_ids():
         listed = jobs.get(sid, {})
         for jid, row in state.rows(sid).items():
-            stage = ("triage" if row.status == "P" else
-                     "assess" if row.status == "K" or (row.status in "ARU" and row.ag < generations["assess"])
-                     else None)
+            stage = (
+                "triage"
+                if row.status == "P"
+                else "assess"
+                if row.status == "K" or (row.status in "ARU" and row.ag < generations["assess"])
+                else None
+            )
             if stage is None:
                 continue
             job = listed.get(jid)
@@ -286,16 +312,25 @@ def build_queue(state: State, jobs: Mapping[str, Mapping[str, Job]], criteria: M
                 continue
             posted = parse_date(job.posted_at)
             # refresh a published posting first; spend what is left of the cap on canaries last
-            rank = (tag(row, "was") is None, tag(row, "canary") is not None, company_key(job.company) not in preferred,
-                    -(posted.toordinal() if posted else 0), f"{sid}:{jid}")
+            rank = (
+                tag(row, "was") is None,
+                tag(row, "canary") is not None,
+                company_key(job.company) not in preferred,
+                -(posted.toordinal() if posted else 0),
+                f"{sid}:{jid}",
+            )
             (triage if stage == "triage" else assess).append(rank)
     caps = criteria["caps"]
     triage.sort()
     assess.sort()
-    return {"triage": [rank[-1] for rank in triage[:caps["max_triage"]]],
-            "assess": [rank[-1] for rank in assess[:caps["max_assess"]]],
-            "deferred": {"triage": max(0, len(triage) - caps["max_triage"]) + waiting["triage"],
-                         "assess": max(0, len(assess) - caps["max_assess"]) + waiting["assess"]}}
+    return {
+        "triage": [rank[-1] for rank in triage[: caps["max_triage"]]],
+        "assess": [rank[-1] for rank in assess[: caps["max_assess"]]],
+        "deferred": {
+            "triage": max(0, len(triage) - caps["max_triage"]) + waiting["triage"],
+            "assess": max(0, len(assess) - caps["max_assess"]) + waiting["assess"],
+        },
+    }
 
 
 def split_key(key: str) -> tuple[str, str]:
@@ -367,10 +402,23 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
 
     summary: dict[str, Any] = {
         "sources": {"fetched": 0, "gated": len(sources) - len(to_fetch), "failed": 0, "failures": {}},
-        "new": 0, "parked": 0, "changed": 0, "closed": 0, "revived": 0, "held": [], "dropped": {}}
+        "new": 0,
+        "parked": 0,
+        "changed": 0,
+        "closed": 0,
+        "revived": 0,
+        "held": [],
+        "dropped": {},
+    }
     seen: dict[str, dict[str, Seen]] = {}
-    plan: dict[str, Any] = {"as_of": today.isoformat(), "generations": generations,
-                            "changed": [], "revived": [], "closed": [], "removed": []}
+    plan: dict[str, Any] = {
+        "as_of": today.isoformat(),
+        "generations": generations,
+        "changed": [],
+        "revived": [],
+        "closed": [],
+        "removed": [],
+    }
     for source in to_fetch:
         sid = source["id"]
         info = state.sources.setdefault(sid, {})
@@ -384,8 +432,9 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
             summary["sources"]["failed"] += 1
             summary["sources"]["failures"][sid] = f"{type(result).__name__}: {str(result)[:200]}"
             continue
-        seen[sid], events = reconcile(source, result, state.rows(sid), info, stage0, today,
-                                      criteria["backfill"]["days"])
+        seen[sid], events = reconcile(
+            source, result, state.rows(sid), info, stage0, today, criteria["backfill"]["days"]
+        )
         info["ok_day"] = today.isoformat()
         info.pop("error", None)
         info.pop("fail_since", None)
@@ -419,18 +468,29 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     if layout.work.exists():
         shutil.rmtree(layout.work)
     for sid, items in seen.items():
-        write_text(layout.snapshot / f"{sid}.json",
-                   json.dumps({jid: item.job.to_dict() for jid, item in sorted(items.items())}, ensure_ascii=False))
+        write_text(
+            layout.snapshot / f"{sid}.json",
+            json.dumps({jid: item.job.to_dict() for jid, item in sorted(items.items())}, ensure_ascii=False),
+        )
     state.save(layout.state_next, today.isoformat())
     write_text(layout.plan, dump_json(plan))
-    index = packets.write_packets(layout, "triage", [(key, job_of(jobs, key)) for key in plan["queue"]["triage"]],
-                                  criteria, feedback=feedback_of(state, plan["queue"]["triage"]))
+    index = packets.write_packets(
+        layout,
+        "triage",
+        [(key, job_of(jobs, key)) for key in plan["queue"]["triage"]],
+        criteria,
+        feedback=feedback_of(state, plan["queue"]["triage"]),
+    )
     seal = seal_of(layout.work)
     write_text(layout.seal, seal + "\n")
 
     queue = plan["queue"]
-    summary.update(live=sum(row.status != "X" for sid in state.source_ids() for row in state.rows(sid).values()),
-                   queued={"triage": len(queue["triage"]), "assess": len(queue["assess"])},
-                   deferred=queue["deferred"], judge_needed=bool(queue["triage"] or queue["assess"]),
-                   triage_packets=len(index), seal=seal)
+    summary.update(
+        live=sum(row.status != "X" for sid in state.source_ids() for row in state.rows(sid).values()),
+        queued={"triage": len(queue["triage"]), "assess": len(queue["assess"])},
+        deferred=queue["deferred"],
+        judge_needed=bool(queue["triage"] or queue["assess"]),
+        triage_packets=len(index),
+        seal=seal,
+    )
     return summary

@@ -1,4 +1,5 @@
 """Text handling: HTML to plain text, comparison keys, quote location, simhash, snippets, wrapping."""
+
 from __future__ import annotations
 
 import hashlib
@@ -70,10 +71,27 @@ def company_key(name: str) -> str:
 
 # Typographic variants a model commonly swaps when copying a quote.
 _FOLD = {
-    "‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'",
-    "“": '"', "”": '"', "„": '"', "″": '"',
-    "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "―": "-", "−": "-",
-    "\u200b": "", "‌": "", "‍": "", "﻿": "", "­": "",
+    "‘": "'",
+    "’": "'",
+    "‚": "'",
+    "‛": "'",
+    "′": "'",
+    "“": '"',
+    "”": '"',
+    "„": '"',
+    "″": '"',
+    "‐": "-",
+    "‑": "-",
+    "‒": "-",
+    "–": "-",
+    "—": "-",
+    "―": "-",
+    "−": "-",
+    "\u200b": "",
+    "‌": "",
+    "‍": "",
+    "﻿": "",
+    "­": "",
 }
 
 
@@ -107,11 +125,16 @@ def fold(text: str) -> str:
     return fold_map(text)[0]
 
 
-def find_span(source: str, quote: str) -> str | None:
+_PHRASE_END = re.compile(r"[.!?;](?=\s|$)|\n")
+
+
+def find_span(source: str, quote: str, *, complete: bool = False, reach: int = 160) -> str | None:
     """The source's own substring matching `quote`, or None.
 
     Matching ignores line wrapping, case and typographic variants, but the returned text is copied
     from `source`, so a published quote is always the posting's wording and never the model's.
+    With `complete`, a quote that stops mid-sentence is extended to the end of that sentence or
+    line when it is within `reach` characters: models tend to stop where a packet line wraps.
     """
     if not unicodedata.is_normalized("NFC", source):
         source = unicodedata.normalize("NFC", source)
@@ -122,7 +145,14 @@ def find_span(source: str, quote: str) -> str | None:
     at = folded.find(needle)
     if at < 0:
         return None
-    return source[index[at]: index[at + len(needle) - 1] + 1]
+    start, end = index[at], index[at + len(needle) - 1] + 1
+    if complete and end < len(source) and source[end - 1] not in ".!?;":
+        stop = _PHRASE_END.search(source, end, min(len(source), end + reach))
+        if stop:
+            end = stop.end() if stop.group() in ".!?" else stop.start()  # keep a full stop, not a semicolon
+        elif len(source) - end <= reach:
+            end = len(source)  # the text simply ends here
+    return source[start:end]
 
 
 _WORD = re.compile(r"[^\W_]+")
@@ -145,14 +175,22 @@ def simhash64(text: str, shingle: int = 5) -> int:
     if not words:
         return 0
     count = len(words) - shingle + 1
-    grams = {" ".join(words[i:i + shingle]) for i in range(count)} if count > 0 else {" ".join(words)}
+    grams = {" ".join(words[i : i + shingle]) for i in range(count)} if count > 0 else {" ".join(words)}
     if len(grams) > _MAX_SHINGLES:
         grams = set(sorted(grams)[:_MAX_SHINGLES])
     acc = 0
     for gram in grams:
         d = hashlib.blake2b(gram.encode("utf-8"), digest_size=8).digest()
-        acc += (_BIT_TABLE[0][d[0]] + _BIT_TABLE[1][d[1]] + _BIT_TABLE[2][d[2]] + _BIT_TABLE[3][d[3]]
-                + _BIT_TABLE[4][d[4]] + _BIT_TABLE[5][d[5]] + _BIT_TABLE[6][d[6]] + _BIT_TABLE[7][d[7]])
+        acc += (
+            _BIT_TABLE[0][d[0]]
+            + _BIT_TABLE[1][d[1]]
+            + _BIT_TABLE[2][d[2]]
+            + _BIT_TABLE[3][d[3]]
+            + _BIT_TABLE[4][d[4]]
+            + _BIT_TABLE[5][d[5]]
+            + _BIT_TABLE[6][d[6]]
+            + _BIT_TABLE[7][d[7]]
+        )
     half = len(grams) / 2.0
     mask = (1 << _FIELD_BITS) - 1
     return sum(1 << bit for bit in range(64) if ((acc >> (bit * _FIELD_BITS)) & mask) > half)

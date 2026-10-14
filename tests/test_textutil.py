@@ -5,8 +5,10 @@ from ajh import textutil as T
 
 
 def test_html_to_text_unescapes_escaped_html_and_puts_each_block_on_its_own_line():
-    escaped = ("&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Run &amp;amp; analyze   studies.&lt;/p&gt;"
-               "&lt;ul&gt;&lt;li&gt;Interviews&lt;/li&gt;&lt;li&gt;&lt;/li&gt;&lt;li&gt;Surveys&lt;/li&gt;&lt;/ul&gt;")
+    escaped = (
+        "&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Run &amp;amp; analyze   studies.&lt;/p&gt;"
+        "&lt;ul&gt;&lt;li&gt;Interviews&lt;/li&gt;&lt;li&gt;&lt;/li&gt;&lt;li&gt;Surveys&lt;/li&gt;&lt;/ul&gt;"
+    )
     assert T.html_to_text(escaped) == "About the role\nRun & analyze studies.\n- Interviews\n- Surveys"
 
 
@@ -28,7 +30,7 @@ SOURCE = "We’re looking for 5+ years of “mixed-methods” research\nexperien
 
 
 def test_find_span_returns_the_sources_own_wording_not_the_models():
-    quote = "we're looking for 5+ years of \"mixed-methods\" research experience - ideally"
+    quote = 'we\'re looking for 5+ years of "mixed-methods" research experience - ideally'
     assert T.find_span(SOURCE, quote) == "We’re looking for 5+ years of “mixed-methods” research\nexperience — ideally"
     assert T.find_span(SOURCE, "Remote OK.") == "Remote OK."
     assert T.find_span(SOURCE, "  ideally\n in   B2B ") == "ideally in B2B"
@@ -40,9 +42,11 @@ def test_find_span_rejects_empty_and_altered_quotes(quote):
 
 
 def prose(rng, words):
-    vocab = ("research design product team experience users data analysis collaborate lead build insights "
-             "strategy qualitative quantitative methods stakeholders roadmap interviews surveys experiments "
-             "metrics impact synthesis deliver partner mentor scope ambiguous problems customers").split()
+    vocab = (
+        "research design product team experience users data analysis collaborate lead build insights "
+        "strategy qualitative quantitative methods stakeholders roadmap interviews surveys experiments "
+        "metrics impact synthesis deliver partner mentor scope ambiguous problems customers"
+    ).split()
     return " ".join(rng.choice(vocab) for _ in range(words))
 
 
@@ -62,7 +66,10 @@ def test_simhash_separates_cosmetic_edits_from_rewrites():
 
 def test_snippet_starts_at_the_role_section_when_there_is_one():
     boilerplate = "\n".join("Acme is a mission-driven company that values people." for _ in range(30))
-    posting = boilerplate + "\nWhat you'll do\n- Plan and run usability studies\n- Synthesize findings\nRequirements\n- 3 years"
+    posting = (
+        boilerplate
+        + "\nWhat you'll do\n- Plan and run usability studies\n- Synthesize findings\nRequirements\n- 3 years"
+    )
     out = T.snippet(posting, 60)
     assert out == "What you'll do\n- Plan and run usability studies\n- Synthesize"
     assert T.snippet(posting, 57) == "What you'll do\n- Plan and run usability studies\n-"  # never ends inside a word
@@ -83,3 +90,16 @@ def test_wrap_changes_layout_only():
     assert T.norm_ws(wrapped) == T.norm_ws(text)
     assert max(len(line) for line in wrapped.split("\n")) <= 72
     assert T.find_span(wrapped, text.split("\n")[1]) is not None  # a quote still matches across wrapped lines
+
+
+def test_find_span_can_complete_a_quote_that_stops_mid_sentence():
+    source = "Requirements\n- 7+ years of experience in research at high-growth product organizations, agencies or labs.\n- SQL; R is a plus"
+    cut = "7+ years of experience in research at high-growth product"
+    assert T.find_span(source, cut) == cut
+    assert T.find_span(source, cut, complete=True) == (
+        "7+ years of experience in research at high-growth product organizations, agencies or labs."
+    )
+    assert T.find_span(source, "- SQL", complete=True) == "- SQL"  # stops before a semicolon
+    assert T.find_span(source, "R is a", complete=True) == "R is a plus"  # the end of the text is a boundary too
+    assert T.find_span(source, "Requirements", complete=True) == "Requirements"  # never runs into the next line
+    assert T.find_span("word " * 80, "word word", complete=True) == "word word"  # no boundary in reach: unchanged

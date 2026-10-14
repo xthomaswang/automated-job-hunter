@@ -2,6 +2,7 @@
 
 Greenhouse, Ashby, Lever and Recruitee need no authentication for these endpoints.
 """
+
 from __future__ import annotations
 
 import re
@@ -41,11 +42,14 @@ def _names(items: Any) -> str:
 
 def _greenhouse(row: Mapping[str, Any]) -> dict:
     return dict(
-        source_id=str(row["id"]), title=row["title"], url=row["absolute_url"],
+        source_id=str(row["id"]),
+        title=row["title"],
+        url=row["absolute_url"],
         description=html_to_text(row.get("content")),
         location=(row.get("location") or {}).get("name") or "unknown",
         posted_at=row.get("first_published") or row.get("updated_at"),
-        department=_names(row.get("departments")))
+        department=_names(row.get("departments")),
+    )
 
 
 def _ashby(row: Mapping[str, Any]) -> dict:
@@ -53,27 +57,38 @@ def _ashby(row: Mapping[str, Any]) -> dict:
     secondary = [x.get("location") for x in row.get("secondaryLocations") or [] if isinstance(x, dict)]
     places = [row.get("location"), *secondary]
     return dict(
-        source_id=url.rstrip("/").split("/")[-1], title=row["title"], url=url,
+        source_id=url.rstrip("/").split("/")[-1],
+        title=row["title"],
+        url=url,
         description=html_to_text(row.get("descriptionHtml")) or (row.get("descriptionPlain") or "").strip(),
         location=" / ".join(dict.fromkeys(p for p in places if isinstance(p, str) and p)) or "unknown",
-        posted_at=row.get("publishedAt"), employment_type=row.get("employmentType") or "unknown",
+        posted_at=row.get("publishedAt"),
+        employment_type=row.get("employmentType") or "unknown",
         department=" / ".join(dict.fromkeys(x for x in (row.get("department"), row.get("team")) if x)),
-        apply_url=row.get("applyUrl"))
+        apply_url=row.get("applyUrl"),
+    )
 
 
 def _lever(row: Mapping[str, Any]) -> dict:
     categories = row.get("categories") or {}
     sections = "".join(f"<h3>{x.get('text', '')}</h3>{x.get('content', '')}" for x in row.get("lists") or [])
     created = row.get("createdAt")
-    posted = (datetime.fromtimestamp(created / 1000.0, tz=timezone.utc).date().isoformat()
-              if isinstance(created, (int, float)) and not isinstance(created, bool) else None)
+    posted = (
+        datetime.fromtimestamp(created / 1000.0, tz=timezone.utc).date().isoformat()
+        if isinstance(created, (int, float)) and not isinstance(created, bool)
+        else None
+    )
     return dict(
-        source_id=str(row["id"]), title=row["text"], url=row["hostedUrl"],
+        source_id=str(row["id"]),
+        title=row["text"],
+        url=row["hostedUrl"],
         description=html_to_text(f"{row.get('description', '')}{sections}<div>{row.get('additional', '')}</div>"),
-        location=categories.get("location") or "unknown", posted_at=posted,
+        location=categories.get("location") or "unknown",
+        posted_at=posted,
         employment_type=categories.get("commitment") or "unknown",
         department=" / ".join(dict.fromkeys(x for x in (categories.get("department"), categories.get("team")) if x)),
-        apply_url=row.get("applyUrl"))
+        apply_url=row.get("applyUrl"),
+    )
 
 
 def _recruitee(row: Mapping[str, Any]) -> dict:
@@ -82,10 +97,15 @@ def _recruitee(row: Mapping[str, Any]) -> dict:
     # never as an empty board.
     place = row.get("location") or ", ".join(x for x in (row.get("city"), row.get("country")) if x)
     return dict(
-        source_id=str(row["id"]), title=row["title"], url=row["careers_url"],
+        source_id=str(row["id"]),
+        title=row["title"],
+        url=row["careers_url"],
         description=html_to_text(f"{row.get('description') or ''}<div>{row.get('requirements') or ''}</div>"),
-        location=place or "unknown", posted_at=row.get("published_at"),
-        employment_type=row.get("employment_type_code") or "unknown", department=row.get("department") or "")
+        location=place or "unknown",
+        posted_at=row.get("published_at"),
+        employment_type=row.get("employment_type_code") or "unknown",
+        department=row.get("department") or "",
+    )
 
 
 _PARSERS = {"greenhouse": _greenhouse, "ashby": _ashby, "lever": _lever, "recruitee": _recruitee}
@@ -114,8 +134,9 @@ def parse_feed(source: Mapping[str, Any], payload: Any) -> list[Job]:
             raise SourceError(f"Posting {facts['source_id']} has no description: abort instead of closing absent jobs")
         if facts.get("apply_url") is not None and not isinstance(facts["apply_url"], str):
             facts["apply_url"] = None
-        jobs.append(Job(key=f"{source['id']}:{facts['source_id']}", source=source["id"],
-                        company=source["company"], **facts))
+        jobs.append(
+            Job(key=f"{source['id']}:{facts['source_id']}", source=source["id"], company=source["company"], **facts)
+        )
     if len({job.key for job in jobs}) != len(jobs):
         raise SourceError("Duplicate posting ids in feed")
     return jobs

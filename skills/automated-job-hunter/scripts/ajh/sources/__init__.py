@@ -1,4 +1,5 @@
 """Source adapters. Each returns a complete snapshot of a board or raises SourceError."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

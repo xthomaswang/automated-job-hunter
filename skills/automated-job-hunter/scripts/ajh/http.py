@@ -1,4 +1,5 @@
 """A small HTTPS client over urllib: bounded retries, per-host spacing, injectable transport."""
+
 from __future__ import annotations
 
 import gzip
@@ -57,8 +58,9 @@ class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_HttpsOnlyRedirects)
 
 
-def urllib_transport(method: str, url: str, headers: dict[str, str], body: bytes | None,
-                     timeout: float) -> tuple[int, dict[str, str], bytes]:
+def urllib_transport(
+    method: str, url: str, headers: dict[str, str], body: bytes | None, timeout: float
+) -> tuple[int, dict[str, str], bytes]:
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with _OPENER.open(request, timeout=timeout) as reply:
@@ -76,11 +78,18 @@ def urllib_transport(method: str, url: str, headers: dict[str, str], body: bytes
 class Client:
     """Fetches https URLs only. Thread-safe; one instance can serve a thread pool."""
 
-    def __init__(self, transport: Transport | None = None, *, user_agent: str = USER_AGENT,
-                 timeout: float = 45.0, retries: int = 2, backoff: float = 1.0,
-                 host_delay: Mapping[str, float] | None = None,
-                 sleep: Callable[[float], None] = time.sleep,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        transport: Transport | None = None,
+        *,
+        user_agent: str = USER_AGENT,
+        timeout: float = 45.0,
+        retries: int = 2,
+        backoff: float = 1.0,
+        host_delay: Mapping[str, float] | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.transport = transport or urllib_transport
         self.user_agent, self.timeout, self.retries, self.backoff = user_agent, timeout, retries, backoff
         self.host_delay = dict(host_delay or {})
@@ -104,17 +113,23 @@ class Client:
         try:
             return min(MAX_WAIT, max(0.0, float(retry_after)))  # type: ignore[arg-type]
         except (TypeError, ValueError):
-            return min(MAX_WAIT, self.backoff * (2 ** attempt))
+            return min(MAX_WAIT, self.backoff * (2**attempt))
 
-    def request(self, method: str, url: str, *, params: Mapping[str, Any] | None = None,
-                json_body: Any = None, headers: Mapping[str, str] | None = None) -> Response:
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        json_body: Any = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> Response:
         if params:
             url += ("&" if "?" in url else "?") + urllib.parse.urlencode(params)
         parts = urllib.parse.urlsplit(url)
         if parts.scheme != "https" or not parts.hostname:
             raise ValueError(f"Only https URLs are fetched, not {url!r}")
-        send = {"User-Agent": self.user_agent, "Accept": "application/json,text/html;q=0.9",
-                "Accept-Encoding": "gzip"}
+        send = {"User-Agent": self.user_agent, "Accept": "application/json,text/html;q=0.9", "Accept-Encoding": "gzip"}
         body = None
         if json_body is not None:
             body = json.dumps(json_body).encode("utf-8")

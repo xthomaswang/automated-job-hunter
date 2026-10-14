@@ -1,4 +1,5 @@
 """Shared test scaffolding: fake job boards and a throwaway feed repo."""
+
 import json
 import random
 import shutil
@@ -19,14 +20,22 @@ CRITERIA = {"schema_version": 1, "targets": {"roles": ["UX Researcher"]}}
 
 def prose(seed, words=90):
     rng = random.Random(seed)
-    vocab = ("research design product team users data analysis collaborate lead build insights strategy qualitative "
-             "quantitative methods stakeholders roadmap interviews surveys experiments metrics impact synthesis").split()
+    vocab = (
+        "research design product team users data analysis collaborate lead build insights strategy qualitative "
+        "quantitative methods stakeholders roadmap interviews surveys experiments metrics impact synthesis"
+    ).split()
     return " ".join(rng.choice(vocab) for _ in range(words))
 
 
 def posting(jid, title="UX Researcher", location="Remote, US", text=None, published="2026-10-10T00:00:00Z"):
-    return {"id": jid, "title": title, "absolute_url": f"https://job-boards.greenhouse.io/x/jobs/{jid}",
-            "content": f"<p>{text or prose(jid)}</p>", "location": {"name": location}, "first_published": published}
+    return {
+        "id": jid,
+        "title": title,
+        "absolute_url": f"https://job-boards.greenhouse.io/x/jobs/{jid}",
+        "content": f"<p>{text or prose(jid)}</p>",
+        "location": {"name": location},
+        "first_published": published,
+    }
 
 
 class Boards:
@@ -87,5 +96,61 @@ def plan(root):
 
 
 def tracked(root):
-    return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*")
-            if p.is_file() and ".hunter" not in p.relative_to(root).parts}
+    return {
+        p.relative_to(root).as_posix(): p.read_bytes()
+        for p in root.rglob("*")
+        if p.is_file() and ".hunter" not in p.relative_to(root).parts
+    }
+
+
+def answer_triage(root, verdict_for=lambda job: "keep"):
+    """Write triage result files the way a subagent would. `verdict_for` gets the posting's facts."""
+    layout = Layout(root)
+    for packet, entry in json.loads(layout.packet_index.read_text()).items():
+        if entry["stage"] != "triage":
+            continue
+        lines = [f"packet {packet} nonce {entry['nonce']}"]
+        for local, key in entry["items"].items():
+            source, jid = key.split(":")
+            lines.append(f"{local} {verdict_for(json.loads((layout.snapshot / f'{source}.json').read_text())[jid])}")
+        layout.results.mkdir(parents=True, exist_ok=True)
+        (layout.results / f"{packet}.txt").write_text("\n".join([*lines, f"end {len(lines) - 1}"]) + "\n")
+
+
+def good_assessment(job, fit=82, role_match="direct"):
+    """A valid assessment whose quote is the first eight words of the posting."""
+    quote = " ".join(job["description"].split()[:8])
+    return {
+        "fit": fit,
+        "role_match": role_match,
+        "seniority": "mid",
+        "why": "Matches your research work.",
+        "match": f"Core duties || {quote}",
+    }
+
+
+def answer_assess(root, assess_for=good_assessment):
+    """Write assessment result files. `assess_for` returns the fields for a posting, or None to skip it."""
+    layout = Layout(root)
+    for packet, entry in json.loads(layout.packet_index.read_text()).items():
+        if entry["stage"] != "assess":
+            continue
+        lines = [f"packet {packet} nonce {entry['nonce']}"]
+        for local, key in entry["items"].items():
+            source, jid = key.split(":")
+            fields = assess_for(json.loads((layout.snapshot / f"{source}.json").read_text())[jid])
+            if fields is not None:
+                lines += [f"## {local}", *(f"{name}: {value}" for name, value in fields.items())]
+        layout.results.mkdir(parents=True, exist_ok=True)
+        (layout.results / f"{packet}.txt").write_text("\n".join([*lines, f"end {len(entry['items'])}"]) + "\n")
+
+
+def full_tick(root, boards, now=NOW, triage=lambda job: "keep", assess=good_assessment):
+    """collect, judge, advance, judge, apply: one whole tick with scripted judges."""
+    from ajh import advance, apply
+
+    summary = collect.run(root, Client(boards.transport, sleep=lambda seconds: None, retries=0), now)
+    answer_triage(root, triage)
+    moved = advance.run(root, summary["seal"])
+    answer_assess(root, assess)
+    return apply.run(root, moved["seal"])

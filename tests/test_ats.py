@@ -12,35 +12,87 @@ ASHBY = {"id": "globex", "company": "Globex", "ats": "ashby", "slug": "globex"}
 LEVER = {"id": "initech", "company": "Initech", "ats": "lever", "slug": "initech"}
 RECRUITEE = {"id": "hooli", "company": "Hooli", "ats": "recruitee", "slug": "hooli"}
 
-GREENHOUSE_FEED = {"jobs": [{
-    "id": 4001, "title": "UX Researcher", "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4001",
-    "content": "&lt;p&gt;Run usability studies.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;3+ years required&lt;/li&gt;&lt;/ul&gt;",
-    "location": {"name": "Remote, US"}, "first_published": "2026-10-01T09:00:00-04:00", "updated_at": "2026-10-05T09:00:00-04:00",
-    "departments": [{"id": 1, "name": "Design"}, {"id": 2, "name": "Research"}]}]}
+GREENHOUSE_FEED = {
+    "jobs": [
+        {
+            "id": 4001,
+            "title": "UX Researcher",
+            "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4001",
+            "content": "&lt;p&gt;Run usability studies.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;3+ years required&lt;/li&gt;&lt;/ul&gt;",
+            "location": {"name": "Remote, US"},
+            "first_published": "2026-10-01T09:00:00-04:00",
+            "updated_at": "2026-10-05T09:00:00-04:00",
+            "departments": [{"id": 1, "name": "Design"}, {"id": 2, "name": "Research"}],
+        }
+    ]
+}
 
-ASHBY_FEED = {"apiVersion": "1", "jobs": [
-    {"title": "Product Analyst", "jobUrl": "https://jobs.ashbyhq.com/globex/1b2c3d4e-0000-4000-8000-000000000001",
-     "applyUrl": "https://jobs.ashbyhq.com/globex/1b2c3d4e-0000-4000-8000-000000000001/application",
-     "descriptionHtml": "<h2>The role</h2><p>Design experiments.</p>", "descriptionPlain": "ignored when HTML is present",
-     "location": "New York", "secondaryLocations": [{"location": "Boston"}, {"location": "New York"}],
-     "publishedAt": "2026-10-02T12:00:00.000+00:00", "employmentType": "FullTime",
-     "department": "Data", "team": "Insights", "isListed": True},
-    {"title": "Hidden role", "jobUrl": "https://jobs.ashbyhq.com/globex/hidden", "descriptionPlain": "x", "isListed": False},
-    {"title": "Plain only", "jobUrl": "https://jobs.ashbyhq.com/globex/plain-1/", "descriptionPlain": " Plain text posting. "}]}
+ASHBY_FEED = {
+    "apiVersion": "1",
+    "jobs": [
+        {
+            "title": "Product Analyst",
+            "jobUrl": "https://jobs.ashbyhq.com/globex/1b2c3d4e-0000-4000-8000-000000000001",
+            "applyUrl": "https://jobs.ashbyhq.com/globex/1b2c3d4e-0000-4000-8000-000000000001/application",
+            "descriptionHtml": "<h2>The role</h2><p>Design experiments.</p>",
+            "descriptionPlain": "ignored when HTML is present",
+            "location": "New York",
+            "secondaryLocations": [{"location": "Boston"}, {"location": "New York"}],
+            "publishedAt": "2026-10-02T12:00:00.000+00:00",
+            "employmentType": "FullTime",
+            "department": "Data",
+            "team": "Insights",
+            "isListed": True,
+        },
+        {
+            "title": "Hidden role",
+            "jobUrl": "https://jobs.ashbyhq.com/globex/hidden",
+            "descriptionPlain": "x",
+            "isListed": False,
+        },
+        {
+            "title": "Plain only",
+            "jobUrl": "https://jobs.ashbyhq.com/globex/plain-1/",
+            "descriptionPlain": " Plain text posting. ",
+        },
+    ],
+}
 
-LEVER_FEED = [{
-    "id": "a1b2", "text": "Design Researcher", "hostedUrl": "https://jobs.lever.co/initech/a1b2",
-    "applyUrl": "https://jobs.lever.co/initech/a1b2/apply", "createdAt": 1790000000000,
-    "description": "<div>Mixed-methods research.</div>",
-    "lists": [{"text": "Requirements", "content": "<li>Interview skills</li><li>SQL</li>"}],
-    "additional": "<p>We are an equal opportunity employer.</p>",
-    "categories": {"location": "Seattle, WA", "commitment": "Full-time", "team": "Research", "department": "Product"}}]
+LEVER_FEED = [
+    {
+        "id": "a1b2",
+        "text": "Design Researcher",
+        "hostedUrl": "https://jobs.lever.co/initech/a1b2",
+        "applyUrl": "https://jobs.lever.co/initech/a1b2/apply",
+        "createdAt": 1790000000000,
+        "description": "<div>Mixed-methods research.</div>",
+        "lists": [{"text": "Requirements", "content": "<li>Interview skills</li><li>SQL</li>"}],
+        "additional": "<p>We are an equal opportunity employer.</p>",
+        "categories": {
+            "location": "Seattle, WA",
+            "commitment": "Full-time",
+            "team": "Research",
+            "department": "Product",
+        },
+    }
+]
 
-RECRUITEE_FEED = {"offers": [{
-    "id": 123, "title": "Researcher", "careers_url": "https://careers.hooli.example/o/researcher",
-    "description": "<p>Run usability studies.</p>", "requirements": "<p>One year preferred.</p>",
-    "city": "Amsterdam", "country": "Netherlands", "published_at": "2026-09-30 08:00:00 UTC",
-    "employment_type_code": "fulltime", "department": "Research"}]}
+RECRUITEE_FEED = {
+    "offers": [
+        {
+            "id": 123,
+            "title": "Researcher",
+            "careers_url": "https://careers.hooli.example/o/researcher",
+            "description": "<p>Run usability studies.</p>",
+            "requirements": "<p>One year preferred.</p>",
+            "city": "Amsterdam",
+            "country": "Netherlands",
+            "published_at": "2026-09-30 08:00:00 UTC",
+            "employment_type_code": "fulltime",
+            "department": "Research",
+        }
+    ]
+}
 
 
 def test_greenhouse_posting_is_normalized_with_its_structure_and_department():
@@ -63,8 +115,9 @@ def test_ashby_skips_unlisted_postings_and_merges_locations():
 
 def test_lever_joins_its_sections_and_dates_the_posting():
     (job,) = parse_feed(LEVER, LEVER_FEED)
-    assert job.description == ("Mixed-methods research.\nRequirements\n- Interview skills\n- SQL\n"
-                               "We are an equal opportunity employer.")
+    assert job.description == (
+        "Mixed-methods research.\nRequirements\n- Interview skills\n- SQL\nWe are an equal opportunity employer."
+    )
     assert job.posted_at == "2026-09-21" and job.employment_type == "Full-time"
     assert job.location == "Seattle, WA" and job.department == "Product / Research"
 
@@ -76,13 +129,16 @@ def test_recruitee_keeps_requirements_and_the_source_link():
     assert job.location == "Amsterdam, Netherlands" and job.department == "Research"
 
 
-@pytest.mark.parametrize("source,payload", [
-    (RECRUITEE, {"error": "authentication required"}),
-    (GREENHOUSE, {"jobs": None}),
-    (GREENHOUSE, []),
-    (LEVER, {"ok": False}),
-    (ASHBY, {"jobs": ["not an object"]}),
-])
+@pytest.mark.parametrize(
+    "source,payload",
+    [
+        (RECRUITEE, {"error": "authentication required"}),
+        (GREENHOUSE, {"jobs": None}),
+        (GREENHOUSE, []),
+        (LEVER, {"ok": False}),
+        (ASHBY, {"jobs": ["not an object"]}),
+    ],
+)
 def test_a_payload_that_is_not_a_complete_board_is_refused(source, payload):
     with pytest.raises(SourceError):
         parse_feed(source, payload)
@@ -99,9 +155,18 @@ def broken(feed, **changes):
     return feed
 
 
-@pytest.mark.parametrize("changes", [
-    {"content": ""}, {"content": "&lt;script&gt;x&lt;/script&gt;"}, {"title": "  "}, {"title": None},
-    {"absolute_url": "http://insecure.example.com/1"}, {"absolute_url": None}, {"id": None}])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"content": ""},
+        {"content": "&lt;script&gt;x&lt;/script&gt;"},
+        {"title": "  "},
+        {"title": None},
+        {"absolute_url": "http://insecure.example.com/1"},
+        {"absolute_url": None},
+        {"id": None},
+    ],
+)
 def test_one_incomplete_posting_aborts_the_snapshot_instead_of_dropping_the_job(changes):
     with pytest.raises(SourceError):
         parse_feed(GREENHOUSE, broken(GREENHOUSE_FEED, **changes))
@@ -129,12 +194,15 @@ def transport_for(payload, status=200):
     return transport, seen
 
 
-@pytest.mark.parametrize("source,feed,url", [
-    (GREENHOUSE, GREENHOUSE_FEED, "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"),
-    (ASHBY, ASHBY_FEED, "https://api.ashbyhq.com/posting-api/job-board/globex"),
-    (LEVER, LEVER_FEED, "https://api.lever.co/v0/postings/initech?mode=json"),
-    (RECRUITEE, RECRUITEE_FEED, "https://hooli.recruitee.com/api/offers/"),
-])
+@pytest.mark.parametrize(
+    "source,feed,url",
+    [
+        (GREENHOUSE, GREENHOUSE_FEED, "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"),
+        (ASHBY, ASHBY_FEED, "https://api.ashbyhq.com/posting-api/job-board/globex"),
+        (LEVER, LEVER_FEED, "https://api.lever.co/v0/postings/initech?mode=json"),
+        (RECRUITEE, RECRUITEE_FEED, "https://hooli.recruitee.com/api/offers/"),
+    ],
+)
 def test_fetch_reads_each_board_from_its_public_endpoint(source, feed, url):
     transport, seen = transport_for(feed)
     jobs = sources.fetch(Client(transport), source)

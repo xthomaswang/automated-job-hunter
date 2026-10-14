@@ -30,7 +30,9 @@ def client(replies, **options):
 
 def test_get_encodes_params_and_identifies_itself():
     c, calls, _ = client([ok({"jobs": [1]})])
-    assert c.get("https://api.example.com/jobs?content=true", params={"q": "ux research", "limit": 5}).json() == {"jobs": [1]}
+    assert c.get("https://api.example.com/jobs?content=true", params={"q": "ux research", "limit": 5}).json() == {
+        "jobs": [1]
+    }
     assert calls[0]["url"] == "https://api.example.com/jobs?content=true&q=ux+research&limit=5"
     assert calls[0]["headers"]["User-Agent"].startswith("automated-job-hunter/")
 
@@ -49,7 +51,9 @@ def test_transient_statuses_are_retried_with_backoff_then_succeed():
 
 
 def test_retry_after_is_honored_but_capped():
-    c, _, sleeps = client([ok(status=429, headers={"retry-after": "7"}), ok(status=429, headers={"retry-after": "900"}), ok()])
+    c, _, sleeps = client(
+        [ok(status=429, headers={"retry-after": "7"}), ok(status=429, headers={"retry-after": "900"}), ok()]
+    )
     c.get("https://api.example.com/x")
     assert sleeps == [7.0, 30.0]
 
@@ -78,7 +82,9 @@ def test_network_errors_are_retried_then_raised():
     assert len(calls) == 3
 
 
-@pytest.mark.parametrize("url", ["http://api.example.com/x", "file:///etc/hosts", "ftp://example.com/x", "//example.com/x"])
+@pytest.mark.parametrize(
+    "url", ["http://api.example.com/x", "file:///etc/hosts", "ftp://example.com/x", "//example.com/x"]
+)
 def test_only_https_is_fetched(url):
     c, calls, _ = client([ok()])
     with pytest.raises(ValueError):

@@ -2,6 +2,7 @@
 
 Like `collect`, this writes only under `.hunter/work/`.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -37,8 +38,10 @@ def check_seal(layout: Layout, seal: str | None) -> None:
 
 
 def load_jobs(layout: Layout) -> dict[str, dict[str, Job]]:
-    return {path.stem: {jid: Job.from_dict(data) for jid, data in json.loads(path.read_text(encoding="utf-8")).items()}
-            for path in sorted(layout.snapshot.glob("*.json"))}
+    return {
+        path.stem: {jid: Job.from_dict(data) for jid, data in json.loads(path.read_text(encoding="utf-8")).items()}
+        for path in sorted(layout.snapshot.glob("*.json"))
+    }
 
 
 def is_canary(key: str) -> bool:
@@ -65,8 +68,11 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         if entry["stage"] != "triage":
             continue
         result = layout.results / f"{packet}.txt"
-        verdicts, invalid = (read_triage(result.read_text(encoding="utf-8", errors="replace"), packet, entry)
-                             if result.is_file() else ({}, {}))
+        verdicts, invalid = (
+            read_triage(result.read_text(encoding="utf-8", errors="replace"), packet, entry)
+            if result.is_file()
+            else ({}, {})
+        )
         for local, key in entry["items"].items():
             sid, jid = split_key(key)
             row = state.rows(sid).get(jid)
@@ -111,11 +117,21 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     plan["queue"] = queue
     plan["triage"] = counts
     assess_index = packets.write_packets(
-        layout, "assess", [(key, job_of(jobs, key)) for key in queue["assess"]], criteria, profile_text,
-        feedback=feedback_of(state, queue["assess"]))
+        layout,
+        "assess",
+        [(key, job_of(jobs, key)) for key in queue["assess"]],
+        criteria,
+        profile_text,
+        feedback=feedback_of(state, queue["assess"]),
+    )
     state.save(layout.state_next, plan["as_of"])
     write_text(layout.plan, dump_json(plan))
     new_seal = seal_of(layout.work)
     write_text(layout.seal, new_seal + "\n")
-    return {"triage": counts, "assess_queued": len(queue["assess"]), "assess_packets": len(assess_index),
-            "deferred": queue["deferred"], "seal": new_seal}
+    return {
+        "triage": counts,
+        "assess_queued": len(queue["assess"]),
+        "assess_packets": len(assess_index),
+        "deferred": queue["deferred"],
+        "seal": new_seal,
+    }

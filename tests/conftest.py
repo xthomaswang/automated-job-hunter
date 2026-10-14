@@ -13,4 +13,5 @@ def repo(tmp_path):
         (tmp_path / "profile" / "criteria.json").write_text(json.dumps(dict(CRITERIA, **(criteria or {}))))
         (tmp_path / "profile" / "profile.md").write_text(profile)
         return tmp_path
+
     return make

@@ -141,6 +141,30 @@ consecutive snapshots. Each pair was classed by word overlap and measured with t
 - 12 rather than 16 costs almost nothing (7 extra re-judgments in 8,425 cosmetic edits) and catches
   more partial rewrites.
 
+## A whole tick with real judges
+
+Four live boards (364 postings), a synthetic three-year UX researcher profile limited to full-time
+roles in the United States, system Python 3.9, the engine run from this repository, and the headless
+invocation from E2 through `scripts/judge.sh`.
+
+| Step | Result | Time | Cost |
+|---|---|---|---|
+| `collect` | 195 passed the hard constraints (157 dropped for location, 13 for employment), 7 triage packets | 5 s | none |
+| Judge: triage | 17 kept, 178 dropped, none rejected or unanswered; 7 drops sampled for the triage check | 23 s | $0.027 |
+| `advance` | 12 queued for assessment (the per-tick cap in this test), 3 packets | under 1 s | none |
+| Judge: assess | 12 assessed, none rejected | 28 s | $0.198 |
+| `apply`, `publish` | 2 published, 10 below the bar; one local commit of 14 files | under 1 s | none |
+
+- No permission denial occurred in either judging stage.
+- Assessment is the expensive part: about $0.017 per posting against $0.00014 per posting for triage.
+- Of the 12 assessed, 2 were the wanted role, 3 related and 7 unrelated (data science, operations,
+  strategy). Triage is tuned to keep when unsure, so a profile's "not wanted" list matters for cost.
+- The first run of this test found three defects, fixed before these numbers were taken: two
+  direct-role postings asking for seven years were scored 38 and hidden (a wanted role is now always
+  listed), internships passed a full-time-only filter when the board gave no employment type (a
+  title that says "Intern" now counts), and quotes stopped where a packet line wrapped (they are now
+  completed to the end of the sentence).
+
 ## Still open
 
 | Spike | Needs |

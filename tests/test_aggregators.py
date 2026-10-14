@@ -13,6 +13,7 @@ def source(provider, **overrides):
 
 def fetch(provider, handler, **overrides):
     """Run one aggregator against `handler(query params) -> payload or (status, payload)`."""
+
     def transport(method, url, headers, body, timeout):
         reply = handler(dict(parse_qsl(urlsplit(url).query)))
         status, payload = reply if isinstance(reply, tuple) else (200, reply)
@@ -22,19 +23,36 @@ def fetch(provider, handler, **overrides):
 
 
 def remotive_row():
-    return {"id": 123, "title": "UX Researcher", "company_name": "Example", "publication_date": "2026-10-01T10:00:00",
-            "url": "https://remotive.com/remote-jobs/design/ux-researcher-123", "description": "<p>Conduct user interviews.</p>"}
+    return {
+        "id": 123,
+        "title": "UX Researcher",
+        "company_name": "Example",
+        "publication_date": "2026-10-01T10:00:00",
+        "url": "https://remotive.com/remote-jobs/design/ux-researcher-123",
+        "description": "<p>Conduct user interviews.</p>",
+    }
 
 
 def jobicy_row(jid):
-    return {"id": jid, "jobTitle": "UX Researcher", "companyName": "Example",
-            "url": f"https://jobicy.com/jobs/{jid}-ux-researcher", "jobDescription": "Conduct user interviews."}
+    return {
+        "id": jid,
+        "jobTitle": "UX Researcher",
+        "companyName": "Example",
+        "url": f"https://jobicy.com/jobs/{jid}-ux-researcher",
+        "jobDescription": "Conduct user interviews.",
+    }
 
 
 def himalayas_row(slug):
     url = "https://himalayas.app/companies/example/jobs/" + slug
-    return {"guid": url, "applicationLink": url, "title": "UX Researcher", "companyName": "Example",
-            "description": "Conduct user interviews.", "pubDate": 1790000000}
+    return {
+        "guid": url,
+        "applicationLink": url,
+        "title": "UX Researcher",
+        "companyName": "Example",
+        "description": "Conduct user interviews.",
+        "pubDate": 1790000000,
+    }
 
 
 def test_remotive_posting_keeps_the_provider_listing_and_its_label():
@@ -61,8 +79,13 @@ def test_jobicy_follows_its_cursor_to_the_end():
     def handler(query):
         cursor = query.get("cursor")
         seen.append(cursor)
-        return {"success": True, "jobCount": 1, "jobs": [jobicy_row(1 if cursor is None else 2)],
-                "nextCursor": "opaque+/=" if cursor is None else None, "hasMore": cursor is None}
+        return {
+            "success": True,
+            "jobCount": 1,
+            "jobs": [jobicy_row(1 if cursor is None else 2)],
+            "nextCursor": "opaque+/=" if cursor is None else None,
+            "hasMore": cursor is None,
+        }
 
     jobs = fetch("jobicy", handler, membership_mode="rolling")
     assert seen == [None, "opaque+/="] and [j.source_id for j in jobs] == ["1", "2"]
@@ -75,7 +98,14 @@ def test_jobicy_broken_continuation_is_not_an_empty_feed():
 
 def test_remoteok_envelope_is_not_a_job_and_the_url_keeps_its_case():
     url = "https://remoteOK.com/remote-jobs/ux-researcher-55"
-    row = {"id": "55", "position": "UX Researcher", "company": "Example", "description": "Conduct user interviews.", "url": url, "epoch": 1790000000}
+    row = {
+        "id": "55",
+        "position": "UX Researcher",
+        "company": "Example",
+        "description": "Conduct user interviews.",
+        "url": url,
+        "epoch": 1790000000,
+    }
     (job,) = fetch("remoteok", lambda q: [{"legal": "Credit Remote OK"}, row], membership_mode="rolling")
     assert job.url == url and job.source_label == "Remote OK" and job.posted_at == "2026-09-21T14:13:20+00:00"
     with pytest.raises(SourceError, match="envelope"):
@@ -99,11 +129,14 @@ def test_himalayas_overlapping_searches_are_merged_without_rejecting_jobs():
     assert len(fetch("himalayas", lambda q: page, queries=["UX research", "human factors"])) == 1
 
 
-@pytest.mark.parametrize("page,message", [
-    ({"totalCount": 30, "limit": 20, "offset": 0, "jobs": [himalayas_row("same")]}, "ignored the requested page"),
-    ({"totalCount": 10, "limit": 20, "offset": 0, "jobs": []}, "no listings for a nonzero"),
-    ({"totalCount": 1, "limit": 500, "offset": 0, "jobs": []}, "metadata missing"),
-])
+@pytest.mark.parametrize(
+    "page,message",
+    [
+        ({"totalCount": 30, "limit": 20, "offset": 0, "jobs": [himalayas_row("same")]}, "ignored the requested page"),
+        ({"totalCount": 10, "limit": 20, "offset": 0, "jobs": []}, "no listings for a nonzero"),
+        ({"totalCount": 1, "limit": 500, "offset": 0, "jobs": []}, "metadata missing"),
+    ],
+)
 def test_himalayas_inconsistent_pages_are_failures(page, message):
     calls = []
 
@@ -133,8 +166,13 @@ def test_a_listing_link_on_another_host_is_rejected():
 
 
 def test_an_image_only_description_stays_empty_rather_than_invented_or_dropped():
-    row = {"id": "55", "position": "UX Researcher", "company": "Example", "description": "<img src='https://example.com/job.png'>",
-           "url": "https://remoteok.com/remote-jobs/ux-researcher-55"}
+    row = {
+        "id": "55",
+        "position": "UX Researcher",
+        "company": "Example",
+        "description": "<img src='https://example.com/job.png'>",
+        "url": "https://remoteok.com/remote-jobs/ux-researcher-55",
+    }
     (job,) = fetch("remoteok", lambda q: [{"legal": "Credit Remote OK"}, row])
     assert job.description == "" and job.location == "Remote; restrictions unspecified"
 

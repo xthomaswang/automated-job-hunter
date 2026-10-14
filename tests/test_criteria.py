@@ -7,8 +7,16 @@ MINIMAL = {"schema_version": 1, "targets": {"roles": ["UX Researcher"]}}
 
 
 def job(**changes):
-    facts = dict(key="acme:1", source="acme", source_id="1", company="Acme", title="UX Researcher",
-                 location="Remote, US", url="https://jobs.example.com/1", description="Run studies.")
+    facts = dict(
+        key="acme:1",
+        source="acme",
+        source_id="1",
+        company="Acme",
+        title="UX Researcher",
+        location="Remote, US",
+        url="https://jobs.example.com/1",
+        description="Run studies.",
+    )
     facts.update(changes)
     return Job(**facts)
 
@@ -22,60 +30,91 @@ def test_a_minimal_file_gets_every_default():
 
 
 def test_every_problem_is_reported_at_once():
-    bad = {"schema_version": 2, "targets": {"roles": [], "adjcent": ["x"]}, "employment": ["full-time"],
-           "locations": {"regions": ["US", "Atlantis"], "remote": "sometimes"},
-           "thresholds": {"strong": 50, "good": 60}, "caps": {"max_assess": 0}, "colour": "blue"}
+    bad = {
+        "schema_version": 2,
+        "targets": {"roles": [], "adjcent": ["x"]},
+        "employment": ["full-time"],
+        "locations": {"regions": ["US", "Atlantis"], "remote": "sometimes"},
+        "thresholds": {"strong": 50, "good": 60},
+        "caps": {"max_assess": 0},
+        "colour": "blue",
+    }
     with pytest.raises(C.CriteriaError) as failure:
         C.normalize(bad, PLACES)
     message = str(failure.value)
-    for expected in ("schema_version", "targets.adjcent", "at least one role", "employment must list", "Atlantis",
-                     "locations.remote", "strong >= good", "caps must be positive", "'colour'"):
+    for expected in (
+        "schema_version",
+        "targets.adjcent",
+        "at least one role",
+        "employment must list",
+        "Atlantis",
+        "locations.remote",
+        "strong >= good",
+        "caps must be positive",
+        "'colour'",
+    ):
         assert expected in message
 
 
-@pytest.mark.parametrize("label,expected", [
-    ("FullTime", {"full_time"}), ("Full-time", {"full_time"}), ("fulltime_permanent", {"full_time"}),
-    ("fulltime_fixed_term", {"full_time", "temporary"}), ("Part-time", {"part_time"}), ("Intern", {"internship"}),
-    ("Internship", {"internship"}), ("Contractor", {"contract"}), ("Working Student", {"internship"}),
-    ("unknown", set()), ("", set()), (None, set()), ("International", set())])
+@pytest.mark.parametrize(
+    "label,expected",
+    [
+        ("FullTime", {"full_time"}),
+        ("Full-time", {"full_time"}),
+        ("fulltime_permanent", {"full_time"}),
+        ("fulltime_fixed_term", {"full_time", "temporary"}),
+        ("Part-time", {"part_time"}),
+        ("Intern", {"internship"}),
+        ("Internship", {"internship"}),
+        ("Contractor", {"contract"}),
+        ("Working Student", {"internship"}),
+        ("unknown", set()),
+        ("", set()),
+        (None, set()),
+        ("International", set()),
+    ],
+)
 def test_employment_labels_map_to_every_kind_they_could_mean(label, expected):
     assert C.employment_kinds(label) == expected
 
 
-@pytest.mark.parametrize("location,countries,complete", [
-    ("Remote, US", {"US"}, True),
-    ("United States", {"US"}, True),
-    ("US, WA, Bellevue", {"US"}, True),
-    ("New York, NY", {"US"}, True),
-    ("San Francisco, CA", {"US"}, True),
-    ("San Francisco, CA • New York, NY • United States", {"US"}, True),
-    ("San Francisco Bay Area", {"US"}, True),
-    ("Chicago, IL", {"US"}, True),
-    ("Tel Aviv, IL", {"IL"}, True),
-    ("Bengaluru, IN", {"IN"}, True),
-    ("Toronto, CA", {"CA"}, True),
-    ("Vancouver, WA", {"US"}, True),
-    ("London, ON", {"CA"}, True),
-    ("London", {"GB"}, True),
-    ("Hybrid - London, UK", {"GB"}, True),
-    ("Singapore, 01, sg", {"SG"}, True),
-    ("Guangzhou, GD, CN", {"CN"}, True),
-    ("Remote (Germany)", {"DE"}, True),
-    ("US-Remote", {"US"}, True),
-    ("New York / Berlin", {"US", "DE"}, True),
-    ("Amsterdam, Noord-Holland, Netherlands", {"NL"}, True),
-    ("Germany; Remote", {"DE"}, False),
-    ("Remote", set(), False),
-    ("Worldwide", set(), False),
-    ("Anywhere in the world", set(), False),
-    ("Cambridge, MA", set(), False),
-    ("Athens, GA", set(), False),
-    ("Georgia", set(), False),
-    ("Springfield", set(), False),
-    ("unknown", set(), False),
-    ("", set(), False),
-    (None, set(), False),
-])
+@pytest.mark.parametrize(
+    "location,countries,complete",
+    [
+        ("Remote, US", {"US"}, True),
+        ("United States", {"US"}, True),
+        ("US, WA, Bellevue", {"US"}, True),
+        ("New York, NY", {"US"}, True),
+        ("San Francisco, CA", {"US"}, True),
+        ("San Francisco, CA • New York, NY • United States", {"US"}, True),
+        ("San Francisco Bay Area", {"US"}, True),
+        ("Chicago, IL", {"US"}, True),
+        ("Tel Aviv, IL", {"IL"}, True),
+        ("Bengaluru, IN", {"IN"}, True),
+        ("Toronto, CA", {"CA"}, True),
+        ("Vancouver, WA", {"US"}, True),
+        ("London, ON", {"CA"}, True),
+        ("London", {"GB"}, True),
+        ("Hybrid - London, UK", {"GB"}, True),
+        ("Singapore, 01, sg", {"SG"}, True),
+        ("Guangzhou, GD, CN", {"CN"}, True),
+        ("Remote (Germany)", {"DE"}, True),
+        ("US-Remote", {"US"}, True),
+        ("New York / Berlin", {"US", "DE"}, True),
+        ("Amsterdam, Noord-Holland, Netherlands", {"NL"}, True),
+        ("Germany; Remote", {"DE"}, False),
+        ("Remote", set(), False),
+        ("Worldwide", set(), False),
+        ("Anywhere in the world", set(), False),
+        ("Cambridge, MA", set(), False),
+        ("Athens, GA", set(), False),
+        ("Georgia", set(), False),
+        ("Springfield", set(), False),
+        ("unknown", set(), False),
+        ("", set(), False),
+        (None, set(), False),
+    ],
+)
 def test_places_reads_a_country_only_when_it_is_certain(location, countries, complete):
     assert PLACES.resolve(location) == (countries, complete)
 
@@ -112,10 +151,30 @@ def test_no_constraints_means_nothing_is_dropped():
 def test_profile_hashes_change_only_with_what_each_stage_reads():
     base = C.normalize(MINIMAL, PLACES)
     hashes = C.profile_hashes(base, "Five years of mixed-methods research.")
-    same = dict(base, thresholds={"strong": 90, "good": 70, "publish_min": 10}, caps={"max_triage": 5, "max_assess": 5, "max_attempts": 1},
-                companies={"prefer": ["Acme"], "exclude": ["Globex"]}, backfill={"days": None})
+    same = dict(
+        base,
+        thresholds={"strong": 90, "good": 70, "publish_min": 10},
+        caps={"max_triage": 5, "max_assess": 5, "max_attempts": 1},
+        companies={"prefer": ["Acme"], "exclude": ["Globex"]},
+        backfill={"days": None},
+    )
     assert C.profile_hashes(same, "Five years  of\nmixed-methods research.") == hashes
-    retargeted = C.profile_hashes(dict(base, targets={"roles": ["Product Analyst"], "adjacent": [], "avoid": []}), "Five years of mixed-methods research.")
+    retargeted = C.profile_hashes(
+        dict(base, targets={"roles": ["Product Analyst"], "adjacent": [], "avoid": []}),
+        "Five years of mixed-methods research.",
+    )
     assert retargeted["triage"] != hashes["triage"] and retargeted["assess"] != hashes["assess"]
     rewritten = C.profile_hashes(base, "Ten years of quantitative research.")
     assert rewritten["triage"] == hashes["triage"] and rewritten["assess"] != hashes["assess"]
+
+
+def test_a_title_that_names_an_internship_counts_as_evidence():
+    check = stage0(employment=["full_time"]).check
+    assert check(job(title="PhD Intern, Data Science (2027)")) == "employment"
+    assert check(job(title="Data Science Internship")) == "employment"
+    assert (
+        check(job(title="Internal Tools Researcher")) is None
+        and check(job(title="International UX Researcher")) is None
+    )
+    assert stage0(employment=["full_time", "internship"]).check(job(title="Research Intern")) is None
+    assert stage0().check(job(title="Research Intern")) is None  # no employment constraint, nothing to drop

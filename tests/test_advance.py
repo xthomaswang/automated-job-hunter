@@ -1,4 +1,5 @@
 """`advance`: triage results in, assessment packets out, with result files treated as untrusted."""
+
 import json
 
 import pytest
@@ -8,8 +9,19 @@ from ajh.layout import Layout
 from ajh.state import read_rows, tag
 from helpers import Boards, adopt_state, judge, plan, posting, tick
 
-TITLES = {1: "UX Researcher", 2: "Account Executive", 3: "Account Executive", 4: "Product Analyst", 5: "Backend Engineer"}
-ANSWERS = {"UX Researcher": "keep", "Account Executive": "drop_title", "Product Analyst": "keep", "Backend Engineer": "drop"}
+TITLES = {
+    1: "UX Researcher",
+    2: "Account Executive",
+    3: "Account Executive",
+    4: "Product Analyst",
+    5: "Backend Engineer",
+}
+ANSWERS = {
+    "UX Researcher": "keep",
+    "Account Executive": "drop_title",
+    "Product Analyst": "keep",
+    "Backend Engineer": "drop",
+}
 
 
 def boards():
@@ -50,7 +62,12 @@ def test_triage_results_are_folded_in_and_assessment_packets_prepared(repo):
     assert result["assess_queued"] == 2 and result["assess_packets"] == 1 and result["seal"] != summary["seal"]
     table = proposed(root)
     assert {jid: (row.status, row.tg) for jid, row in table.items()} == {
-        "1": ("K", 1), "2": ("D", 1), "3": ("D", 1), "4": ("K", 1), "5": ("D", 1)}
+        "1": ("K", 1),
+        "2": ("D", 1),
+        "3": ("D", 1),
+        "4": ("K", 1),
+        "5": ("D", 1),
+    }
     layout = Layout(root)
     assert (layout.state_next / "titles.tsv").read_text() == "account executive\t1\n"  # the plain drop is not cached
     assert plan(root)["queue"]["assess"] == ["acme:1", "acme:4"] and "hunter-assess" in layout.manifest.read_text()
@@ -87,9 +104,19 @@ def test_unanswered_postings_are_asked_again_free_and_invalid_answers_are_charge
     adopt_state(root)
     summary = tick(root, board, adopt=False)
     packet = (Layout(root).packets / "T-001.md").read_text()
-    assert summary["queued"]["triage"] == 2 and "An earlier answer for this posting was rejected: the verdict was missing" in packet
+    assert (
+        summary["queued"]["triage"] == 2
+        and "An earlier answer for this posting was rejected: the verdict was missing" in packet
+    )
     answer(root, lambda title: "perhaps")
-    assert advance.run(root)["triage"] == {"kept": 0, "dropped": 0, "rejected": 1, "unanswered": 0, "escalated": 1, "canary": 0}
+    assert advance.run(root)["triage"] == {
+        "kept": 0,
+        "dropped": 0,
+        "rejected": 1,
+        "unanswered": 0,
+        "escalated": 1,
+        "canary": 0,
+    }
     table = proposed(root)
     assert (table["5"].status, table["5"].tg, table["5"].attempts, table["5"].note) == ("K", 1, 0, "-")
     assert (table["1"].status, table["1"].attempts) == ("P", 1)

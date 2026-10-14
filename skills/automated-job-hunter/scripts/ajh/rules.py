@@ -2,6 +2,7 @@
 
 None of this is model output. The flag rules prefer a missed flag to a wrong one.
 """
+
 from __future__ import annotations
 
 import re
@@ -14,9 +15,14 @@ EXPERIENCE_LEVELS = {"junior_max": 3, "senior_min": 5, "staff_min": 8}
 
 
 def explicit_zero_experience(text: str) -> bool:
-    return bool(re.search(
-        r"\b0\s*(?:[-–]\s*\d+\s*)?(?:years?|months?)"
-        r"|\bno\s+(?:(?:prior|previous|industry|professional|work)\s+)*experience\s+(?:is\s+)?required", text, re.I))
+    return bool(
+        re.search(
+            r"\b0\s*(?:[-–]\s*\d+\s*)?(?:years?|months?)"
+            r"|\bno\s+(?:(?:prior|previous|industry|professional|work)\s+)*experience\s+(?:is\s+)?required",
+            text,
+            re.I,
+        )
+    )
 
 
 def experience_level(years: float | None, levels: Mapping[str, float] | None = None) -> str:
@@ -48,15 +54,23 @@ def title_seniority(title: str) -> str:
     return next((label for label, pattern in _TITLE_SENIORITY if re.search(pattern, title, re.I)), "unknown")
 
 
-def experience_metadata(title: str, required_years: float | None,
-                        levels: Mapping[str, float] | None = None) -> dict[str, Any]:
+def experience_metadata(
+    title: str, required_years: float | None, levels: Mapping[str, float] | None = None
+) -> dict[str, Any]:
     level = experience_level(required_years, levels)
     title_level = title_seniority(title)
     conflict = title_level in {"junior", "mid", "senior", "staff"} and level != "unknown" and title_level != level
-    note = (f"Title label is {title_level}; explicit mandatory years map to {level}. Both source facts are retained."
-            if conflict else None)
-    return {"experience_level": level, "title_seniority": title_level,
-            "seniority_conflict": conflict, "seniority_note": note}
+    note = (
+        f"Title label is {title_level}; explicit mandatory years map to {level}. Both source facts are retained."
+        if conflict
+        else None
+    )
+    return {
+        "experience_level": level,
+        "title_seniority": title_level,
+        "seniority_conflict": conflict,
+        "seniority_note": note,
+    }
 
 
 _NUMBER = re.compile(r"\b\d+(?:\.\d+)?\b")
@@ -74,38 +88,55 @@ def preference_only(quote: str) -> bool:
 
 
 _US = r"(?-i:U\.?\s?S\.?)|United\s+States"
-_NO_SPONSORSHIP = [re.compile(pattern, re.I) for pattern in (
-    r"\b(?:(?:will|would|do|does|can|could|is|are)\s+not|(?:won|don|doesn|couldn|wouldn|isn|aren)['’]t)\s+(?:\w+\s+){0,4}?sponsor",
-    r"\b(?:cannot|can['’]t|unable\s+to|not\s+able\s+to|not\s+in\s+a\s+position\s+to)\s+(?:\w+\s+){0,4}?sponsor",
-    r"\bno\s+(?:visa\s+|immigration\s+|work\s+)?sponsorship\b",
-    r"\bwithout\s+(?:visa\s+|employer\s+|company\s+)?sponsorship\b",
-    r"\bsponsorship\s+(?:is\s+)?(?:not\s+(?:available|offered|provided)|unavailable)\b")]
-_US_CITIZENSHIP = [re.compile(pattern, re.I) for pattern in (
-    rf"\b(?:must|need\s+to|required\s+to|have\s+to)\s+be\s+(?:an?\s+)?(?:{_US})\s+citizen",
-    rf"\b(?:{_US})\s+citizenship\s+(?:is\s+)?(?:required|mandatory|needed)",
-    rf"\brequires?\s+(?:{_US})\s+citizenship",
-    rf"\b(?:{_US})\s+citizens?\s+only")]
+_NO_SPONSORSHIP = [
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"\b(?:(?:will|would|do|does|can|could|is|are)\s+not|(?:won|don|doesn|couldn|wouldn|isn|aren)['’]t)\s+(?:\w+\s+){0,4}?sponsor",
+        r"\b(?:cannot|can['’]t|unable\s+to|not\s+able\s+to|not\s+in\s+a\s+position\s+to)\s+(?:\w+\s+){0,4}?sponsor",
+        r"\bno\s+(?:visa\s+|immigration\s+|work\s+)?sponsorship\b",
+        r"\bwithout\s+(?:visa\s+|employer\s+|company\s+)?sponsorship\b",
+        r"\bsponsorship\s+(?:is\s+)?(?:not\s+(?:available|offered|provided)|unavailable)\b",
+    )
+]
+_US_CITIZENSHIP = [
+    re.compile(pattern, re.I)
+    for pattern in (
+        rf"\b(?:must|need\s+to|required\s+to|have\s+to)\s+be\s+(?:an?\s+)?(?:{_US})\s+citizen",
+        rf"\b(?:{_US})\s+citizenship\s+(?:is\s+)?(?:required|mandatory|needed)",
+        rf"\brequires?\s+(?:{_US})\s+citizenship",
+        rf"\b(?:{_US})\s+citizens?\s+only",
+    )
+]
 _ALTERNATIVE_STATUS = re.compile(
-    r"\bor\b[^.]{0,60}(?:permanent\s+resident|green\s+card|lawful|authoriz|national\b)", re.I)
+    r"\bor\b[^.]{0,60}(?:permanent\s+resident|green\s+card|lawful|authoriz|national\b)", re.I
+)
 _CANDIDATE_NEED = re.compile(r"\b(?:require|requires|required|need|needs)\b", re.I)
 _AFFIRMATIVE_SPONSORSHIP = re.compile(
     r"\bwe\s+(?:do|can|will|are\s+able\s+to)\s+sponsor\b|\bsponsorship\s+(?:is\s+)?available\b"
-    r"|\bwe\s+(?:offer|provide)\s+(?:visa\s+)?sponsorship\b", re.I)
+    r"|\bwe\s+(?:offer|provide)\s+(?:visa\s+)?sponsorship\b",
+    re.I,
+)
 
 
 def _no_sponsorship(text: str) -> bool:
     """A statement that visas are not sponsored. A candidate who does not *need* sponsorship, or a
     nearby "we do sponsor", is not a hit."""
-    return any(not _CANDIDATE_NEED.search(m.group(0))
-               and not _AFFIRMATIVE_SPONSORSHIP.search(text[max(0, m.start() - 200):m.end() + 200])
-               for rx in _NO_SPONSORSHIP for m in rx.finditer(text))
+    return any(
+        not _CANDIDATE_NEED.search(m.group(0))
+        and not _AFFIRMATIVE_SPONSORSHIP.search(text[max(0, m.start() - 200) : m.end() + 200])
+        for rx in _NO_SPONSORSHIP
+        for m in rx.finditer(text)
+    )
 
 
 def _us_citizenship(text: str) -> bool:
     """A statement that U.S. citizenship is required, unless the same sentence admits permanent
     residents or other authorization."""
-    return any(not _ALTERNATIVE_STATUS.search(text[m.end():m.end() + 90])
-               for rx in _US_CITIZENSHIP for m in rx.finditer(text))
+    return any(
+        not _ALTERNATIVE_STATUS.search(text[m.end() : m.end() + 90])
+        for rx in _US_CITIZENSHIP
+        for m in rx.finditer(text)
+    )
 
 
 def posting_flags(description: str) -> tuple[bool, bool]:
@@ -139,8 +170,12 @@ def parse_date(value: Any) -> date | None:
     # Python 3.9's fromisoformat accepts neither a "Z" or " UTC" suffix nor fractions other than 3 or 6 digits.
     iso = re.sub(r"(?<=\d)(?:[Zz]|\s+(?:UTC|GMT))$", "+00:00", text)
     iso = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], iso, count=1)
-    for parse in (datetime.fromisoformat, lambda t: datetime.strptime(t, "%B %d, %Y"),
-                  lambda t: datetime.strptime(t, "%b %d, %Y"), parsedate_to_datetime):
+    for parse in (
+        datetime.fromisoformat,
+        lambda t: datetime.strptime(t, "%B %d, %Y"),
+        lambda t: datetime.strptime(t, "%b %d, %Y"),
+        parsedate_to_datetime,
+    ):
         try:
             return parse(iso).date()
         except (ValueError, TypeError, IndexError):

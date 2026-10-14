@@ -1,0 +1,278 @@
+"""`apply`: the one step that changes tracked files, driven through whole ticks with scripted judges."""
+
+import json
+import subprocess
+from datetime import timedelta
+
+import pytest
+from ajh import advance, apply, collect
+from ajh.http import Client
+from ajh.layout import Layout
+from helpers import (
+    ACME,
+    NOW,
+    REMOTIVE,
+    Boards,
+    answer_triage,
+    full_tick,
+    good_assessment,
+    posting,
+    prose,
+    rows,
+    tracked,
+)
+
+TITLES = {1: "UX Researcher", 2: "Design Researcher", 3: "Account Executive", 4: "Product Analyst"}
+
+
+def boards():
+    return Boards(acme=[posting(n, title=title) for n, title in TITLES.items()])
+
+
+def triage(job):
+    return "drop_title" if job["title"] == "Account Executive" else "keep"
+
+
+def assess(job):
+    fit = {"UX Researcher": 88, "Design Researcher": 60, "Product Analyst": 30}[job["title"]]
+    return good_assessment(job, fit=fit, role_match="adjacent" if job["title"] == "Product Analyst" else "direct")
+
+
+def positions(root):
+    return {r["key"]: r for r in map(json.loads, Layout(root).positions.read_text().splitlines())}
+
+
+@pytest.fixture(autouse=True)
+def no_canaries(monkeypatch):
+    monkeypatch.setattr(advance, "is_canary", lambda key: False)
+
+
+def test_a_whole_tick_publishes_the_matches_and_adopts_the_state(repo):
+    root = repo()
+    summary = full_tick(root, boards(), triage=triage, assess=assess)
+    assert summary == {"published": 2, "below_threshold": 1, "rejected": 0, "unscored": 0, "unanswered": 0,
+                       "open_matches": 2, "added": 2, "rescored": 0, "closed": 0, "removed": 0}  # fmt: skip
+    feed = positions(root)
+    assert list(feed) == ["acme:1", "acme:2"]
+    strong = feed["acme:1"]
+    assert (strong["fit"], strong["tier"], strong["status"], strong["role_match"]) == (88, "strong", "scored", "direct")
+    assert strong["matches"] == [{"label": "Core duties", "quote": " ".join(prose(1).split()[:8])}]
+    assert (
+        strong["first_seen"] == "2026-10-13"
+        and strong["posted"] == "2026-10-10"
+        and strong["brief"] == "jobs/acme/1.md"
+    )
+    assert (
+        strong["judged"] == {"assess": 1, "rubric": "assess-v1", "unverified": 0} and feed["acme:2"]["tier"] == "good"
+    )
+    assert "last_seen" not in strong and not any(
+        "T" in str(strong[k]) for k in ("first_seen", "posted")
+    )  # days, not times
+
+    brief = (root / "jobs" / "acme" / "1.md").read_text()
+    assert brief.startswith("# UX Researcher\n") and "- Fit: 88 (strong)" in brief and f"> {prose(1)}" in brief
+    assert "untrusted" in brief and not (root / "jobs" / "acme" / "4.md").exists()
+
+    table = rows(root)
+    assert {jid: (row.status, row.fit, row.ag) for jid, row in table.items()} == {
+        "1": ("A", "88", 1), "2": ("A", "60", 1), "3": ("D", "-", 0), "4": ("R", "30", 1)}  # fmt: skip
+    assert table["1"].dsh != "-" and table["3"].dsh == "-"
+    layout = Layout(root)
+    assert (layout.state / "titles.tsv").read_text() == "account executive\t1\n"
+    meta = json.loads(layout.feed_meta.read_text())
+    assert meta["as_of"] == "2026-10-13" and meta["counts"]["published"] == 2 and meta["counts"]["below_threshold"] == 1
+    readme = layout.readme.read_text()
+    assert (
+        "**2 open matches** (1 strong, 1 good)" in readme
+        and "| 88 | [UX Researcher](jobs/acme/1.md) | Acme |" in readme
+    )
+    assert "## New in the last 7 days (2)" in readme and "Product Analyst" not in readme
+    latest = layout.latest.read_text()
+    assert "## New matches (2)" in latest and "`acme:1`" in latest
+    log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
+    assert [(e["event"], e["key"], e["at"]) for e in log] == [
+        ("added", "acme:1", "2026-10-13"),
+        ("added", "acme:2", "2026-10-13"),
+    ]
+
+
+def test_a_tick_with_nothing_new_leaves_every_tracked_file_byte_identical(repo):
+    root, board = repo(), boards()
+    full_tick(root, board, triage=triage, assess=assess)
+    before = tracked(root)
+    summary = full_tick(root, board, now=NOW + timedelta(hours=4), triage=triage, assess=assess)
+    assert tracked(root) == before and summary["added"] == 0 and summary["open_matches"] == 2
+    full_tick(root, board, now=NOW + timedelta(days=1), triage=triage, assess=assess)
+    changed = {name for name, data in tracked(root).items() if before[name] != data}
+    assert changed == {"README.md", "feed/meta.json", "state/meta.json", "state/sources.json"}  # only the day moved
+
+
+def test_a_closed_posting_leaves_the_feed_with_a_tombstone_event(repo):
+    root, board = repo(), boards()
+    full_tick(root, board, triage=triage, assess=assess)
+    del board.jobs["acme"][1]
+    assert full_tick(root, board, triage=triage, assess=assess)["closed"] == 0  # one miss is forgiven
+    summary = full_tick(root, board, triage=triage, assess=assess)
+    layout = Layout(root)
+    assert summary["closed"] == 1 and summary["open_matches"] == 1 and list(positions(root)) == ["acme:2"]
+    assert not (root / "jobs" / "acme" / "1.md").exists() and (root / "jobs" / "acme" / "2.md").exists()
+    log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
+    assert [(e["event"], e["key"]) for e in log][-1] == ("closed", "acme:1") and log[-1]["fit"] == 88
+    assert (
+        "## Closed (1)" in layout.latest.read_text()
+        and "UX Researcher" not in layout.readme.read_text().split("## Status")[0]
+    )
+
+
+def test_a_changed_profile_reassesses_published_postings_and_records_the_new_score(repo):
+    root, board = repo(), boards()
+    full_tick(root, board, triage=triage, assess=assess)
+    (root / "profile" / "profile.md").write_text("Ten years of quantitative research.")
+    summary = full_tick(root, board, triage=triage, assess=lambda job: good_assessment(job, fit=50))
+    feed = positions(root)
+    # every assessed posting is asked again; the two published ones move tier, the third now clears the bar
+    assert summary["rescored"] == 2 and summary["added"] == 1 and summary["published"] == 3
+    assert {key: (r["fit"], r["tier"], r["judged"]["assess"]) for key, r in feed.items()} == {
+        "acme:1": (50, "stretch", 2), "acme:2": (50, "stretch", 2), "acme:4": (50, "stretch", 2)}  # fmt: skip
+
+
+def test_an_unusable_assessment_is_retried_then_published_as_facts_only(repo):
+    root = repo(criteria={"caps": {"max_triage": 100, "max_assess": 100, "max_attempts": 2}})
+    board = Boards(acme=[posting(1)])
+
+    def invented(job):
+        return dict(good_assessment(job), match="Made up || ten years leading large research organizations")
+
+    first = full_tick(root, board, assess=invented)
+    assert first["rejected"] == 1 and first["open_matches"] == 0 and not Layout(root).positions.read_text()
+    assert (rows(root)["1"].status, rows(root)["1"].attempts, rows(root)["1"].note) == ("K", 1, "fb:quote,no_match")
+    summary = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    advance.run(root, summary["seal"])
+    packet = (Layout(root).packets / "A-001.md").read_text()
+    assert "An earlier answer for this posting was rejected" in packet and "quotes must be copied exactly" in packet
+    second = full_tick(root, board, assess=invented)
+    record = positions(root)["acme:1"]
+    assert second["unscored"] == 1 and second["added"] == 1 and rows(root)["1"].status == "U"
+    assert (record["status"], record["tier"], record["fit"], record["why"], record["matches"]) == (
+        "unscored",
+        "unscored",
+        None,
+        None,
+        [],
+    )
+    assert "could not be assessed automatically" in (root / "jobs" / "acme" / "1.md").read_text()
+    assert "## Could not be assessed (1)" in Layout(root).readme.read_text()
+
+
+def test_unrelated_work_is_never_published_whatever_the_score(repo):
+    root = repo()
+    summary = full_tick(
+        root, Boards(acme=[posting(1)]), assess=lambda job: good_assessment(job, fit=95, role_match="unrelated")
+    )
+    assert summary["below_threshold"] == 1 and positions(root) == {} and rows(root)["1"].status == "R"
+
+
+def test_a_cut_off_judging_stage_still_lands_what_was_judged(repo):
+    root, board = repo(), boards()
+    summary = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    answer_triage(root, triage)
+    moved = advance.run(root, summary["seal"])
+    result = apply.run(root, moved["seal"])  # the assessment stage never ran
+    assert result["unanswered"] == 3 and result["open_matches"] == 0
+    assert {jid: row.status for jid, row in rows(root).items()} == {"1": "K", "2": "K", "3": "D", "4": "K"}
+    done = full_tick(
+        root, board, triage=triage, assess=lambda job: good_assessment(job) if job["title"] == "UX Researcher" else None
+    )
+    assert done["published"] == 1 and done["unanswered"] == 2 and rows(root)["2"].status == "K"
+
+
+def test_other_listings_of_the_same_opening_are_attached_to_its_record(repo):
+    root = repo(sources=(ACME, REMOTIVE))
+    same = prose(50)
+    board = Boards(acme=[posting(1, text=same), posting(2, text=same + " Based in New York.", location="New York, NY")])
+    board.remotive = [
+        {
+            "id": 7,
+            "title": "UX Researcher",
+            "company_name": "Acme",
+            "url": "https://remotive.com/remote-jobs/7",
+            "description": prose(7),
+        }
+    ]
+    full_tick(root, board)
+    record = positions(root)["acme:1"]
+    assert record["variants"] == [
+        {"key": "acme:2", "location": "New York, NY", "url": "https://job-boards.greenhouse.io/x/jobs/2"}
+    ]
+    assert record["also_on"] == [
+        {"key": "remotive:7", "label": "Remotive", "url": "https://remotive.com/remote-jobs/7"}
+    ]
+    brief = (root / "jobs" / "acme" / "1.md").read_text()
+    assert "## Also listed" in brief and "- New York, NY: https://" in brief and "- via Remotive: https://" in brief
+    assert list(positions(root)) == ["acme:1"]
+
+
+def test_the_triage_check_counts_drops_that_turned_out_to_be_matches(repo, monkeypatch):
+    root = repo()
+    monkeypatch.setattr(advance, "is_canary", lambda key: key == "acme:3")
+    full_tick(root, boards(), triage=triage, assess=lambda job: good_assessment(job, fit=70))
+    layout = Layout(root)
+    assert json.loads(layout.feed_meta.read_text())["canary"] == {"sampled": 1, "missed": 1}
+    assert "1 of 1 dropped postings sampled for a second look turned out to be matches" in layout.readme.read_text()
+    assert "acme:3" in positions(root) and rows(root)["3"].note == "-"
+
+
+def test_a_record_that_went_missing_is_assessed_again_rather_than_guessed(repo):
+    root, board = repo(), boards()
+    full_tick(root, board, triage=triage, assess=assess)
+    layout = Layout(root)
+    layout.positions.write_text(
+        "".join(line + "\n" for line in layout.positions.read_text().splitlines() if '"acme:1"' not in line)
+    )
+    full_tick(root, board, triage=triage, assess=lambda job: None)
+    assert (rows(root)["1"].status, rows(root)["1"].ag, rows(root)["1"].fit) == ("K", 0, "-")
+    full_tick(root, board, triage=triage, assess=assess)
+    assert positions(root)["acme:1"]["fit"] == 88
+
+
+def test_apply_refuses_changed_work_and_an_uncommitted_tree(repo):
+    root, board = repo(), boards()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    (root / ".gitignore").write_text(".hunter/work/\n")
+    commit = [
+        "git",
+        "-C",
+        str(root),
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "x",
+    ]
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(commit, check=True)
+    summary = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    with pytest.raises(advance.WorkError, match="changed since"):
+        apply.run(root, "0" * 32)
+    (root / "profile" / "profile.md").write_text("edited after collect, not committed")
+    with pytest.raises(advance.WorkError, match=r"uncommitted changes.*profile/profile\.md"):
+        apply.run(root, summary["seal"])
+    assert not (root / "state").exists() and not (root / "positions.jsonl").exists()
+    subprocess.run(["git", "-C", str(root), "checkout", "-q", "--", "profile/profile.md"], check=True)
+    assert apply.run(root, summary["seal"])["open_matches"] == 0 and (root / "state" / "meta.json").exists()
+
+
+def test_a_wanted_role_is_always_listed_and_related_work_only_above_the_bar(repo):
+    root = repo()
+    board = Boards(acme=[posting(1, title="UX Researcher"), posting(2, title="Product Analyst")])
+    full_tick(
+        root,
+        board,
+        assess=lambda job: good_assessment(job, fit=25, role_match="direct" if "UX" in job["title"] else "adjacent"),
+    )
+    feed = positions(root)
+    assert list(feed) == ["acme:1"] and (feed["acme:1"]["fit"], feed["acme:1"]["tier"]) == (25, "stretch")
+    assert rows(root)["2"].status == "R"

@@ -3,6 +3,7 @@
 
 Needs only Python 3.9 or newer and its standard library.
 """
+
 import sys
 from pathlib import Path
 

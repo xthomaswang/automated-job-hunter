@@ -3,6 +3,7 @@
 Stage 0 drops a posting only on positive evidence that it breaks an explicit constraint. Anything
 it cannot read (an unknown employment label, a place it does not recognize) passes.
 """
+
 from __future__ import annotations
 
 import copy
@@ -72,16 +73,24 @@ def normalize(data: Any, places: Places | None = None) -> dict[str, Any]:
     check(out["schema_version"] == 1, "schema_version must be 1")
     targets, seniority, locations = out["targets"], out["seniority"], out["locations"]
     check(_strings(targets["roles"]) and bool(targets["roles"]), "targets.roles needs at least one role")
-    check(_strings(targets["adjacent"]) and _strings(targets["avoid"]),
-          "targets.adjacent and targets.avoid must be lists of text")
+    check(
+        _strings(targets["adjacent"]) and _strings(targets["avoid"]),
+        "targets.adjacent and targets.avoid must be lists of text",
+    )
     for bound in ("min", "max"):
-        check(seniority[bound] is None or seniority[bound] in SENIORITY,
-              f"seniority.{bound} must be one of {SENIORITY} or null")
+        check(
+            seniority[bound] is None or seniority[bound] in SENIORITY,
+            f"seniority.{bound} must be one of {SENIORITY} or null",
+        )
     years = seniority["years"]
-    check(years is None or (isinstance(years, (int, float)) and not isinstance(years, bool) and 0 <= years <= 60),
-          "seniority.years must be a number of years or null")
-    check(isinstance(out["employment"], list) and all(x in EMPLOYMENT_KINDS for x in out["employment"]),
-          f"employment must list values from {EMPLOYMENT_KINDS}")
+    check(
+        years is None or (isinstance(years, (int, float)) and not isinstance(years, bool) and 0 <= years <= 60),
+        "seniority.years must be a number of years or null",
+    )
+    check(
+        isinstance(out["employment"], list) and all(x in EMPLOYMENT_KINDS for x in out["employment"]),
+        f"employment must list values from {EMPLOYMENT_KINDS}",
+    )
     check(locations["remote"] in ("any", "only", "no"), "locations.remote must be any, only or no")
     check(_strings(locations["cities"]), "locations.cities must be a list of text")
     if not _strings(locations["regions"]):
@@ -90,20 +99,30 @@ def normalize(data: Any, places: Places | None = None) -> dict[str, Any]:
         unknown = [code for code in locations["regions"] if not places.known_region(code)]
         check(not unknown, f"locations.regions has codes this version cannot read: {unknown}")
     eligibility = out["eligibility"]
-    check(eligibility["needs_sponsorship"] in (None, True, False),
-          "eligibility.needs_sponsorship must be true, false or null")
-    check(isinstance(eligibility["rule_packs"], list) and all(x in RULE_PACKS for x in eligibility["rule_packs"]),
-          f"eligibility.rule_packs must list values from {RULE_PACKS}")
-    check(_strings(out["companies"]["prefer"]) and _strings(out["companies"]["exclude"]),
-          "companies.prefer and companies.exclude must be lists of names")
+    check(
+        eligibility["needs_sponsorship"] in (None, True, False),
+        "eligibility.needs_sponsorship must be true, false or null",
+    )
+    check(
+        isinstance(eligibility["rule_packs"], list) and all(x in RULE_PACKS for x in eligibility["rule_packs"]),
+        f"eligibility.rule_packs must list values from {RULE_PACKS}",
+    )
+    check(
+        _strings(out["companies"]["prefer"]) and _strings(out["companies"]["exclude"]),
+        "companies.prefer and companies.exclude must be lists of names",
+    )
     thresholds = out["thresholds"]
     if all(_int(thresholds[k], 0, 100) for k in ("strong", "good", "publish_min")):
-        check(thresholds["strong"] >= thresholds["good"] >= thresholds["publish_min"],
-              "thresholds must satisfy strong >= good >= publish_min")
+        check(
+            thresholds["strong"] >= thresholds["good"] >= thresholds["publish_min"],
+            "thresholds must satisfy strong >= good >= publish_min",
+        )
     else:
         problems.append("thresholds must be whole numbers from 0 to 100")
-    check(all(_int(out["caps"][k], 1) for k in ("max_triage", "max_assess", "max_attempts")),
-          "caps must be positive whole numbers")
+    check(
+        all(_int(out["caps"][k], 1) for k in ("max_triage", "max_assess", "max_attempts")),
+        "caps must be positive whole numbers",
+    )
     days = out["backfill"]["days"]
     check(days is None or _int(days, 0), "backfill.days must be a number of days or null")
     if problems:
@@ -129,8 +148,15 @@ def profile_hashes(criteria: Mapping[str, Any], profile_text: str) -> dict[str, 
     and tiers, never a verdict, so they are in neither hash.
     """
     triage = digest({"targets": criteria["targets"], "seniority": criteria["seniority"]})[:12]
-    assess = digest({"triage": triage, "eligibility": criteria["eligibility"], "locations": criteria["locations"],
-                     "employment": criteria["employment"], "profile": " ".join(profile_text.split())})[:12]
+    assess = digest(
+        {
+            "triage": triage,
+            "eligibility": criteria["eligibility"],
+            "locations": criteria["locations"],
+            "employment": criteria["employment"],
+            "profile": " ".join(profile_text.split()),
+        }
+    )[:12]
     return {"triage": triage, "assess": assess}
 
 
@@ -150,8 +176,11 @@ def employment_kinds(label: str | None) -> set[str]:
 
 
 _PLACE_SEPARATOR = re.compile(r"\s*(?:/|;|\||•|·|\n|\bor\b)\s*", re.I)
-_NOISE = re.compile(r"\b(?:remote|hybrid|on-?site|in-?office|flexible|anywhere|worldwide|global|based|only|office|hq"
-                    r"|(?-i:in|the|within|from))\b", re.I)
+_NOISE = re.compile(
+    r"\b(?:remote|hybrid|on-?site|in-?office|flexible|anywhere|worldwide|global|based|only|office|hq"
+    r"|(?-i:in|the|within|from))\b",
+    re.I,
+)
 
 
 class Places:
@@ -165,8 +194,10 @@ class Places:
             by_region.setdefault(entry["region"], set()).add(code)
             for name in entry["names"]:
                 self.names[name.casefold()] = code
-        self.region_words = {word.casefold(): set().union(*(by_region.get(tag, set()) for tag in tags))
-                             for word, tags in data["region_words"].items()}
+        self.region_words = {
+            word.casefold(): set().union(*(by_region.get(tag, set()) for tag in tags))
+            for word, tags in data["region_words"].items()
+        }
         self.groups = {name: set(codes) for name, codes in data["groups"].items()}
         self.ambiguous = set(data["ambiguous_state_codes"])
         ambiguous_names = set(data["ambiguous_state_names"])
@@ -193,8 +224,11 @@ class Places:
     def _place(self, place: str) -> set[str] | None:
         """Countries one place certainly names, or None when it cannot be read with certainty."""
         text = re.sub(r"[()\[\]:]|\s+[-–—]\s+|[–—]", ",", place)
-        tokens = [t for t in (" ".join(_NOISE.sub(" ", raw).split()).strip("- ") for raw in text.split(","))
-                  if t and not t.isdigit()]
+        tokens = [
+            t
+            for t in (" ".join(_NOISE.sub(" ", raw).split()).strip("- ") for raw in text.split(","))
+            if t and not t.isdigit()
+        ]
         if not tokens:
             return None
         countries: set[str] = set()
@@ -244,6 +278,9 @@ class Places:
         return found, complete
 
 
+_TITLE_INTERNSHIP = re.compile(r"\bintern(?:ship)?\b|\bco-?op\b|\bworking student\b|\bwerkstudent", re.I)
+
+
 class Stage0:
     """The hard constraints. `check` returns why a posting is dropped, or None when it passes."""
 
@@ -258,6 +295,8 @@ class Stage0:
             return "company"
         if self.employment:
             kinds = employment_kinds(job.employment_type)
+            if _TITLE_INTERNSHIP.search(job.title):  # a title that says so is evidence too
+                kinds = kinds | {"internship"}
             if kinds and not kinds & self.employment:
                 return "employment"
         if self.allowed:

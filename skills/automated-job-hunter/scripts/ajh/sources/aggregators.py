@@ -3,6 +3,7 @@
 A rolling feed lists only recent postings, so a posting's absence from it is never evidence that
 the opening closed; the source's `membership_mode` tells `collect` which kind it is.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -59,9 +60,20 @@ def _job(source: Mapping[str, Any], row: Mapping[str, Any]) -> Job:
     actual = (urlparse(url).hostname or "") if isinstance(url, str) else ""
     if not public_https(url) or (actual[4:] if actual.startswith("www.") else actual) != host:
         raise SourceError(f"Unexpected {provider} listing URL")
-    return Job(key=f"{source['id']}:{jid}", source=source["id"], source_id=str(jid), company=company.strip(),
-               title=title.strip(), location=str(location), url=url, description=html_to_text(text),
-               posted_at=_posted(posted), employment_type=str(employment), source_kind="aggregator", source_label=label)
+    return Job(
+        key=f"{source['id']}:{jid}",
+        source=source["id"],
+        source_id=str(jid),
+        company=company.strip(),
+        title=title.strip(),
+        location=str(location),
+        url=url,
+        description=html_to_text(text),
+        posted_at=_posted(posted),
+        employment_type=str(employment),
+        source_kind="aggregator",
+        source_label=label,
+    )
 
 
 def _add(source: Mapping[str, Any], rows: Any, jobs: dict[str, Job]) -> None:
@@ -142,7 +154,7 @@ def fetch_aggregator(client: Client, source: Mapping[str, Any]) -> list[Job]:
                 if not isinstance(data, dict):
                     raise SourceError("Himalayas response is not an object")
                 page_total, limit, offset = data.get("totalCount"), data.get("limit"), data.get("offset")
-                if (type(page_total) is not int or page_total < 0 or type(limit) is not int or not 1 <= limit <= 20):
+                if type(page_total) is not int or page_total < 0 or type(limit) is not int or not 1 <= limit <= 20:
                     raise SourceError("Himalayas count/page metadata missing")
                 if offset != (page - 1) * limit:
                     raise SourceError("Himalayas ignored the requested page; incomplete search")

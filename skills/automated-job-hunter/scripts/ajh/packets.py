@@ -5,6 +5,7 @@ over-cap read silently returns a partial page. Posting text is indented four spa
 as data, keeps a posting from imitating packet structure, and costs nothing when a quote is matched
 because matching ignores whitespace layout.
 """
+
 from __future__ import annotations
 
 import secrets
@@ -34,8 +35,17 @@ class ProfileTooLong(ValueError):
 
 def _level(seniority: Mapping[str, Any]) -> str:
     low, high, years = seniority["min"], seniority["max"], seniority["years"]
-    span = (f"{low} to {high}" if low and high and low != high else low if low and high
-            else f"{low} or above" if low else f"up to {high}" if high else "")
+    span = (
+        f"{low} to {high}"
+        if low and high and low != high
+        else low
+        if low and high
+        else f"{low} or above"
+        if low
+        else f"up to {high}"
+        if high
+        else ""
+    )
     experience = f"about {years:g} years of experience" if years is not None else ""
     return ", ".join(part for part in (span, experience) if part)
 
@@ -89,8 +99,12 @@ def _feedback(codes: Sequence[str]) -> list[str]:
 
 def _section(stage: str, local: str, job: Job, codes: Sequence[str], snippet_chars: int) -> tuple[str, bool]:
     """One posting's block and whether its text had to be cut."""
-    lines = [f"### {local}", f"title: {norm_ws(job.title)}", f"company: {norm_ws(job.company)}",
-             f"location: {norm_ws(job.location)}"]
+    lines = [
+        f"### {local}",
+        f"title: {norm_ws(job.title)}",
+        f"company: {norm_ws(job.company)}",
+        f"location: {norm_ws(job.location)}",
+    ]
     if job.department:
         lines.append(f"department: {norm_ws(job.department)}")
     cut = False
@@ -114,10 +128,17 @@ def _section(stage: str, local: str, job: Job, codes: Sequence[str], snippet_cha
     return "\n".join(lines) + "\n", cut
 
 
-def write_packets(layout: Layout, stage: str, entries: Sequence[tuple[str, Job]], criteria: Mapping[str, Any],
-                  profile_text: str = "", *, feedback: Mapping[str, Sequence[str]] | None = None,
-                  snippet_chars: int = SNIPPET_CHARS, token: Callable[[int], str] = secrets.token_hex
-                  ) -> dict[str, Any]:
+def write_packets(
+    layout: Layout,
+    stage: str,
+    entries: Sequence[tuple[str, Job]],
+    criteria: Mapping[str, Any],
+    profile_text: str = "",
+    *,
+    feedback: Mapping[str, Sequence[str]] | None = None,
+    snippet_chars: int = SNIPPET_CHARS,
+    token: Callable[[int], str] = secrets.token_hex,
+) -> dict[str, Any]:
     """Write one stage's packets and manifest. Returns that stage's index: packet -> nonce and items."""
     template = rubric.TRIAGE if stage == "triage" else rubric.ASSESS
     seeker = seeker_brief(criteria) if stage == "triage" else seeker_profile(criteria, profile_text)
@@ -144,15 +165,23 @@ def write_packets(layout: Layout, stage: str, entries: Sequence[tuple[str, Job]]
         nonce = token(2)
         head = template.format(packet=packet, nonce=nonce, count=len(group), example=group[0][0], seeker=seeker)
         write_text(layout.packets / f"{packet}.md", head + "\n" + "\n".join(section for _, _, section, _ in group))
-        index[packet] = {"stage": stage, "nonce": nonce, "items": {local: key for local, key, _, _ in group},
-                         "cut": [local for local, _, _, cut in group if cut]}
+        index[packet] = {
+            "stage": stage,
+            "nonce": nonce,
+            "items": {local: key for local, key, _, _ in group},
+            "cut": [local for local, _, _, cut in group if cut],
+        }
 
     merged = {name: entry for name, entry in read_json(layout.packet_index, {}).items() if entry["stage"] != stage}
     merged.update(index)
     write_text(layout.packet_index, dump_json(merged))
-    rows = [f"{packet} | {(layout.packets / (packet + '.md')).relative_to(layout.root).as_posix()} | "
-            f"{(layout.results / (packet + '.txt')).relative_to(layout.root).as_posix()} | {AGENTS[stage]}"
-            for packet in index]
-    write_text(layout.manifest, "\n".join([f"# Judging manifest: {stage}", "",
-                                           "packet | packet file | result file | agent", *rows]) + "\n")
+    rows = [
+        f"{packet} | {(layout.packets / (packet + '.md')).relative_to(layout.root).as_posix()} | "
+        f"{(layout.results / (packet + '.txt')).relative_to(layout.root).as_posix()} | {AGENTS[stage]}"
+        for packet in index
+    ]
+    write_text(
+        layout.manifest,
+        "\n".join([f"# Judging manifest: {stage}", "", "packet | packet file | result file | agent", *rows]) + "\n",
+    )
     return index

@@ -1,4 +1,5 @@
 """Where things live inside a feed repo."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +12,12 @@ class Layout:
         self.profile = self.root / "profile" / "profile.md"
         self.sources = self.root / "config" / "sources.json"
         self.state = self.root / "state"
+        # The published feed.
+        self.readme = self.root / "README.md"
+        self.positions = self.root / "positions.jsonl"
+        self.feed = self.root / "feed"
+        self.feed_meta = self.feed / "meta.json"
+        self.latest = self.feed / "latest.md"
         # Untracked scratch space. Everything a tick produces before `apply` lives here.
         self.work = self.root / ".hunter" / "work"
         self.snapshot = self.work / "snapshot"

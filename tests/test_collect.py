@@ -1,4 +1,5 @@
 """`collect` across ticks, each tick starting from only what a fresh clone would have: the tracked tree."""
+
 import json
 from datetime import timedelta
 
@@ -32,7 +33,10 @@ def test_first_tick_proposes_new_rows_and_changes_nothing_tracked(repo):
     assert summary["new"] == 2 and summary["queued"] == {"triage": 2, "assess": 0} and summary["judge_needed"] is True
     assert summary["sources"] == {"fetched": 1, "gated": 0, "failed": 0, "failures": {}}
     proposed = read_rows(Layout(root).state_next / "jobs" / "acme.tsv")
-    assert {jid: (row.status, row.first_seen) for jid, row in proposed.items()} == {"1": ("P", "2026-10-13"), "2": ("P", "2026-10-13")}
+    assert {jid: (row.status, row.first_seen) for jid, row in proposed.items()} == {
+        "1": ("P", "2026-10-13"),
+        "2": ("P", "2026-10-13"),
+    }
     assert plan(root)["queue"]["triage"] == ["acme:1", "acme:2"]
     snapshot = json.loads((Layout(root).snapshot / "acme.json").read_text())
     assert snapshot["1"]["title"] == "UX Researcher" and snapshot["1"]["description"] == prose(1)
@@ -50,8 +54,12 @@ def test_an_unchanged_board_proposes_a_byte_identical_state(repo):
 
 
 def test_stage0_drops_are_not_stored_and_unreadable_values_pass(repo):
-    root = repo(criteria={"locations": {"regions": ["US"]}, "companies": {"exclude": ["Globex"]}}, sources=(ACME, GLOBEX))
-    boards = Boards(acme=[posting(1), posting(2, location="Berlin, Germany"), posting(3, location="Remote")], globex=[posting(9)])
+    root = repo(
+        criteria={"locations": {"regions": ["US"]}, "companies": {"exclude": ["Globex"]}}, sources=(ACME, GLOBEX)
+    )
+    boards = Boards(
+        acme=[posting(1), posting(2, location="Berlin, Germany"), posting(3, location="Remote")], globex=[posting(9)]
+    )
     summary = tick(root, boards)
     assert set(rows(root)) == {"1", "3"} and rows(root, "globex") == {}
     assert summary["dropped"] == {"location": 1, "company": 1}
@@ -96,7 +104,12 @@ def test_absence_closes_after_two_misses_and_a_return_revives_the_verdict(repo):
     table = rows(root)
     assert summary["revived"] == 2 and summary["new"] == 0
     assert (table["3"].status, table["3"].tg) == ("D", 1)  # a triage drop comes back without a model call
-    assert (table["2"].status, table["2"].tg, table["2"].ag, table["2"].fit) == ("K", 1, 0, "-")  # details were dropped: assess again
+    assert (table["2"].status, table["2"].tg, table["2"].ag, table["2"].fit) == (
+        "K",
+        1,
+        0,
+        "-",
+    )  # details were dropped: assess again
     # posting 1 was never judged in this test, so it is still waiting for triage
     assert plan(root)["queue"] == {"triage": ["acme:1"], "assess": ["acme:2"], "deferred": {"triage": 0, "assess": 0}}
 
@@ -200,8 +213,14 @@ def test_by_default_nothing_is_parked_for_its_age(repo):
 def test_one_opening_listed_per_location_is_judged_once(repo):
     root = repo()
     same = prose(50)
-    boards = Boards(acme=[posting(1, text=same), posting(2, text=same + " Based in our New York office.", location="New York, NY"),
-                          posting(3, text=prose(51)), posting(4, title="Product Analyst", text=same)])
+    boards = Boards(
+        acme=[
+            posting(1, text=same),
+            posting(2, text=same + " Based in our New York office.", location="New York, NY"),
+            posting(3, text=prose(51)),
+            posting(4, title="Product Analyst", text=same),
+        ]
+    )
     summary = tick(root, boards)
     table = rows(root)
     assert summary["variants"] == 1 and (table["2"].status, table["2"].note) == ("V", "acme:1")
@@ -218,8 +237,21 @@ def test_an_aggregator_copy_defers_to_the_employers_own_posting(repo):
     root = repo(sources=(ACME, REMOTIVE))
     boards = Boards(acme=[posting(1)])
     boards.remotive = [
-        {"id": 7, "title": "UX  Researcher", "company_name": "Acme, Inc.", "url": "https://remotive.com/remote-jobs/7", "description": prose(7)},
-        {"id": 8, "title": "UX Researcher", "company_name": "Initech", "url": "https://remotive.com/remote-jobs/8", "description": prose(8)}]
+        {
+            "id": 7,
+            "title": "UX  Researcher",
+            "company_name": "Acme, Inc.",
+            "url": "https://remotive.com/remote-jobs/7",
+            "description": prose(7),
+        },
+        {
+            "id": 8,
+            "title": "UX Researcher",
+            "company_name": "Initech",
+            "url": "https://remotive.com/remote-jobs/8",
+            "description": prose(8),
+        },
+    ]
     tick(root, boards)
     copies = rows(root, "remotive")
     assert (copies["7"].status, copies["7"].note) == ("V", "acme:1") and copies["8"].status == "P"
@@ -240,10 +272,16 @@ def test_changed_targets_reopen_triage_drops_and_a_changed_profile_requeues_asse
     (root / "profile" / "profile.md").write_text("Ten years of quantitative research.")
     tick(root, boards)
     assert rows(root)["1"].status == "D" and rows(root)["2"].status == "A"  # stale but still published
-    assert plan(root)["queue"]["assess"] == ["acme:2", "acme:3"] and plan(root)["generations"] == {"triage": 1, "assess": 2}
+    assert plan(root)["queue"]["assess"] == ["acme:2", "acme:3"] and plan(root)["generations"] == {
+        "triage": 1,
+        "assess": 2,
+    }
     repo(criteria={"targets": {"roles": ["Product Analyst"]}}, profile="Ten years of quantitative research.")
     tick(root, boards)
-    assert (rows(root)["1"].status, rows(root)["1"].tg) == ("P", 0) and plan(root)["generations"] == {"triage": 2, "assess": 3}
+    assert (rows(root)["1"].status, rows(root)["1"].tg) == ("P", 0) and plan(root)["generations"] == {
+        "triage": 2,
+        "assess": 3,
+    }
     assert (Layout(root).state / "titles.tsv").read_text() == ""
 
 
@@ -257,11 +295,18 @@ def test_a_title_already_judged_unrelated_skips_the_model(repo):
 
 
 def test_the_queue_is_capped_and_puts_preferred_companies_and_newer_postings_first(repo):
-    root = repo(sources=(ACME, GLOBEX), criteria={"caps": {"max_triage": 3, "max_assess": 1, "max_attempts": 3},
-                                                  "companies": {"prefer": ["Globex"]}})
-    boards = Boards(acme=[posting(1, published="2026-10-12T00:00:00Z"), posting(2, published="2026-10-01T00:00:00Z"),
-                          posting(3, published="2026-10-11T00:00:00Z")],
-                    globex=[posting(5, published="2026-09-20T00:00:00Z")])
+    root = repo(
+        sources=(ACME, GLOBEX),
+        criteria={"caps": {"max_triage": 3, "max_assess": 1, "max_attempts": 3}, "companies": {"prefer": ["Globex"]}},
+    )
+    boards = Boards(
+        acme=[
+            posting(1, published="2026-10-12T00:00:00Z"),
+            posting(2, published="2026-10-01T00:00:00Z"),
+            posting(3, published="2026-10-11T00:00:00Z"),
+        ],
+        globex=[posting(5, published="2026-09-20T00:00:00Z")],
+    )
     summary = tick(root, boards)
     assert plan(root)["queue"]["triage"] == ["globex:5", "acme:1", "acme:3"]
     assert summary["deferred"] == {"triage": 1, "assess": 0} and summary["queued"] == {"triage": 3, "assess": 0}

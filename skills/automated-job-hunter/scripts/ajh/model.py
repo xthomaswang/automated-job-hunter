@@ -1,4 +1,5 @@
 """The normalized job record and the identity helpers shared by every module."""
+
 from __future__ import annotations
 
 import hashlib
@@ -30,8 +31,13 @@ def public_https(url: Any) -> bool:
         p = urlparse(url)
     except ValueError:
         return False
-    return (p.scheme == "https" and bool(p.hostname) and not p.username and not p.password
-            and p.hostname not in {"localhost", "127.0.0.1", "::1"})
+    return (
+        p.scheme == "https"
+        and bool(p.hostname)
+        and not p.username
+        and not p.password
+        and p.hostname not in {"localhost", "127.0.0.1", "::1"}
+    )
 
 
 _PATH_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")

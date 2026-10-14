@@ -5,6 +5,7 @@ by the posting's own wording; a quote that cannot be located is discarded; free 
 links and secret-shaped strings and cut to length. A verdict missing its essentials is rejected and
 the posting is judged again with a fixed-wording note about what was wrong.
 """
+
 from __future__ import annotations
 
 import re
@@ -75,8 +76,12 @@ def _years(value: str) -> float | None:
 
 
 def _quote(source: str, quote: str) -> str | None:
-    span = find_span(source, quote.strip().strip('"“”'))
-    return span if span is not None and QUOTE_MIN <= len(norm_ws(span)) <= QUOTE_MAX else None
+    cleaned = quote.strip().strip('"“”')
+    for complete in (True, False):  # prefer the whole sentence; fall back to the exact words if that is too long
+        span = find_span(source, cleaned, complete=complete)
+        if span is not None and QUOTE_MIN <= len(norm_ws(span)) <= QUOTE_MAX:
+            return span
+    return None
 
 
 def check_assessment(fields: Mapping[str, list[str]], job: Job) -> tuple[dict[str, Any] | None, list[str]]:
@@ -124,10 +129,17 @@ def check_assessment(fields: Mapping[str, list[str]], job: Job) -> tuple[dict[st
         if value is not None:
             span = _quote(source, first(name + "_quote"))
             required = name == "required_years"
-            problem = ("years_quote" if span is None else
-                       "years_number" if value != 0 and value not in numbers_in(span) else
-                       "years_preference" if required and preference_only(span) else
-                       "years_zero" if required and value == 0 and not explicit_zero_experience(span) else None)
+            problem = (
+                "years_quote"
+                if span is None
+                else "years_number"
+                if value != 0 and value not in numbers_in(span)
+                else "years_preference"
+                if required and preference_only(span)
+                else "years_zero"
+                if required and value == 0 and not explicit_zero_experience(span)
+                else None
+            )
             if problem:  # an unsupported number becomes unknown, never a guess
                 codes.append(problem)
                 unverified += 1
@@ -138,14 +150,24 @@ def check_assessment(fields: Mapping[str, list[str]], job: Job) -> tuple[dict[st
         codes.append("no_match")
     if any(code in codes for code in ("fit", "role_match", "why", "no_match")):
         return None, codes
-    assessment = {"fit": fit, "role_match": role_match, "seniority": seniority if seniority in SENIORITY else "unknown",
-                  "required_years": years["required_years"], "preferred_years": years["preferred_years"], "why": why,
-                  "matches": quoted["match"], "gaps": quoted["gap"], "notes": quoted["note"], "unverified": unverified}
+    assessment = {
+        "fit": fit,
+        "role_match": role_match,
+        "seniority": seniority if seniority in SENIORITY else "unknown",
+        "required_years": years["required_years"],
+        "preferred_years": years["preferred_years"],
+        "why": why,
+        "matches": quoted["match"],
+        "gaps": quoted["gap"],
+        "notes": quoted["note"],
+        "unverified": unverified,
+    }
     return assessment, codes
 
 
-def read_assess(text: str, packet: str, entry: Mapping[str, Any], jobs: Mapping[str, Job]
-                ) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
+def read_assess(
+    text: str, packet: str, entry: Mapping[str, Any], jobs: Mapping[str, Job]
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
     """(accepted, rejected) by packet-local id. `jobs` maps each local id to its posting."""
     ids = entry["items"]
     body = _body(text, packet, entry["nonce"])

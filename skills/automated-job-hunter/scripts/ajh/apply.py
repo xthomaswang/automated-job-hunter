@@ -45,6 +45,7 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
     tally = dict.fromkeys("PDKARUVSX", 0)
     stale = 0  # assessed under an earlier profile and queued to be assessed again; still listed meanwhile
     mine = {"applied": 0, "declined": 0}
+    blocked = 0  # below the bar because of a hard requirement, rather than the fit
     for sid in state.source_ids():
         for jid, row in state.rows(sid).items():
             decision = decided.get(f"{sid}:{jid}")
@@ -57,13 +58,15 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
                 continue
             tally[row.status] += 1
             stale += row.status in "ARU" and row.ag < assess_generation and not settled
+            blocked += row.status == "R" and tag(row, "blk") is not None
     return {
         **mine,
         "published": tally["A"] + tally["U"],
         "pending_triage": tally["P"],
         "pending_assess": tally["K"],
         "pending_reassess": stale,
-        "below_threshold": tally["R"],
+        "below_threshold": tally["R"] - blocked,
+        "blocked": blocked,
         "dropped": tally["D"],
         "variants": tally["V"],
         "parked": tally["S"],
@@ -84,7 +87,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     decided = decisions.load(layout.decisions)
     old_meta = read_json(layout.feed_meta, {})
     canary = dict(old_meta.get("canary") or {"sampled": 0, "missed": 0})
-    counts = {"published": 0, "below_threshold": 0, "rejected": 0, "unscored": 0, "unanswered": 0}
+    counts = {"published": 0, "below_threshold": 0, "blocked": 0, "rejected": 0, "unscored": 0, "unanswered": 0}
     events: list[dict[str, Any]] = []
     touched: set[str] = set()
 
@@ -123,13 +126,16 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
                 row.fit, row.ag, row.attempts, row.note = str(assessment["fit"]), generations["assess"], 0, "-"
                 row.tg = row.tg or generations["triage"]
                 row.dsh = f"{simhash64(text):016x}" if text else "-"  # frozen here: later edits are measured against it
-                if feed.tier_of(assessment, criteria["thresholds"]):
+                blocked = feed.hard_limit(assessment, criteria["thresholds"])
+                if not blocked and feed.tier_of(assessment, criteria["thresholds"]):
                     row.status = "A"
                     publish(key, assessment)
                     counts["published"] += 1
                 else:
                     row.status = "R"
-                    counts["below_threshold"] += 1
+                    counts["blocked" if blocked else "below_threshold"] += 1
+                    if blocked:  # remembered, so that a relaxed limit sends it back to be assessed
+                        set_tag(row, "blk", blocked)
                 if sampled:
                     canary["sampled"] += 1
                     canary["missed"] += row.status == "A"
@@ -145,6 +151,23 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
                     counts["rejected"] += 1
             else:
                 counts["unanswered"] += 1
+
+    # Thresholds decide only what is listed, so a change to them reaches postings already listed
+    # without judging anything again: a new floor or hard requirement takes them out, new tier
+    # boundaries move them. With unchanged thresholds nothing here changes.
+    for key, record in records.items():
+        sid, jid = split_key(key)
+        row = state.rows(sid).get(jid)
+        if record["status"] != "scored" or row is None or row.status != "A":
+            continue
+        blocked = feed.hard_limit(record, criteria["thresholds"])
+        tier = feed.tier_of(record, criteria["thresholds"])
+        if blocked or tier is None:
+            row.status, row.note = "R", "-"
+            if blocked:
+                set_tag(row, "blk", blocked)
+        elif tier != record["tier"]:
+            record["tier"] = tier
 
     # Records follow the state: a posting stays published while it is A or U, or is being re-judged.
     keep = set()
@@ -162,7 +185,10 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     closed = set(plan.get("closed", []))
     for key in sorted(set(records) - keep):
         record = records.pop(key)
-        kind = "declined" if key in declined else "closed" if key in closed else "removed"
+        sid, jid = split_key(key)
+        row = state.rows(sid).get(jid)
+        blocked = row is not None and tag(row, "blk") is not None
+        kind = "declined" if key in declined else "blocked" if blocked else "closed" if key in closed else "removed"
         events.append(feed.event(kind, as_of, record))
         feed.remove_brief(layout.root, record)
 
@@ -200,7 +226,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         elif key not in applied:
             record.pop("applied", None)
     write_text(layout.positions, feed.positions_text(records))
-    order = {"added": 0, "rescored": 1, "closed": 2, "removed": 3, "declined": 4}
+    order = {"added": 0, "rescored": 1, "closed": 2, "removed": 3, "blocked": 4, "declined": 5}
     events.sort(key=lambda item: (order[item["event"]], item["key"]))
     if events:
         feed.append_events(layout.feed, events)
@@ -247,7 +273,9 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     return {
         **counts,
         "open_matches": len(records),
-        **{kind: sum(item["event"] == kind for item in events) for kind in order},
+        **{kind: sum(item["event"] == kind for item in events) for kind in order if kind != "blocked"},
+        # left out this update: assessments that broke a hard requirement, and listed postings a limit took out
+        "blocked": counts["blocked"] + sum(item["event"] == "blocked" for item in events),
     }
 
 
@@ -259,7 +287,10 @@ def _asked(triage: dict[str, int], assess: dict[str, int]) -> dict[str, tuple[in
             triage.get("unanswered", 0),
         ),
         "assess": (
-            sum(assess[name] for name in ("published", "below_threshold", "rejected", "unscored", "unanswered")),
+            sum(
+                assess[name]
+                for name in ("published", "below_threshold", "blocked", "rejected", "unscored", "unanswered")
+            ),
             assess["unanswered"],
         ),
     }

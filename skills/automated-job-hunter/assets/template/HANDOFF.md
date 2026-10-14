@@ -10,7 +10,7 @@ It finds jobs. It does not apply to them.
 | `feed/latest.md` | What changed in the latest update: new matches, closed postings, re-assessed ones |
 | `positions.jsonl` | Every open matched posting, one JSON object per line, sorted by `key` |
 | `jobs/<source>/<id>.md` | A brief for one posting: the facts, the assessment, and the posting text |
-| `feed/changes/YYYY-MM.jsonl` | Every `added`, `rescored`, `closed`, `removed` and `declined` event, oldest first |
+| `feed/changes/YYYY-MM.jsonl` | Every `added`, `rescored`, `closed`, `removed`, `blocked` and `declined` event, oldest first. `blocked` means a hard requirement in `thresholds` now leaves the posting out. |
 | `feed/meta.json` | The day of the last update (`as_of`), counts, sources that are failing, `judging_failed` while judging gets no answers, and `usage` totals |
 | `feed/usage.jsonl` | One line per update that judged, or tried to: tokens per model, Claude Code's list-price cost estimate, where it ran and which kind of credential |
 | `profile/profile.md`, `profile/criteria.json` | Who the feed is for and what they want |
@@ -30,7 +30,7 @@ which and when.
 | `source_kind` | `official` (the employer's own board) or `aggregator` (a third-party listing; find the employer's own posting before applying) |
 | `status` | `scored`, or `unscored` when the posting could not be assessed and only its facts are known |
 | `fit` | 0 to 100, how well the posting fits the profile. Null when unscored. |
-| `tier` | `strong`, `good`, `stretch` or `unscored`. A posting whose work is a wanted role is always listed, as a `stretch` when the fit is low. |
+| `tier` | `strong`, `good`, `stretch` or `unscored`. A posting whose work is a wanted role is listed even when the fit is low, as a `stretch`, unless `thresholds` in `profile/criteria.json` sets a floor for it (`direct_min`) or a hard requirement it breaks (`max_required_years`, `max_seniority`). |
 | `role_match` | `direct` (a wanted role) or `adjacent` (related work) |
 | `seniority`, `required_years`, `preferred_years` | What the posting asks for. Years are null when the posting does not state them: null means unknown, never zero. |
 | `why` | One or two sentences on the fit, written for the person |

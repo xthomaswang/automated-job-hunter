@@ -189,3 +189,21 @@ def test_a_monthly_budget_is_optional_and_judges_nothing_again():
     plain = C.normalize(MINIMAL, PLACES)
     budgeted = C.normalize(dict(MINIMAL, caps={"max_usd_per_month": 50}), PLACES)
     assert C.profile_hashes(plain, "Five years of research.") == C.profile_hashes(budgeted, "Five years of research.")
+
+
+def test_listing_limits_are_validated_and_judge_nothing_again():
+    out = C.normalize(MINIMAL, PLACES)["thresholds"]
+    assert (out["direct_min"], out["max_required_years"], out["max_seniority"]) == (None, None, None)
+    good = {"direct_min": 30, "max_required_years": 3, "max_seniority": "mid"}
+    assert C.normalize(dict(MINIMAL, thresholds=good), PLACES)["thresholds"]["max_seniority"] == "mid"
+    for bad, problem in (
+        ({"direct_min": 101}, "direct_min"),
+        ({"max_required_years": -1}, "max_required_years"),
+        ({"max_required_years": 2.5}, "max_required_years"),
+        ({"max_seniority": "lead"}, "max_seniority"),
+    ):
+        with pytest.raises(C.CriteriaError, match=problem):
+            C.normalize(dict(MINIMAL, thresholds=bad), PLACES)
+    plain = C.normalize(MINIMAL, PLACES)
+    limited = C.normalize(dict(MINIMAL, thresholds=good), PLACES)
+    assert C.profile_hashes(plain, "Five years of research.") == C.profile_hashes(limited, "Five years of research.")

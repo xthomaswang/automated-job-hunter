@@ -52,7 +52,7 @@ def no_canaries(monkeypatch):
 def test_a_whole_tick_publishes_the_matches_and_adopts_the_state(repo):
     root = repo()
     summary = full_tick(root, boards(), triage=triage, assess=assess)
-    assert summary == {"published": 2, "below_threshold": 1, "rejected": 0, "unscored": 0, "unanswered": 0,
+    assert summary == {"published": 2, "below_threshold": 1, "blocked": 0, "rejected": 0, "unscored": 0, "unanswered": 0,
                        "open_matches": 2, "added": 2, "rescored": 0, "closed": 0, "removed": 0, "declined": 0}  # fmt: skip
     feed = positions(root)
     assert list(feed) == ["acme:1", "acme:2"]
@@ -405,6 +405,71 @@ def test_an_applied_posting_is_marked_and_not_judged_again_after_a_search_change
     assert counts["applied"] == 1 and "acme:1" in positions(root)  # still listed and marked
     assert counts["pending_reassess"] == len(queued)  # waiting: what the queue holds, never the applied one
     assert positions(root)["acme:1"]["applied"] == "2026-10-06"
+
+
+def limits(root, **thresholds):
+    """Set listing thresholds in the feed's criteria, as a person editing criteria.json would."""
+    path = Layout(root).criteria
+    criteria = json.loads(path.read_text())
+    criteria["thresholds"] = {**criteria.get("thresholds", {}), **thresholds}
+    path.write_text(json.dumps(criteria))
+
+
+def test_hard_requirements_leave_postings_out_until_relaxed(repo):
+    years = "Requires 7 years of experience leading research programs across several product teams."
+    board = Boards(acme=[posting(1, "UX Researcher", text=years), posting(2, "Design Researcher"),
+                         posting(3, "Head of Research")])  # fmt: skip
+
+    def judged(job):
+        fields = good_assessment(job, fit=80)
+        if job["title"] == "UX Researcher":
+            fields.update(required_years=7, required_years_quote="Requires 7 years of experience")
+        if job["title"] == "Head of Research":
+            fields["seniority"] = "staff"  # no years stated: only the seniority can leave it out
+        return fields
+
+    root = repo()
+    layout = Layout(root)
+    limits(root, max_required_years=3)
+    summary = full_tick(root, board, assess=judged)
+    assert summary["blocked"] == 1 and set(positions(root)) == {"acme:2", "acme:3"}
+    assert rows(root)["1"].status == "R" and rows(root)["1"].note == "blk:years=7"
+    assert (
+        "Left out for a hard requirement in `thresholds` (required years or seniority): 1." in layout.readme.read_text()
+    )
+
+    limits(root, max_seniority="senior")  # takes a listed posting out without judging anything
+    assert full_tick(root, board, assess=judged)["blocked"] == 1  # the summary counts it too
+    assert set(positions(root)) == {"acme:2"} and rows(root)["3"].note == "blk:seniority=staff"
+    log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
+    assert (log[-1]["event"], log[-1]["key"]) == ("blocked", "acme:3")
+    assert "## Left out for a hard requirement (1)" in layout.latest.read_text()
+    meta = json.loads(layout.feed_meta.read_text())
+    assert (meta["counts"]["blocked"], meta["counts"]["below_threshold"]) == (2, 0)
+    again = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    assert again["unblocked"] == 0 and json.loads(layout.plan.read_text())["queue"]["assess"] == []  # not re-queued
+
+    limits(root, max_required_years=10, max_seniority=None)  # relaxed: both go back to be assessed
+    relaxed = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    assert relaxed["unblocked"] == 2 and sorted(json.loads(layout.plan.read_text())["queue"]["assess"]) == [
+        "acme:1",
+        "acme:3",
+    ]
+    full_tick(root, board, assess=judged)
+    assert set(positions(root)) == {"acme:1", "acme:2", "acme:3"}
+
+
+def test_a_floor_for_direct_matches_and_new_tier_bounds_reach_listed_postings(repo):
+    root, board = repo(), boards()
+    full_tick(root, board, triage=triage, assess=assess)
+    assert (positions(root)["acme:1"]["tier"], positions(root)["acme:2"]["fit"]) == ("strong", 60)
+    limits(root, direct_min=70, strong=90)
+    summary = full_tick(root, board, triage=triage, assess=assess)  # nothing to judge
+    feed = positions(root)
+    assert set(feed) == {"acme:1"} and feed["acme:1"]["tier"] == "good"  # 88 is below the new strong bound
+    log = [json.loads(line) for line in (Layout(root).feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
+    assert (log[-1]["event"], log[-1]["key"]) == ("removed", "acme:2")  # below a floor: no longer a match
+    assert (summary["added"], summary["rescored"]) == (0, 0)
 
 
 def test_other_listings_of_the_same_opening_are_attached_to_its_record(repo):

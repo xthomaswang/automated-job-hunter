@@ -28,7 +28,17 @@ DEFAULTS: dict[str, Any] = {
     "locations": {"remote": "any", "regions": [], "cities": []},  # empty regions means anywhere
     "eligibility": {"needs_sponsorship": None, "rule_packs": ["us"]},
     "companies": {"prefer": [], "exclude": []},
-    "thresholds": {"strong": 75, "good": 55, "publish_min": 40},
+    # Listing only, never a verdict, so in neither judging hash. direct_min: the lowest fit at which a
+    # wanted role is still listed (null: always). max_required_years and max_seniority are hard
+    # requirements: a posting stating more years, or assessed as more senior, is left out.
+    "thresholds": {
+        "strong": 75,
+        "good": 55,
+        "publish_min": 40,
+        "direct_min": None,
+        "max_required_years": None,
+        "max_seniority": None,
+    },
     # max_usd_per_month: judging pauses for the rest of the month (UTC) once the usage log says
     # Claude Code's list-price estimate has reached it. Null means no budget.
     "caps": {"max_triage": 1500, "max_assess": 100, "max_attempts": 3, "max_usd_per_month": None},
@@ -121,6 +131,18 @@ def normalize(data: Any, places: Places | None = None) -> dict[str, Any]:
         )
     else:
         problems.append("thresholds must be whole numbers from 0 to 100")
+    check(
+        thresholds["direct_min"] is None or _int(thresholds["direct_min"], 0, 100),
+        "thresholds.direct_min must be a whole number from 0 to 100, or null",
+    )
+    check(
+        thresholds["max_required_years"] is None or _int(thresholds["max_required_years"], 0),
+        "thresholds.max_required_years must be a whole number of years, or null",
+    )
+    check(
+        thresholds["max_seniority"] is None or thresholds["max_seniority"] in SENIORITY,
+        f"thresholds.max_seniority must be one of {SENIORITY}, or null",
+    )
     check(
         all(_int(out["caps"][k], 1) for k in ("max_triage", "max_assess", "max_attempts")),
         "caps must be positive whole numbers",

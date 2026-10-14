@@ -228,11 +228,12 @@ def append_events(feed_dir: Path, events: Iterable[Mapping[str, Any]]) -> None:
         write_text(path, existing + "\n".join(lines) + "\n")
 
 
-def _row(record: Mapping[str, Any]) -> str:
+def _row(record: Mapping[str, Any], recent_from: str) -> str:
     flags = record["flags"]
-    marks = " ".join(
+    marks = ", ".join(
         mark
         for on, mark in (
+            (record["first_seen"] > recent_from, "new"),
             (flags["sponsorship_not_offered"], "no sponsorship"),
             (flags["citizenship_required"], "citizenship required"),
         )
@@ -245,14 +246,14 @@ def _row(record: Mapping[str, Any]) -> str:
     )
 
 
-def _table(records: list[Mapping[str, Any]]) -> list[str]:
+def _table(records: list[Mapping[str, Any]], recent_from: str) -> list[str]:
     head = ["| Fit | Role | Company | Location | Posted | Flags |", "|---:|:---|:---|:---|:---|:---|"]
     more = (
         ["", f"{len(records) - README_ROWS} more in [positions.jsonl](positions.jsonl)."]
         if len(records) > README_ROWS
         else []
     )
-    return [*head, *(_row(r) for r in records[:README_ROWS]), *more]
+    return [*head, *(_row(r, recent_from) for r in records[:README_ROWS]), *more]
 
 
 def _ranked(records: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
@@ -294,11 +295,12 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
         "every posting has a brief under `jobs/`, and [feed/latest.md](feed/latest.md) says what changed last.",
         "",
     ]
-    recent = _ranked(r for r in records.values() if r["first_seen"] > recent_from)
+    # Each posting is listed once, under its tier; recent ones are marked rather than repeated.
+    recent = sum(r["first_seen"] > recent_from for r in records.values())
     lines += [
-        f"## New in the last {NEW_DAYS} days ({len(recent)})",
-        "",
-        *(_table(recent) if recent else ["Nothing new."]),
+        f"{recent} of these were first seen in the last {NEW_DAYS} days and are marked **new** below."
+        if recent
+        else f"Nothing new in the last {NEW_DAYS} days.",
         "",
     ]
     for tier, heading in (
@@ -308,7 +310,7 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
         ("unscored", "Could not be assessed"),
     ):
         if by_tier[tier]:
-            lines += [f"## {heading} ({len(by_tier[tier])})", "", *_table(by_tier[tier]), ""]
+            lines += [f"## {heading} ({len(by_tier[tier])})", "", *_table(by_tier[tier], recent_from), ""]
     lines += [
         "## Status",
         "",

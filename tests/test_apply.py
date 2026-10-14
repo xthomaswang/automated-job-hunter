@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import pytest
 from ajh import advance, apply, collect
+from ajh.feed import readme_text
 from ajh.http import Client
 from ajh.layout import Layout
 from helpers import (
@@ -86,7 +87,10 @@ def test_a_whole_tick_publishes_the_matches_and_adopts_the_state(repo):
         "**2 open matches** (1 strong, 1 good)" in readme
         and "| 88 | [UX Researcher](jobs/acme/1.md) | Acme |" in readme
     )
-    assert "## New in the last 7 days (2)" in readme and "Product Analyst" not in readme
+    assert "2 of these were first seen in the last 7 days" in readme and "Product Analyst" not in readme
+    assert readme.count("(jobs/acme/1.md)") == 1 and "| 2026-10-10 | new |" in readme  # listed once, marked new
+    later = readme_text(dict(meta, as_of="2026-10-25"), positions(root))
+    assert "Nothing new in the last 7 days." in later and "| new |" not in later
     latest = layout.latest.read_text()
     assert "## New matches (2)" in latest and "`acme:1`" in latest
     log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]

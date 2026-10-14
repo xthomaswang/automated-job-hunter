@@ -73,6 +73,18 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
     }
 
 
+def _unmet_found(state: State, decided: decisions.Decided) -> dict[str, int]:
+    """Assessed postings, listed or not, whose assessment quoted an unmet requirement, by kind."""
+    found: dict[str, int] = {}
+    for sid in state.source_ids():
+        for jid, row in state.rows(sid).items():
+            if row.status not in "AR" or (decided.get(f"{sid}:{jid}") or {}).get("decision") == "declined":
+                continue
+            for kind in filter(None, (tag(row, "unmet") or "").split(",")):
+                found[kind] = found.get(kind, 0) + 1
+    return dict(sorted(found.items()))
+
+
 def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     layout = Layout(root)
     check_seal(layout, seal)
@@ -127,6 +139,9 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
                 row.fit, row.ag, row.attempts, row.note = str(assessment["fit"]), generations["assess"], 0, "-"
                 row.tg = row.tg or generations["triage"]
                 row.dsh = f"{simhash64(text):016x}" if text else "-"  # frozen here: later edits are measured against it
+                kinds = feed.unmet_kinds(assessment)
+                if kinds:  # kept for every assessed posting, listed or not, so the claims can be counted
+                    set_tag(row, "unmet", ",".join(kinds))
                 blocked = feed.hard_limit(assessment, criteria["thresholds"])
                 if not blocked and feed.tier_of(assessment, criteria["thresholds"]):
                     row.status = "A"
@@ -165,7 +180,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         blocked = feed.hard_limit(record, criteria["thresholds"])
         tier = feed.tier_of(record, criteria["thresholds"])
         if blocked or tier is None:
-            row.status, row.note = "R", "-"
+            row.status = "R"  # a listed posting's only tag is its unmet kinds, which stay
             if blocked:
                 set_tag(row, "blk", blocked)
         elif tier != record["tier"]:
@@ -257,10 +272,12 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     budget = usage.budget(criteria["caps"]["max_usd_per_month"], log, as_of)
     if budget:
         used = {**(used or {}), "budget": {**budget, "paused": plan.get("budget", {}).get("reached", False)}}
+    unmet = _unmet_found(state, decided)
     meta = {
         "schema_version": feed.SCHEMA_VERSION,
         "as_of": as_of,
         "counts": _counts(state, generations["assess"], decided),
+        **({"unmet": unmet} if unmet else {}),
         "canary": canary,
         "generations": generations,
         "sources": {"total": len(state.sources), "failing": failing},

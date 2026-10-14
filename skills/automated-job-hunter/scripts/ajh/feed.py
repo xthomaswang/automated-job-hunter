@@ -45,7 +45,7 @@ def _stated_years(item: Mapping[str, Any]) -> float | None:
     return years if isinstance(years, (int, float)) and not isinstance(years, bool) else None
 
 
-def _unmet_kinds(item: Mapping[str, Any]) -> list[str]:
+def unmet_kinds(item: Mapping[str, Any]) -> list[str]:
     """The kinds of unmet requirement an assessment quoted. A record from before rubric v2 has none."""
     return sorted({entry["kind"] for entry in item.get("unmet") or []})
 
@@ -61,7 +61,7 @@ def hard_limit(item: Mapping[str, Any], thresholds: Mapping[str, Any]) -> str | 
     """
     years, most = _stated_years(item), thresholds.get("max_required_years")
     level, cap = item.get("seniority"), thresholds.get("max_seniority")
-    kinds = _unmet_kinds(item)
+    kinds = unmet_kinds(item)
     broken = (
         (most is not None and years is not None and years > most)
         or (cap is not None and level in SENIORITY and SENIORITY.index(level) > SENIORITY.index(cap))
@@ -297,7 +297,7 @@ def _row(record: Mapping[str, Any], recent_from: str) -> str:
             )
             if on
         ]
-        + [f"unmet {kind}" for kind in _unmet_kinds(record)]
+        + [f"unmet {kind}" for kind in unmet_kinds(record)]
     )
     fit = "–" if record["fit"] is None else str(record["fit"])
     title = f"{_applied(record.get('applied'))}[{_md(record['title'])}]({record['brief']})"
@@ -411,6 +411,12 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
         lines.append(
             "- Left out for a hard requirement in `thresholds` (required years, seniority or an unmet "
             f"requirement): {counts['blocked']}."
+        )
+    if meta.get("unmet"):
+        lines.append(
+            "- Assessed postings with an unmet requirement: "
+            + ", ".join(f"{count} {kind}" for kind, count in meta["unmet"].items())
+            + ". Listed ones are flagged; `thresholds.unmet_requirements` leaves out the kinds it names."
         )
     if counts.get("applied") or counts.get("declined"):
         lines.append(

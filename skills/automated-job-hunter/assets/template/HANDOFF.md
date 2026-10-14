@@ -11,7 +11,7 @@ It finds jobs. It does not apply to them.
 | `positions.jsonl` | Every open matched posting, one JSON object per line, sorted by `key` |
 | `jobs/<source>/<id>.md` | A brief for one posting: the facts, the assessment, and the posting text |
 | `feed/changes/YYYY-MM.jsonl` | Every `added`, `rescored`, `closed`, `removed`, `blocked` and `declined` event, oldest first. `blocked` means a hard requirement in `thresholds` now leaves the posting out. |
-| `feed/meta.json` | The day of the last update (`as_of`), counts, sources that are failing, `judging_failed` while judging gets no answers, and `usage` totals |
+| `feed/meta.json` | The day of the last update (`as_of`), counts, `unmet` (assessed postings, listed or not, whose assessment found an unmet requirement, by kind), sources that are failing, `judging_failed` while judging gets no answers, and `usage` totals |
 | `feed/usage.jsonl` | One line per update that judged, or tried to: tokens per model, Claude Code's list-price cost estimate, where it ran and which kind of credential |
 | `profile/profile.md`, `profile/criteria.json` | Who the feed is for and what they want |
 | `profile/decisions.jsonl` | The person's decisions: postings they applied to or declined. Yours to add to; see below. |

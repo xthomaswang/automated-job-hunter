@@ -493,7 +493,7 @@ def test_an_unmet_requirement_is_shown_and_leaves_a_posting_out_only_when_its_ki
     limits(root, unmet_requirements=["degree", "enrollment"])  # takes the listed one out, judging nothing
     summary = full_tick(root, board, assess=judged)
     assert summary["blocked"] == 1 and set(positions(root)) == {"acme:2", "acme:3"}
-    assert rows(root)["1"].note == "blk:seniority=mid+unmet=enrollment"
+    assert rows(root)["1"].note == "blk:seniority=mid+unmet=enrollment;unmet:enrollment"
     log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
     assert (log[-1]["event"], log[-1]["key"]) == ("blocked", "acme:1")
     assert json.loads(layout.feed_meta.read_text())["counts"]["blocked"] == 1
@@ -524,7 +524,7 @@ def test_relaxing_one_hard_requirement_frees_only_what_no_other_one_leaves_out(r
     limits(root, max_required_years=3, unmet_requirements=["degree"])
     assert full_tick(root, board, assess=judged)["blocked"] == 2
     assert (rows(root)["1"].note, rows(root)["2"].note) == (
-        "blk:years=7+seniority=mid+unmet=degree",
+        "blk:years=7+seniority=mid+unmet=degree;unmet:degree",
         "blk:years=7+seniority=mid",
     )
     limits(root, max_required_years=10)  # the degree still leaves the first one out
@@ -551,6 +551,27 @@ def test_a_listed_posting_assessed_again_and_left_out_is_counted_once(repo):
     summary = full_tick(root, board, assess=judged)
     assert summary["blocked"] == 1 and Layout(root).positions.read_text() == ""
     assert json.loads(Layout(root).feed_meta.read_text())["counts"]["blocked"] == 1
+
+
+def test_unmet_kinds_are_kept_for_every_assessed_posting_and_counted(repo):
+    degree = "A PhD in Psychology is required for this research role."
+    board = Boards(acme=[posting(1, text=degree), posting(2, "Product Analyst", text=degree)])
+
+    def judged(job):
+        wanted = job["title"] == "UX Researcher"
+        fields = good_assessment(job, fit=80 if wanted else 20, role_match="direct" if wanted else "adjacent")
+        return dict(fields, unmet="degree || A PhD in Psychology is required")
+
+    root = repo()
+    layout = Layout(root)
+    full_tick(root, board, assess=judged)  # the second is below the bar, so it has no record
+    assert set(positions(root)) == {"acme:1"} and rows(root)["2"].status == "R"
+    assert (rows(root)["1"].note, rows(root)["2"].note) == ("unmet:degree", "unmet:degree")
+    assert json.loads(layout.feed_meta.read_text())["unmet"] == {"degree": 2}
+    assert "- Assessed postings with an unmet requirement: 2 degree." in layout.readme.read_text()
+    limits(root, direct_min=90)  # a floor takes the listed one out; its claim stays counted
+    full_tick(root, board, assess=judged)
+    assert rows(root)["1"].note == "unmet:degree" and json.loads(layout.feed_meta.read_text())["unmet"] == {"degree": 2}
 
 
 def test_a_record_assessed_before_unmet_requirements_stays_listed_and_renders(repo):

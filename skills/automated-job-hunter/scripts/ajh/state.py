@@ -58,7 +58,8 @@ def tag(row: Row, name: str) -> str | None:
 
     Tags: `was:<status>` (a published posting being re-judged), `fb:<codes>` (why the last answer was
     rejected), `canary` (a triage drop sent to assessment to measure what triage misses),
-    `blk:<facts>` (left out by a hard requirement; the facts it was checked on, see `feed.hard_limit`).
+    `blk:<facts>` (left out by a hard requirement; the facts it was checked on, see `feed.hard_limit`),
+    `unmet:<kinds>` (an assessed posting's unmet requirements, listed or not).
     """
     for part in row.note.split(";"):
         key, _, value = part.partition(":")

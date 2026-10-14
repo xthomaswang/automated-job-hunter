@@ -11,7 +11,10 @@ What changes for people who run a feed. Bring a feed repo up to date with
   a degree, current enrollment, a credential or a license. Each comes with the requirement quoted
   from the posting. A requirement that is only preferred, or that equivalent experience can
   replace, is not listed. The list is `unmet` in `positions.jsonl`, an "Unmet requirements"
-  section in the posting's brief, and an "unmet <kind>" flag in the README.
+  section in the posting's brief, and an "unmet <kind>" flag in the README. The kinds are also
+  kept for postings that are not listed (an `unmet:` tag in `state/`), and `feed/meta.json` and the
+  README count assessed postings with an unmet requirement by kind, so you can see how often the
+  assessments find each kind.
 - New setting `thresholds.unmet_requirements` in `profile/criteria.json`, for example
   `["degree", "enrollment"]`. It leaves out postings with an unmet requirement of those kinds, in
   the same way as `max_required_years` and `max_seniority`: they are counted under `blocked`, a

@@ -54,6 +54,7 @@ assessed; an update that finds nothing new uses no model at all. See [docs/spike
 - Design: [docs/DESIGN.md](docs/DESIGN.md)
 - Measurements: [docs/spikes.md](docs/spikes.md)
 - Contributor rules: [AGENTS.md](AGENTS.md)
+- Reporting problems and proposing changes: [docs/COLLABORATION.md](docs/COLLABORATION.md)
 
 ## Development
 

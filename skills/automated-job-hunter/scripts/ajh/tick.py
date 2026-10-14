@@ -19,19 +19,37 @@ JUDGE = Path(__file__).resolve().parents[1] / "judge.sh"
 JUDGE_TIMEOUT = 1800
 
 
+def written(root: Path) -> dict[str, Any]:
+    """What a judging stage actually produced, counted from the manifest and the result files."""
+    layout = Layout(root)
+    lines = layout.manifest.read_text(encoding="utf-8").splitlines() if layout.manifest.exists() else []
+    packets = [line.split(" | ")[0] for line in lines if " | " in line and not line.startswith("packet |")]
+    missing = [
+        p
+        for p in packets
+        if not (layout.results / f"{p}.txt").is_file() or not (layout.results / f"{p}.txt").stat().st_size
+    ]
+    return {"packets": len(packets), "results": len(packets) - len(missing), "missing": missing[:20]}
+
+
 def judge(root: Path) -> dict[str, Any]:
-    """Run one headless judging stage. A failure here is reported, not raised: `apply` still runs."""
+    """Run one headless judging stage. A failure here is reported, not raised: `apply` still runs.
+
+    `packets` and `results` are counted by the engine. `orchestrator_said` is the orchestrating
+    model's own one-line summary, kept for diagnosis; it is not checked and can be wrong.
+    """
     try:
         done = subprocess.run(["sh", str(JUDGE)], cwd=root, capture_output=True, text=True, timeout=JUDGE_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as error:
-        return {"ok": False, "detail": type(error).__name__}
+        return {"ok": False, **written(root), "detail": type(error).__name__}
     try:
         report = json.loads(done.stdout)
     except ValueError:
-        return {"ok": False, "detail": (done.stderr.strip().splitlines() or ["no output"])[-1][:200]}
+        return {"ok": False, **written(root), "detail": (done.stderr.strip().splitlines() or ["no output"])[-1][:200]}
     return {
         "ok": done.returncode == 0 and not report.get("is_error"),
-        "result": str(report.get("result", ""))[:80],
+        **written(root),
+        "orchestrator_said": str(report.get("result", ""))[:80],
         "cost_usd": report.get("total_cost_usd"),
         "denied": len(report.get("permission_denials") or []),
     }

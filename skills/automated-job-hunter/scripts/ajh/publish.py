@@ -108,6 +108,9 @@ def run(root: Path | str, *, push: bool = True, dry_run: bool = False, remote: s
             if gained is not None:
                 result.update(replayed=gained, commit=git.out("rev-parse", "--short=12", "HEAD"))
                 pushed = _push(git, remote, branch)
+            elif refused is None:  # the remote already has every commit here: nothing to push, nothing lost
+                result["note"] = "the remote is ahead of this repository; nothing to push"
+                return result
         if pushed.returncode == 0:
             result["pushed"] = True
             if result["state"] == "committed":
@@ -137,15 +140,17 @@ def _replay(git: Git, remote: str, branch: str, identity: tuple[str, ...]) -> tu
     seconds apart and each starts a run. A person's own commit is never moved. The verdicts were made
     from the earlier input; the next run judges again whatever the new input changes, exactly as
     after any edit to the profile. Returns the paths the remote gained, or None and the reason the
-    run is left for the next one to redo.
+    run is left for the next one to redo; None and None when the remote already has everything here.
     """
-    if TRAILER not in git.out("log", "-1", "--format=%B"):
-        return None, "the remote has commits this repository lacks, and the commit to push is not one this engine made"
     if git.run("fetch", "-q", remote, branch, check=False, config=_token_config()).returncode:
         return None, "the remote moved, and fetching it failed"
+    if git.run("merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD", check=False).returncode == 0:
+        return None, None
+    if TRAILER not in git.out("log", "-1", "--format=%B"):
+        return None, "the remote moved, and the commit to push is not one this engine made"
     ours = git.out("rev-parse", "HEAD")
     if git.out("rev-list", "FETCH_HEAD..HEAD").split() != [ours]:
-        return None, "the remote moved, and this repository has other commits it lacks"
+        return None, "the remote moved, and this repository has unpushed commits besides this run's own"
     base = git.out("merge-base", "HEAD", "FETCH_HEAD")
     gained = git.out("diff", "--name-only", base, "FETCH_HEAD").splitlines()
     outside = [path for path in gained if path.split("/")[0] not in audit.HAND_WRITTEN]

@@ -150,8 +150,23 @@ def test_no_replay_when_this_repository_has_other_commits_the_remote_lacks(feed_
     ahead = push_from_elsewhere(remote, tmp_path_factory, "profile/profile.md", "Edited elsewhere.")
     tick(root)
     result = publish.run(root)
-    assert result["state"] == "stale_base" and "other commits" in result["detail"]
+    assert result["state"] == "stale_base" and "unpushed commits besides this run's own" in result["detail"]
     assert git(remote, "rev-parse", "main") == ahead and git(root, "rev-parse", "HEAD^") == mine  # nothing reordered
+
+
+def test_nothing_to_push_while_the_remote_moved_is_unchanged_not_stale(
+    feed_repo, tmp_path_factory, monkeypatch, capsys
+):
+    root, remote = feed_repo
+    tick(root)
+    assert publish.run(root)["state"] == "published"
+    ahead = push_from_elsewhere(remote, tmp_path_factory, "profile/profile.md", "Edited elsewhere.")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert main(["--repo", str(root), "publish"]) == 0  # this run has nothing new: the remote is simply ahead
+    out = capsys.readouterr()
+    result = json.loads(out.out)
+    assert (result["state"], result["pushed"], "detail" in result) == ("unchanged", False, False)
+    assert "::warning::" not in out.err and git(remote, "rev-parse", "main") == ahead
 
 
 def test_publishing_without_a_remote_or_with_no_push_commits_locally(feed_repo):

@@ -87,12 +87,21 @@ were first published more than 45 days earlier and were still open. To cap the f
 set `backfill.days`: postings with a known date older than that are then parked when a source is
 first read, meaning recorded in state but not judged or published. The README counts them and
 `hunter requeue --parked` judges them later. A posting with no date is never parked, and after a
-source's first snapshot every newly listed posting is judged whatever date it carries.
+source's first snapshot every newly listed posting is judged whatever date it carries, except on a
+detail source, whose postings arrive over several updates and are each held to the limit as they
+arrive.
 
-**Lazy details.** Workday and SmartRecruiters need one request per posting for the description (one
-old source alone took 937). The engine fetches a detail only for ids not yet in state, for ids
-queued for assessment this tick, and for known ids whose listing fields changed, under a per-tick
-request budget.
+**Lazy details.** Workday (and later SmartRecruiters) lists postings without their text and needs one
+request per posting for it; one old source alone took 937. So such a source is read through its own
+search (`queries`, by default the wanted and related roles), and `collect` gives the adapter a rank
+function built from state. The adapter fetches text, at most `max_details` (100) per source per
+update and one request a second, in this order: postings about to be judged, new ones, ones whose
+listing changed, and listed ones (for their briefs). A settled posting, or one stage 0 drops on what
+the listing shows, needs none. A new posting whose text was not fetched is left out of the snapshot,
+so it enters state only with its text; nothing knew it, so nothing closes. A known one comes back
+with `detail_skipped`: it is not judged, and its brief is not rewritten, until an update fetches its
+text. Title and place come from the listing on every update, so the change fingerprint compares like
+with like; the detail's extra places and its employment type go into the text.
 
 **Measured cost.** At API list prices (Haiku 5.5 $0.10/$0.50 and Sonnet 5.5 $2/$10 per million
 input/output tokens, price table dated 2026-10-06), triage costs about $0.14 per 1,000 postings and

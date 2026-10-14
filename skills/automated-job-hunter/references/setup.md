@@ -99,6 +99,13 @@ and companies they named, and for a company that is not listed run
 `hunter sources probe "Company Name"`. Show the user the list and let them adjust it. Twenty to
 sixty boards is a normal size.
 
+For a large employer the name probe usually finds nothing, because most use Workday or a system
+this version cannot read. Find its careers page (or the link of one of its postings) and run
+`hunter sources probe <url> Company Name`; add what it reports, or tell the user the system it
+names is not supported. A Workday site is read through its own search for the wanted and related
+roles (set `queries` on the entry to search for something else). Its postings' texts take one
+request each, so a new Workday source fills in over a few updates, up to 100 postings an update.
+
 The job feeds (`remotive`, `remoteok`, `jobicy`) list remote jobs from many employers. They are
 broad and noisy; add them only if the user wants remote work.
 

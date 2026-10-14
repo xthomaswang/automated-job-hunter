@@ -98,6 +98,11 @@ class Client:
         self._next: dict[str, float] = {}
         self.requests = 0
 
+    def space(self, host: str, seconds: float) -> None:
+        """Keep at least `seconds` between requests to `host`: a source's documented or polite rate."""
+        with self._lock:
+            self.host_delay[host] = max(self.host_delay.get(host, 0.0), seconds)
+
     def _pace(self, host: str) -> None:
         delay = self.host_delay.get(host, 0.0)
         if delay <= 0:

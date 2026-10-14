@@ -154,8 +154,10 @@ def reconcile(
     for jid, item in seen.items():
         row = rows.get(jid)
         if row is None:
+            # A detail source's postings arrive over several updates as their text is fetched, so
+            # the backfill limit applies to each one as it arrives, not only to the first read.
             parked = (
-                first_snapshot
+                (first_snapshot or source.get("ats") in S.DETAILED)
                 and backfill_days is not None
                 and (age_days(item.job.posted_at, today) or 0) > backfill_days
             )
@@ -265,6 +267,27 @@ def assign_variants(state: State, seen: Mapping[str, Mapping[str, Seen]], kinds:
     return count
 
 
+def detail_rank(rows: Mapping[str, Row], stage0: C.Stage0, generations: Mapping[str, int]) -> S.Rank:
+    """For a detail source: whose text this update needs, in the order of `sources`' ranks.
+
+    A settled posting, or one stage 0 leaves out on what the listing already shows, needs none.
+    """
+
+    def rank(job: Job) -> int | None:
+        if stage0.check(job):
+            return None
+        row = rows.get(job.source_id)
+        if row is None:
+            return S.NEW
+        if row.status in "PKX" or (row.status in "ARU" and row.ag < generations["assess"]):
+            return S.PENDING
+        if fingerprints(job)[1] != row.tfp:
+            return S.CHANGED
+        return S.LISTED if row.status in PUBLISHED else None
+
+    return rank
+
+
 def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
     """Postings left out by a hard requirement that today's thresholds no longer impose: assess again.
 
@@ -334,7 +357,7 @@ def build_queue(
             if stage is None:
                 continue
             job = listed.get(jid)
-            if job is None or (stage == "assess" and not job.description):
+            if job is None or job.detail_skipped or (stage == "assess" and not job.description):
                 waiting[stage] += 1
                 continue
             posted = parse_date(job.posted_at)
@@ -404,7 +427,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     places = C.Places.bundled()
     criteria = C.load(layout.criteria, places)
     profile_text = layout.profile.read_text(encoding="utf-8") if layout.profile.exists() else ""
-    sources = load_sources(layout.sources)
+    sources = [S.scoped(source, criteria) for source in load_sources(layout.sources)]
     state = State(layout.state)
     client = client or Client()
 
@@ -417,10 +440,11 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         return not after or now >= datetime.fromisoformat(after)
 
     to_fetch = [s for s in sources if due(s)]
+    ranks = {s["id"]: detail_rank(state.rows(s["id"]), stage0, generations) for s in to_fetch}
 
     def fetch(source: Mapping[str, Any]) -> list[Job] | Exception:
         try:
-            return S.fetch(client, source)
+            return S.fetch(client, source, ranks[source["id"]])
         except Exception as error:  # any failure keeps this source's previous snapshot in force
             return error
 

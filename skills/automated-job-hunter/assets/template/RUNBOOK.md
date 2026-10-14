@@ -87,4 +87,7 @@ Published postings stay listed until their new assessment arrives.
   reached this month (UTC). `collect` reports `judge_needed: false` and the budget, and the README
   says until when. Nothing is lost; to resume sooner, raise the budget or remove it.
 - **`stale_base` from publish**: the remote has commits this run did not start from. Nothing was
-  pushed or lost; the next tick starts from the new state.
+  pushed or lost, `detail` says why, and the next tick starts from the new state.
+- **`replayed` in publish's output**: the remote gained only edits to `profile/` or `config/` while
+  the run worked, so publish put this run's commit on top of them and pushed. The next run judges
+  again whatever those edits change.

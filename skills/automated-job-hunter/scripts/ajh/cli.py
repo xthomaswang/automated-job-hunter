@@ -76,7 +76,14 @@ def _apply(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _publish(args: argparse.Namespace) -> dict[str, Any]:
-    return publish.run(args.repo, push=not args.no_push, dry_run=args.dry_run)
+    result = publish.run(args.repo, push=not args.no_push, dry_run=args.dry_run)
+    if result["state"] == "stale_base" and os.environ.get("GITHUB_ACTIONS") == "true":
+        # Not a failure: nothing is lost and the next run redoes the work. It must not pass unseen either.
+        print(
+            f"::warning::Nothing was pushed: {result['detail']}. The next run judges the same postings again.",
+            file=sys.stderr,
+        )
+    return result
 
 
 def _audit(args: argparse.Namespace) -> dict[str, Any]:

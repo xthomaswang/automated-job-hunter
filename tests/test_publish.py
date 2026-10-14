@@ -99,6 +99,76 @@ def test_a_moved_remote_is_left_alone_never_forced(feed_repo, tmp_path_factory):
     assert main(["--repo", str(root), "publish"]) == 0  # the next tick starts from a fresh clone and redoes the work
 
 
+def push_from_elsewhere(remote, tmp_path_factory, path, text):
+    """A person's commit that reaches the remote while a run is working, as a merged PR would."""
+    other = tmp_path_factory.mktemp("other")
+    subprocess.run(["git", "clone", "-q", str(remote), str(other)], check=True)
+    (other / path).parent.mkdir(parents=True, exist_ok=True)
+    (other / path).write_text(text)
+    git(other, "add", "-A")
+    git(other, *IDENTITY, "commit", "-q", "-m", f"Edit {path}")
+    git(other, "push", "-q", "origin", "main")
+    return git(remote, "rev-parse", "main")
+
+
+def test_a_run_lands_on_top_of_a_persons_edit_merged_while_it_ran(feed_repo, tmp_path_factory):
+    root, remote = feed_repo
+    edited = push_from_elsewhere(
+        remote, tmp_path_factory, "profile/profile.md", "Five years of research, and now teaching."
+    )
+    tick(root)
+    result = publish.run(root)
+    assert (result["state"], result["pushed"], result["replayed"]) == ("published", True, ["profile/profile.md"])
+    head = git(remote, "rev-parse", "main")
+    assert git(remote, "rev-parse", "main^") == edited and head.startswith(result["commit"])  # on top, nothing lost
+    assert git(remote, "show", "main:profile/profile.md") == "Five years of research, and now teaching."
+    assert "positions.jsonl" in git(remote, "show", "--name-only", "--format=", "main").splitlines()
+    assert git(remote, "log", "-1", "--format=%B", "main").rstrip().endswith(publish.TRAILER)
+    assert (root / "profile/profile.md").read_text() == "Five years of research, and now teaching."
+
+
+def test_no_replay_over_generated_files_or_past_other_unpushed_work(feed_repo, tmp_path_factory, monkeypatch, capsys):
+    root, remote = feed_repo
+    ahead = push_from_elsewhere(remote, tmp_path_factory, "README.md", "edited by hand")
+    tick(root)
+    result = publish.run(root)
+    assert (result["state"], result["pushed"]) == ("stale_base", False) and "README.md" in result["detail"]
+    assert git(remote, "rev-parse", "main") == ahead
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert main(["--repo", str(root), "publish"]) == 0  # a warning on the run, not a failure
+    assert "::warning::Nothing was pushed: the remote moved, with changes outside profile/ and config/" in (
+        capsys.readouterr().err
+    )
+
+
+def test_no_replay_when_this_repository_has_other_commits_the_remote_lacks(feed_repo, tmp_path_factory):
+    root, remote = feed_repo
+    (root / "config/hunter.json").write_text("{}\n")  # a person's own commit, not pushed yet
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "Local edit")
+    mine = git(root, "rev-parse", "HEAD")
+    ahead = push_from_elsewhere(remote, tmp_path_factory, "profile/profile.md", "Edited elsewhere.")
+    tick(root)
+    result = publish.run(root)
+    assert result["state"] == "stale_base" and "unpushed commits besides this run's own" in result["detail"]
+    assert git(remote, "rev-parse", "main") == ahead and git(root, "rev-parse", "HEAD^") == mine  # nothing reordered
+
+
+def test_nothing_to_push_while_the_remote_moved_is_unchanged_not_stale(
+    feed_repo, tmp_path_factory, monkeypatch, capsys
+):
+    root, remote = feed_repo
+    tick(root)
+    assert publish.run(root)["state"] == "published"
+    ahead = push_from_elsewhere(remote, tmp_path_factory, "profile/profile.md", "Edited elsewhere.")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert main(["--repo", str(root), "publish"]) == 0  # this run has nothing new: the remote is simply ahead
+    out = capsys.readouterr()
+    result = json.loads(out.out)
+    assert (result["state"], result["pushed"], "detail" in result) == ("unchanged", False, False)
+    assert "::warning::" not in out.err and git(remote, "rev-parse", "main") == ahead
+
+
 def test_publishing_without_a_remote_or_with_no_push_commits_locally(feed_repo):
     root, remote = feed_repo
     before = git(remote, "rev-parse", "main")

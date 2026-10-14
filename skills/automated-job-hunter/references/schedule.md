@@ -115,9 +115,12 @@ parts of the file. This does not make GitHub start scheduled runs it was not sta
 
 **Start the workflow from elsewhere.** Anything that runs on a schedule can run
 `gh workflow run job-hunter.yml --repo <owner>/<repo>`. The run then happens on GitHub as before,
-with the repo's secrets; only the start comes from elsewhere. On a machine where `gh` is logged in,
-this needs no new secret, but the machine has to be awake. An external scheduler that calls GitHub's
-API instead needs a token that can start workflows in the feed repo, stored with that service.
+with the repo's secrets; only the start comes from elsewhere. A start while a run is going waits for
+it, and a newer start replaces one already waiting, so starts never pile up. On a machine where `gh`
+is logged in, this needs no new secret, but the machine has to be on: cron skips a start that falls
+while the machine sleeps, while launchd on macOS, with `StartCalendarInterval`, starts once when it
+wakes. An external scheduler that calls GitHub's API instead needs a token stored with that service:
+a fine-grained token for the feed repo alone, with the Actions permission set to read and write.
 
 **Claude Code Routine.** A cloud routine on the feed repo with the prompt "Read .hunter/RUNBOOK.md
 and run one tick. Push to main." Two things must be set by the user: the routine's environment has

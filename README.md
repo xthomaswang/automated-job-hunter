@@ -4,9 +4,9 @@ An installable skill for Claude Code that keeps a private GitHub repo updated wi
 matched to your experience. A deterministic engine fetches public job boards and
 publishes the feed; the agent's cheap subagents judge fit.
 
-**Status: early.** A feed repo can be created, updated end to end with real subagents, and committed
-on one machine. Installing from GitHub and the scheduled GitHub Actions run have not been tested
-yet. The skill file is written to be portable to Codex, but nothing has been run there. Please
+**Status: in testing.** Tested end to end: installing from GitHub, setting up a feed, updates on one
+machine, and scheduled GitHub Actions runs billed to a Claude subscription or to an API key. The
+skill file is written to be portable to Codex, but nothing has been run there yet. Please
 [open an issue](https://github.com/xthomaswang/automated-job-hunter/issues) for anything that breaks.
 
 ## Install
@@ -39,6 +39,22 @@ file.
    stronger one assesses the survivors against your profile.
 3. The engine checks everything the models wrote (every quote must be in the posting), updates
    `README.md`, `positions.jsonl` and one brief per posting, and commits.
+4. A GitHub Actions workflow in the feed repo runs the updates on a schedule: every 1, 4 or 8
+   hours, or at set times of day. It needs one repository secret, `CLAUDE_CODE_OAUTH_TOKEN` (your
+   Claude subscription) or `ANTHROPIC_API_KEY` (billed per use; a key created inside a workspace).
+
+## What you can steer
+
+- **What it looks for**: roles you want, related roles, roles to avoid, seniority, employment type,
+  countries, visa sponsorship, companies to prefer or leave out, and the profile text itself. The
+  skill says what each change judges again, and what it costs.
+- **Hard requirements**: leave out postings that require more years than you have or are more
+  senior than you want, and set a lowest fit for the roles you want. These judge nothing again.
+- **Your decisions**: `hunter decide applied <key>` marks a posting "✅ applied" in the feed and
+  stops judging it; `hunter decide declined <key>` takes it out for good.
+- **Cost**: every update that judged is logged with its tokens and Claude Code's list-price
+  estimate, in `feed/usage.jsonl` and the feed's README. A monthly budget pauses judging once it
+  is reached.
 
 A model never touches git or a link, never sees a credential, and in a scheduled run has no shell
 and no network: it can read packets and write result files, nothing else.
@@ -51,7 +67,8 @@ claude --plugin-dir .
 ```
 
 Measured cost at API prices: about $0.14 per 1,000 postings screened and $0.02 per posting
-assessed; an update that finds nothing new uses no model at all. See [docs/spikes.md](docs/spikes.md).
+assessed. An update working through a backlog at the default caps costs about $1.7 to $2; one that
+finds nothing new uses no model at all. See [docs/spikes.md](docs/spikes.md).
 
 - Design: [docs/DESIGN.md](docs/DESIGN.md)
 - Measurements: [docs/spikes.md](docs/spikes.md)

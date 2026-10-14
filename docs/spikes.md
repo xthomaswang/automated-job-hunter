@@ -174,5 +174,5 @@ published, a clean tree and one commit, in about a minute for $0.18.
 
 | Spike | Needs |
 |---|---|
-| E3: the same CLI invocation on a scheduled GitHub Actions runner | A throwaway private repo and an Actions secret |
+| E3: the same CLI invocation on a scheduled GitHub Actions runner | A run with a `CLAUDE_CODE_OAUTH_TOKEN` secret. The `ANTHROPIC_API_KEY` path has run on a private test feed: four runs measured at about $0.015 to $0.016 per posting assessed |
 | E6: aggregator rate limits from runner IPs | The throwaway repo |

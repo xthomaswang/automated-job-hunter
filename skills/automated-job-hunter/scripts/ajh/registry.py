@@ -215,8 +215,8 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             count, sample = data["total"], [row.get("title") for row in data["jobPostings"]]
             target = "/".join(p for p in (found["host"], found.get("tenant"), found["site"]) if p)
             add = f"workday:{target}:{company}"
-            ranked = sorted(workday.categories(data).items(), key=lambda item: -item[1][1])
-            listed = [{"name": name, "postings": n} for _, (_, n, name) in ranked[:15]]
+            ranked = sorted(workday.categories(data).items(), key=lambda item: -item[1][2])
+            listed = [{"name": name, "postings": n} for _, (_, _, n, name) in ranked[:15]]
             return {**{k: v for k, v in found.items() if v is not None}, "supported": True, "postings": count,
                     "sample": sample[:3], "add": add, "categories": listed}  # fmt: skip
         else:

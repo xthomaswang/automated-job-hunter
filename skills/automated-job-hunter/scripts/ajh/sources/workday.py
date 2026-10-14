@@ -66,27 +66,43 @@ def search(
     return data
 
 
-def categories(data: Mapping[str, Any]) -> dict[str, tuple[str, int, str]]:
-    """A listing's job categories, as {folded name: (id, postings, the site's own name)}."""
-    found: dict[str, tuple[str, int, str]] = {}
-    for facet in data.get("facets") or []:
-        if isinstance(facet, dict) and facet.get("facetParameter") == "jobFamilyGroup":
-            for value in facet.get("values") or []:
-                if isinstance(value, dict) and isinstance(value.get("descriptor"), str) and value.get("id"):
-                    name = value["descriptor"]
-                    found[name.casefold()] = (str(value["id"]), value.get("count") or 0, name)
+FAMILIES = ("jobFamilyGroup", "jobFamily")  # the facets sites file their job categories under
+
+
+def categories(data: Mapping[str, Any]) -> dict[str, tuple[str, str, int, str]]:
+    """A listing's job categories, as {folded name: (facet, id, postings, the site's own name)}.
+
+    Most sites have them as a top-level `jobFamilyGroup` facet; some nest it in a group of facets or
+    call it `jobFamily`; some have none.
+    """
+    found: dict[str, tuple[str, str, int, str]] = {}
+    pending = [facet for facet in data.get("facets") or [] if isinstance(facet, dict)]
+    while pending:
+        facet = pending.pop(0)
+        values = [value for value in facet.get("values") or [] if isinstance(value, dict)]
+        if facet.get("facetParameter") in FAMILIES:
+            for value in values:
+                name = value.get("descriptor")
+                if isinstance(name, str) and value.get("id") and name.casefold() not in found:
+                    found[name.casefold()] = (facet["facetParameter"], str(value["id"]), value.get("count") or 0, name)
+        else:
+            pending += [value for value in values if "facetParameter" in value]  # a group of facets
     return found
 
 
 def _narrowed(client: Client, root: str, names: list[str]) -> dict[str, Any]:
-    """The facet that keeps a search to these job categories. An unknown name fails the source."""
+    """The facets that keep a search to these job categories. An unknown name fails the source."""
     known = categories(search(client, root, "", limit=1))
     missing = [name for name in names if name.casefold() not in known]
     if missing:
         raise SourceError(
             f"This Workday site has no job category {missing[0]!r}; `sources probe` lists the ones it has"
         )
-    return {"jobFamilyGroup": [known[name.casefold()][0] for name in names]}
+    applied: dict[str, list[str]] = {}
+    for name in names:
+        facet, value, _, _ = known[name.casefold()]
+        applied.setdefault(facet, []).append(value)
+    return applied
 
 
 def _listing(client: Client, root: str, query: str, applied: Mapping[str, Any]) -> list[dict[str, Any]]:

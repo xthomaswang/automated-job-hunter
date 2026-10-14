@@ -107,7 +107,10 @@ roles (set `queries` on the entry to search for something else). That search mat
 words, so it returns many unrelated postings, which triage screens out cheaply. On a very large
 site a search can match more than 1,000 postings and the source then fails: set `categories` on
 the entry to the site's job categories for these roles, which the probe lists with their counts,
-for example `"categories": ["Research", "Design"]`. Its postings' texts take one request each,
+for example `"categories": ["Research", "Design"]`. Use it only then: on a site of a few hundred
+postings, leave it off, because a role is often filed under a generic category ("Product",
+"Strategy") and triage screens the rest out cheaply. Some sites list no categories at all (the
+probe shows an empty list); there, use fewer queries. Its postings' texts take one request each,
 so a new Workday source fills in over a few updates, up to 100 postings an update. Sites on the
 shared host (`wd1.myworkdaysite.com/recruiting/<tenant>/<site>`) work the same way; the probe
 prints their add line with the tenant.

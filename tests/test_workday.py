@@ -148,3 +148,14 @@ def test_categories_narrow_a_broad_search_and_a_shared_host_builds_its_own_links
     shared = dict(SEARCHED, host="wd1.myworkdaysite.com", tenant="initech")
     job = S.fetch(client(board), shared, lambda job: S.NEW)[0]
     assert job.url.startswith("https://wd1.myworkdaysite.com/recruiting/initech/External/job/")
+
+
+def test_job_categories_are_found_where_sites_file_them():
+    group = {
+        "facetParameter": "jobFamilyGroupGroup",
+        "values": [{"facetParameter": "jobFamily", "values": [{"descriptor": "Research", "id": "f1", "count": 4}]}],
+    }
+    flat = {"facetParameter": "jobFamilyGroup", "values": [{"descriptor": "Design", "id": "g1", "count": 2}]}
+    found = workday.categories({"facets": [group, flat, {"facetParameter": "timeType", "values": []}]})
+    assert found == {"research": ("jobFamily", "f1", 4, "Research"), "design": ("jobFamilyGroup", "g1", 2, "Design")}
+    assert workday.categories({"total": 3, "jobPostings": []}) == {}  # a site with none

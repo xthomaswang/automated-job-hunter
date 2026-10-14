@@ -155,7 +155,7 @@ def _detail(client: Client, url: str, job: Job, slug: str) -> Job | None:
     return replace(job, description=text, url=link or job.url, apply_url=applied if own_apply else None)
 
 
-def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None, new: int) -> list[Job]:
+def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None) -> list[Job]:
     url = root(source)
     client.space(HOST, DELAY)
     queries = source.get("queries")
@@ -166,6 +166,4 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int |
         for row in _listing(client, url, query):
             job = _listed(source, row)
             listed.setdefault(job.source_id, (job, source["slug"]))
-    return lazy.complete(
-        listed, rank, new, lazy.budget(source, DETAILS), lambda job, slug: _detail(client, url, job, slug)
-    )
+    return lazy.complete(listed, rank, lazy.budget(source, DETAILS), lambda job, slug: _detail(client, url, job, slug))

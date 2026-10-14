@@ -111,8 +111,9 @@ for example `"categories": ["Research", "Design"]`. Use it only then: on a site 
 postings, leave it off, because a role is often filed under a generic category ("Product",
 "Strategy") and triage screens the rest out cheaply. Some sites list no categories at all (the
 probe shows an empty list); there, use fewer queries. Its postings' texts take one request each,
-so a new Workday source fills in over a few updates, up to 100 postings an update. SmartRecruiters
-companies (`smartrecruiters:<company>:Company`) are searched and filled in the same way. Sites on the
+so a new Workday source fills in over a few updates, up to 100 postings an update; the feed's
+README counts the ones still waiting for their text. SmartRecruiters companies
+(`smartrecruiters:<company>:Company`) are searched and filled in the same way. Sites on the
 shared host (`wd1.myworkdaysite.com/recruiting/<tenant>/<site>`) work the same way; the probe
 prints their add line with the tenant.
 

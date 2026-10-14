@@ -184,7 +184,7 @@ def _detail(client: Client, root: str, job: Job, path: str) -> Job | None:
     )
 
 
-def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None, new: int) -> list[Job]:
+def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None) -> list[Job]:
     host, base, root = site(source)
     client.space(host, DELAY)
     queries, names = source.get("queries"), source.get("categories") or []
@@ -199,6 +199,4 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int |
             job = _listed(source, base, row)
             listed.setdefault(job.source_id, (job, row["externalPath"]))
 
-    return lazy.complete(
-        listed, rank, new, lazy.budget(source, DETAILS), lambda job, path: _detail(client, root, job, path)
-    )
+    return lazy.complete(listed, rank, lazy.budget(source, DETAILS), lambda job, path: _detail(client, root, job, path))

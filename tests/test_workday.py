@@ -91,8 +91,11 @@ def test_new_postings_wait_for_their_text_and_settled_ones_need_none(repo):
     full_tick(root, board, assess=assess)  # the newest requisitions first
     assert board.details() == ["R3", "R2"] and sorted(rows(root, "initech")) == ["R2", "R3"]  # R1 waits outside
     assert rows(root, "initech")["R3"].status == "R"
+    assert json.loads(Layout(root).feed_meta.read_text())["counts"]["waiting_for_text"] == 1  # and is counted
+    assert "- New postings on career sites waiting for their text: 1." in Layout(root).readme.read_text()
     full_tick(root, board, assess=assess)  # the new one before the listed one
     assert board.details() == ["R1", "R2"] and set(positions(root)) == {"initech:R1", "initech:R2"}
+    assert json.loads(Layout(root).feed_meta.read_text())["counts"]["waiting_for_text"] == 0
     full_tick(root, board, assess=assess)  # the settled one needs no text; the listed ones get it if there is room
     assert board.details() == ["R2", "R1"]
 

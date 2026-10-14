@@ -356,6 +356,11 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
     ]
     if counts["parked"]:
         lines.append(f"- Parked as older than the backfill limit: {counts['parked']}.")
+    if counts.get("waiting_for_text"):
+        lines.append(
+            f"- New postings on career sites waiting for their text: {counts['waiting_for_text']}. They join over the "
+            "next updates, each site's texts fetched up to `max_details` (100) an update."
+        )
     budget = (meta.get("usage") or {}).get("budget")
     if budget and budget["paused"]:
         lines.append(f"- Judging is paused until {budget['resumes']}: the monthly budget is reached (see Usage).")

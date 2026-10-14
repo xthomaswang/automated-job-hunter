@@ -12,8 +12,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import __version__, feed, usage
 from . import criteria as C
-from . import feed
 from .advance import WorkError, check_seal, load_jobs
 from .collect import job_of, split_key
 from .layout import Layout
@@ -187,7 +187,26 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
 
     state.save(layout.state_next, as_of)
     failing = {sid: info["fail_since"] for sid, info in state.sources.items() if info.get("fail_since")}
-    judging_failed = _judging_failed(layout, plan.get("triage") or {}, counts, old_meta.get("judging_failed"), as_of)
+    asked = _asked(plan.get("triage") or {}, counts)
+    judging_failed = _judging_failed(layout, asked, old_meta.get("judging_failed"), as_of)
+    log = usage.load(layout.usage)
+    reports = {stage: read_json(layout.results / f"_judging-{stage}.json", {}) for stage in usage.STAGES}
+    reports = {stage: report for stage, report in reports.items() if report}
+    unanswered = _unanswered(asked)
+    if reports or unanswered:  # an update that judged, or tried to; one that only read the boards adds nothing
+        line = usage.entry(
+            reports,
+            {stage: count for stage, (count, _) in asked.items()},
+            sum(item["event"] == "added" for item in events),
+            judging_failed["detail"] if unanswered and judging_failed else None,
+            __version__,
+        )
+        usage.append(layout.usage, line)
+        log.append(line)
+    used = usage.summary(log, as_of)
+    budget = usage.budget(criteria["caps"]["max_usd_per_month"], log, as_of)
+    if budget:
+        used = {**(used or {}), "budget": {**budget, "paused": plan.get("budget", {}).get("reached", False)}}
     meta = {
         "schema_version": feed.SCHEMA_VERSION,
         "as_of": as_of,
@@ -196,6 +215,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         "generations": generations,
         "sources": {"total": len(state.sources), "failing": failing},
         **({"judging_failed": judging_failed} if judging_failed else {}),
+        **({"usage": used} if used else {}),
     }
     write_text(layout.feed_meta, dump_json(meta))
     write_text(layout.readme, feed.readme_text(meta, records))
@@ -210,8 +230,27 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     }
 
 
+def _asked(triage: dict[str, int], assess: dict[str, int]) -> dict[str, tuple[int, int]]:
+    """Per stage: how many postings this tick asked to be judged, and how many got no answer."""
+    return {
+        "triage": (
+            sum(triage.get(name, 0) for name in ("kept", "dropped", "rejected", "escalated", "unanswered")),
+            triage.get("unanswered", 0),
+        ),
+        "assess": (
+            sum(assess[name] for name in ("published", "below_threshold", "rejected", "unscored", "unanswered")),
+            assess["unanswered"],
+        ),
+    }
+
+
+def _unanswered(asked: dict[str, tuple[int, int]]) -> list[str]:
+    """The stages that were asked for verdicts and got none back."""
+    return [stage for stage, (count, missing) in asked.items() if count and missing == count]
+
+
 def _judging_failed(
-    layout: Layout, triage: dict[str, int], assess: dict[str, int], previous: dict[str, Any] | None, as_of: str
+    layout: Layout, asked: dict[str, tuple[int, int]], previous: dict[str, Any] | None, as_of: str
 ) -> dict[str, Any] | None:
     """The judging stages that were asked for verdicts this tick and got none back, or None.
 
@@ -219,14 +258,9 @@ def _judging_failed(
     that asked for no verdicts says nothing new, so an earlier failure stays reported until a stage
     gets answers again.
     """
-    asked = {
-        "triage": sum(triage.get(name, 0) for name in ("kept", "dropped", "rejected", "escalated", "unanswered")),
-        "assess": sum(assess[name] for name in ("published", "below_threshold", "rejected", "unscored", "unanswered")),
-    }
-    unanswered = {"triage": triage.get("unanswered", 0), "assess": assess["unanswered"]}
-    if not any(asked.values()):
+    if not any(count for count, _ in asked.values()):
         return previous
-    stages = [stage for stage in ("triage", "assess") if asked[stage] and unanswered[stage] == asked[stage]]
+    stages = _unanswered(asked)
     if not stages:
         return None
     record = read_json(layout.results / f"_judging-{stages[0]}.json", {})

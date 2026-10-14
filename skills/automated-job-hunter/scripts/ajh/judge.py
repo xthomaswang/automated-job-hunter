@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from . import usage
 from .layout import Layout
 from .packets import AGENTS
 from .state import dump_json, write_text
@@ -79,6 +80,7 @@ def claude_invoke(root: Path, manifest: str) -> dict[str, Any]:
         "ok": ok,
         "cost_usd": report.get("total_cost_usd") or 0.0,
         "denied": len(report.get("permission_denials") or []),
+        "usage": usage.from_reply(report),
     }
     if not ok:  # Claude Code's own first line, for example "API Error: 400 ..."
         lines = str(report.get("result") or "").strip().splitlines()
@@ -91,13 +93,17 @@ def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> d
 
     `ok` is true when every packet has a result file, whether the first pass or the retry produced it.
     `failures` lists any orchestrator error along the way, including ones the retry recovered from.
-    `judging_failed` is set when not one packet got a result: that fails the command, and the report
-    is left in the results folder for `apply` to put in the feed. Some answers are not a failure; the
-    packets still missing are issued again next time.
+    `judging_failed` is set when not one packet got a result: that fails the command. Some answers
+    are not a failure; the packets still missing are issued again next time. `usage` adds up the
+    tokens, time and cost each call reported, per model.
+
+    The report is left in the results folder for `apply`, which puts it in the feed and the usage
+    log. It is rewritten after every batch, so a step cut off part way still leaves what it spent.
     """
     layout = Layout(root)
     invoke = invoke or claude_invoke
     rows = manifest_rows(layout)
+    stage = STAGES.get(rows[0].rsplit(" | ", 1)[-1].strip(), "judging") if rows else None
     todo, calls, failures = rows, [], []
     for number in range(1, PASSES + 1):
         if not todo:
@@ -109,12 +115,19 @@ def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> d
                 layout.results / name,
                 "packet | packet file | result file | agent\n" + "\n".join(todo[start : start + batch]) + "\n",
             )
-            report = invoke(layout.root, (layout.results / name).relative_to(layout.root).as_posix())
-            calls.append(report)
-            if not report["ok"]:
-                failures.append(report.get("detail", "the orchestrator reported an error"))
+            reply = invoke(layout.root, (layout.results / name).relative_to(layout.root).as_posix())
+            calls.append(reply)
+            if not reply["ok"]:
+                failures.append(reply.get("detail", "the orchestrator reported an error"))
+            _leave(layout, stage, _report(layout, rows, calls, failures))
         left = set(missing(layout, todo))
         todo = [row for row in todo if row.split(" | ")[0] in left]
+    report = _report(layout, rows, calls, failures)
+    _leave(layout, stage, report)
+    return report
+
+
+def _report(layout: Layout, rows: list[str], calls: list[dict[str, Any]], failures: list[str]) -> dict[str, Any]:
     unanswered = missing(layout, rows)
     report: dict[str, Any] = {
         "ok": not unanswered,
@@ -125,11 +138,15 @@ def run(root: Path | str, invoke: Invoke | None = None, batch: int = BATCH) -> d
         "cost_usd": round(sum(c.get("cost_usd", 0.0) for c in calls), 4),
         "denied": sum(c.get("denied", 0) for c in calls),
         **({"failures": failures[:5]} if failures else {}),
+        "credential": usage.credential(),
+        "usage": usage.combine(c.get("usage") or {} for c in calls),
     }
-    if rows:
-        if not report["results"]:
-            report["judging_failed"] = True
-        stage = STAGES.get(rows[0].rsplit(" | ", 1)[-1].strip(), "judging")
-        # Under results/: outside the seal, and not a packet's result file.
-        write_text(layout.results / f"_judging-{stage}.json", dump_json(report))
+    if rows and not report["results"]:
+        report["judging_failed"] = True
     return report
+
+
+def _leave(layout: Layout, stage: str | None, report: dict[str, Any]) -> None:
+    """Under results/: outside the seal, and not a packet's result file."""
+    if stage:
+        write_text(layout.results / f"_judging-{stage}.json", dump_json(report))

@@ -83,5 +83,8 @@ Published postings stay listed until their new assessment arrives.
   with the day it started, the stages, and the first line of the error. New postings wait in the
   queue and are judged once it works again. In the scheduled workflow, the judging step's log has
   the full error; a missing or expired Claude secret is the usual cause.
+- **Judging paused by the budget**: `caps.max_usd_per_month` in `profile/criteria.json` was
+  reached this month (UTC). `collect` reports `judge_needed: false` and the budget, and the README
+  says until when. Nothing is lost; to resume sooner, raise the budget or remove it.
 - **`stale_base` from publish**: the remote has commits this run did not start from. Nothing was
   pushed or lost; the next tick starts from the new state.

@@ -37,6 +37,9 @@ gh run watch --repo <owner>/<repo>
 Things to tell the user:
 
 - GitHub's schedule is best effort: a run can start late, and under heavy load be skipped.
+- What judging costs is in the feed: the README's Usage section and `feed/usage.jsonl`. With an API
+  key, a monthly budget (`caps.max_usd_per_month`, see [setup.md](setup.md)) pauses judging once it
+  is reached; the run then shows a warning, not a failure.
 - Private repositories have a monthly allowance of Actions minutes. A run that only reads the
   boards takes about a minute; one that judges takes a few. Every 4 hours fits comfortably; every
   hour uses most of a free allowance.

@@ -88,6 +88,8 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
         "counts": meta.get("counts"),
         "triage_check": meta.get("canary"),
         "failing_sources": (meta.get("sources") or {}).get("failing"),
+        "judging_failed": meta.get("judging_failed"),
+        "usage": meta.get("usage"),
     }
 
 

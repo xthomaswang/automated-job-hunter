@@ -13,6 +13,7 @@ from helpers import (
     NOW,
     REMOTIVE,
     Boards,
+    answer_assess,
     answer_triage,
     full_tick,
     good_assessment,
@@ -187,6 +188,8 @@ def test_a_cut_off_judging_stage_still_lands_what_was_judged(repo):
 
 
 def test_judging_that_got_no_answers_is_reported_in_the_feed_until_answers_come_back(repo):
+    from ajh import usage
+
     root, board = repo(), boards()
     layout = Layout(root)
     client = Client(board.transport, sleep=lambda s: None, retries=0)
@@ -207,6 +210,9 @@ def test_judging_that_got_no_answers_is_reported_in_the_feed_until_answers_come_
     readme = layout.readme.read_text()
     assert f"> **Judging has failed since {day}**" in readme and "Last error: API Error: 401" in readme
     assert leaked not in readme
+    (logged,) = usage.load(layout.usage)  # a failed update is logged too: no cost, and why
+    assert (logged["total"]["cost_usd"], logged["stages"]["triage"]["postings"]) == (0, 4)
+    assert logged["error"] == meta["judging_failed"]["detail"]
 
     again = collect.run(root, client, NOW + timedelta(days=1))  # fails again, this time without a report
     apply.run(root, advance.run(root, again["seal"])["seal"])
@@ -214,9 +220,81 @@ def test_judging_that_got_no_answers_is_reported_in_the_feed_until_answers_come_
     assert meta["judging_failed"]["since"] == day  # still the day it started
     assert meta["judging_failed"]["detail"] == "No answers came back; the judging step's log says why."
 
+    assert usage.load(layout.usage)[-1]["error"] == "No answers came back; the judging step's log says why."
+
     full_tick(root, board, now=NOW + timedelta(days=2), triage=triage, assess=assess)
     assert "judging_failed" not in json.loads(layout.feed_meta.read_text())
     assert "Judging has failed" not in layout.readme.read_text()
+
+
+def test_an_update_that_judged_adds_one_line_to_the_usage_log_and_a_quiet_one_adds_none(repo, monkeypatch, capsys):
+    from ajh import __version__, usage
+    from ajh.cli import main
+
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(usage, "now", lambda: "2026-10-13T12:30:00Z")
+    root, board = repo(), boards()
+    layout = Layout(root)
+
+    def report(stage, cost, out):  # what `hunter judge` leaves for each stage
+        model = {"in": 10, "out": out, "thinking": 0, "cache_read": 1000, "cache_write": 200, "cost_usd": cost}
+        spent = {"models": {"claude-haiku-5-5": model}, "seconds": 12.0, "api_seconds": 40.0, "turns": 4}
+        layout.results.mkdir(parents=True, exist_ok=True)
+        (layout.results / f"_judging-{stage}.json").write_text(
+            json.dumps({"packets": 1, "results": 1, "cost_usd": cost, "credential": "api_key", "usage": spent})
+        )
+
+    first = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    answer_triage(root, triage)
+    report("triage", 0.004, 300)
+    moved = advance.run(root, first["seal"])
+    answer_assess(root, assess)
+    report("assess", 0.05, 900)
+    apply.run(root, moved["seal"])
+    (line,) = usage.load(layout.usage)
+    assert {k: line[k] for k in ("v", "at", "where", "credential", "engine")} == {
+        "v": 1,
+        "at": "2026-10-13T12:30:00Z",
+        "where": "local",
+        "credential": "api_key",
+        "engine": __version__,
+    }
+    assert line["stages"]["triage"] == {
+        "postings": 4,
+        "packets": 1,
+        "results": 1,
+        "missing": 0,
+        "cost_usd": 0.004,
+        "models": {"claude-haiku-5-5": {"in": 10, "out": 300, "thinking": 0, "cache_read": 1000, "cache_write": 200,
+                                        "cost_usd": 0.004}},
+        "seconds": 12.0,
+        "api_seconds": 40.0,
+        "turns": 4,
+    }  # fmt: skip
+    assert line["stages"]["assess"]["postings"] == 3  # the unrelated title was dropped at triage
+    assert line["total"] == {
+        "in": 20,
+        "out": 1200,
+        "thinking": 0,
+        "cache_read": 2000,
+        "cache_write": 400,
+        "cost_usd": 0.054,
+    }
+    assert (line["per_posting_triaged_usd"], line["per_posting_assessed_usd"], line["per_new_match_usd"]) == (
+        0.001,
+        0.016667,
+        0.027,
+    )
+    meta = json.loads(layout.feed_meta.read_text())
+    assert (meta["usage"]["month"]["name"], meta["usage"]["all_time"]["cost_usd"]) == ("2026-10", 0.054)
+    readme = layout.readme.read_text()
+    assert "## Usage" in readme and "| All time | 1 | 20 | 1,200 | 2,000 | 400 | $0.054 |" in readme
+    assert main(["--repo", str(root), "status"]) == 0
+    assert json.loads(capsys.readouterr().out)["usage"]["all_time"]["updates"] == 1
+
+    before = tracked(root)
+    full_tick(root, board, triage=triage, assess=assess)  # nothing new to judge: no line, no change
+    assert tracked(root) == before
 
 
 def test_other_listings_of_the_same_opening_are_attached_to_its_record(repo):

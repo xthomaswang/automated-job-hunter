@@ -2,9 +2,18 @@
 
 import json
 
-from ajh import judge
+import pytest
+from ajh import judge, usage
 from ajh.cli import main
 from ajh.layout import Layout
+
+NO_USAGE = {"credential": "login", "usage": {"models": {}, "seconds": 0.0, "api_seconds": 0.0, "turns": 0}}
+
+
+@pytest.fixture(autouse=True)
+def no_credentials(monkeypatch):
+    for name in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def manifest(root, count):
@@ -49,6 +58,7 @@ def test_packets_go_out_in_fixed_batches_of_twenty(tmp_path):
         "batches": 3,
         "cost_usd": 0.03,
         "denied": 0,
+        **NO_USAGE,
     }
 
 
@@ -103,6 +113,7 @@ def test_nothing_to_judge_is_a_complete_stage(tmp_path):
         "batches": 0,
         "cost_usd": 0,
         "denied": 0,
+        **NO_USAGE,
     }
     assert calls == []
 
@@ -140,3 +151,34 @@ def test_claude_codes_own_error_line_is_kept_and_fails_the_command(tmp_path, mon
     printed = json.loads(capsys.readouterr().out)
     assert printed["judging_failed"] is True
     assert printed["failures"][0] == "API Error: 400 This API key is not scoped to a workspace"
+
+
+def test_usage_adds_up_across_batches_and_is_on_disk_after_each_one(tmp_path, monkeypatch):
+    layout = manifest(tmp_path, 25)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
+    reply = {"duration_ms": 1500, "duration_api_ms": 9000, "num_turns": 3,
+             "modelUsage": {"claude-haiku-5-5": {"inputTokens": 10, "outputTokens": 400, "thinkingTokens": 300,
+                                                 "cacheReadInputTokens": 5000, "cacheCreationInputTokens": 900,
+                                                 "costUSD": 0.0123, "costBasis": "list"}}}  # fmt: skip
+    answer, _ = orchestrator()
+
+    def invoke(root, path):
+        if path.endswith("_batch-1-2.md"):
+            raise KeyboardInterrupt  # the step was cut off during the second batch
+        answer(root, path)
+        return {"ok": True, "cost_usd": 0.0123, "denied": 0, "usage": usage.from_reply(reply)}
+
+    with pytest.raises(KeyboardInterrupt):
+        judge.run(tmp_path, invoke)
+    left = json.loads((layout.results / "_judging-triage.json").read_text())
+    assert (left["batches"], left["results"], left["cost_usd"], left["credential"]) == (1, 20, 0.0123, "api_key")
+    assert "not-a-real-key" not in (layout.results / "_judging-triage.json").read_text()
+
+    def whole(root, path):
+        answer(root, path)
+        return {"ok": True, "cost_usd": 0.0123, "denied": 0, "usage": usage.from_reply(reply)}
+
+    report = judge.run(tmp_path, whole)
+    model = report["usage"]["models"]["claude-haiku-5-5"]
+    assert (model["out"], model["thinking"], model["cache_read"], model["cost_usd"]) == (800, 600, 10000, 0.0246)
+    assert (report["usage"]["seconds"], report["usage"]["api_seconds"], report["usage"]["turns"]) == (3.0, 18.0, 6)

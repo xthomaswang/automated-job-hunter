@@ -11,7 +11,8 @@ It finds jobs. It does not apply to them.
 | `positions.jsonl` | Every open matched posting, one JSON object per line, sorted by `key` |
 | `jobs/<source>/<id>.md` | A brief for one posting: the facts, the assessment, and the posting text |
 | `feed/changes/YYYY-MM.jsonl` | Every `added`, `rescored`, `closed` and `removed` event, oldest first |
-| `feed/meta.json` | The day of the last update (`as_of`), counts, sources that are failing, and `judging_failed` while judging gets no answers |
+| `feed/meta.json` | The day of the last update (`as_of`), counts, sources that are failing, `judging_failed` while judging gets no answers, and `usage` totals |
+| `feed/usage.jsonl` | One line per update that judged, or tried to: tokens per model, Claude Code's list-price cost estimate, where it ran and which kind of credential |
 | `profile/profile.md`, `profile/criteria.json` | Who the feed is for and what they want |
 
 Start with `feed/latest.md` for what is new, or filter `positions.jsonl` for the whole picture. A

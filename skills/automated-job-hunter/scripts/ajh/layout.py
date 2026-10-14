@@ -18,6 +18,7 @@ class Layout:
         self.feed = self.root / "feed"
         self.feed_meta = self.feed / "meta.json"
         self.latest = self.feed / "latest.md"
+        self.usage = self.feed / "usage.jsonl"
         # Untracked scratch space. Everything a tick produces before `apply` lives here.
         self.work = self.root / ".hunter" / "work"
         self.snapshot = self.work / "snapshot"

@@ -342,4 +342,37 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
             else ", all readable."
         )
     )
+    used = meta.get("usage")
+    if used:
+        lines += _usage_lines(used)
     return "\n".join(lines) + "\n"
+
+
+def _usd(value: float) -> str:
+    return f"${value:,.2f}" if value >= 1 or not value else f"${value:.3f}"
+
+
+def _usage_lines(used: Mapping[str, Any]) -> list[str]:
+    last = used["last_update"]
+    periods = (
+        (f"Last update ({str(last['at'])[:16].replace('T', ' ')} UTC)", last),
+        ("Last 7 days", used["last_7_days"]),
+        (f"This month ({used['month']['name']})", used["month"]),
+        ("All time", used["all_time"]),
+    )
+    return [
+        "",
+        "## Usage",
+        "",
+        "Judging by `hunter judge`, as Claude Code estimates it at list prices; days and months are UTC. With an "
+        "API key the actual bill is in the Claude Console; a subscription draws on plan usage instead. Every "
+        "update that judged is a line in [feed/usage.jsonl](feed/usage.jsonl).",
+        "",
+        "| Period | Updates | Input | Output | Cache read | Cache write | Cost |",
+        "|:---|---:|---:|---:|---:|---:|---:|",
+        *(
+            f"| {label} | {t['updates']} | {t['in']:,} | {t['out']:,} | {t['cache_read']:,} | {t['cache_write']:,} "
+            f"| {_usd(t['cost_usd'])} |"
+            for label, t in periods
+        ),
+    ]

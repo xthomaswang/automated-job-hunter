@@ -55,6 +55,9 @@ Do not copy the résumé file into the feed repo.
 - Fill in `avoid` with the neighbouring fields they do not want. Triage keeps anything it is unsure
   about, and every posting it keeps costs a full assessment, so a clear `avoid` list is the main
   thing that keeps cost down.
+- Get `targets` and `seniority` as right as you can now. Changing them later asks triage again for
+  every posting it dropped and asks for every assessment again, which after a few weeks can be
+  hundreds of assessments (about $0.02 each).
 - `employment` and `locations.regions` are hard limits; leave them empty for no limit. Regions are
   two-letter country codes, or `EU`.
 - `locations.remote` and `locations.cities` are preferences passed to the assessment, not filters.

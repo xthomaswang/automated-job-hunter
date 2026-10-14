@@ -56,10 +56,17 @@ and write access to the results folder only.
 ## Changing what is searched for
 
 Edit `profile/criteria.json` (targets, hard constraints, thresholds, caps) or `profile/profile.md`
-(the experience the assessments are made against), commit, and push. A change to the targets asks
-triage again for everything it had dropped; a change to the profile text asks for every assessment
-again. Thresholds, caps and preferred companies change no verdict. Published postings stay listed
-until their new assessment arrives.
+(the experience the assessments are made against), commit, and push. What is judged again depends
+on what changed:
+
+- `targets` (roles, adjacent or avoid) or `seniority`: triage for every posting it had dropped, and
+  every assessment.
+- `profile.md`, `eligibility`, `locations` or `employment`: every assessment. The hard limits in
+  `locations` and `employment` also apply at once, at no cost.
+- `thresholds`, `caps` or `companies.prefer`: nothing.
+
+Assessments are redone at most `caps.max_assess` per tick, so a large backlog takes several ticks.
+Published postings stay listed until their new assessment arrives.
 
 ## When something is wrong
 

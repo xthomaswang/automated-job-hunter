@@ -34,6 +34,34 @@ gh workflow run job-hunter.yml --repo <owner>/<repo>
 gh run watch --repo <owner>/<repo>
 ```
 
+A run started by hand says nothing about the schedule. Once the first scheduled time has passed
+(allow up to an hour), check that GitHub started one by itself:
+
+```sh
+gh run list --repo <owner>/<repo> --event schedule --limit 3
+```
+
+### If scheduled runs never start
+
+Runs started by hand or by a push work, but `--event schedule` stays empty after two scheduled
+times. GitHub runs a schedule as the account behind the commit that last changed the cron line, and
+never runs it when no account has that commit's email. That happens when git had no identity on the
+machine and made an address up from its name, such as `user@laptop.local`. `hunter status` shows
+that commit and its addresses under `schedule`, with a `warning` for a made-up one. For any other
+address, GitHub's answer is `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`: `null`
+means no account has it.
+
+To fix it, set the user's GitHub identity in the feed repo (step 5 of [setup.md](setup.md)). Then
+write the cron line anew, which gives it a new minute, commit and push:
+
+```sh
+python3 <this skill>/scripts/hunter.py --repo <feed repo> upgrade --cadence <their cadence>
+git -C <feed repo> commit -am "Run the schedule from my account" && git -C <feed repo> push
+```
+
+Only a change to the cron line itself counts; other edits to the workflow file do not. The next
+scheduled time then starts a run.
+
 Things to tell the user:
 
 - GitHub's schedule is best effort: a run can start late, and under heavy load be skipped.

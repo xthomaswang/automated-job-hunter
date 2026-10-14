@@ -8,7 +8,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
-from ajh import feed, registry, scaffold, tick
+from ajh import feed, publish, registry, scaffold, tick
 from ajh.cli import main
 from ajh.http import Client
 from ajh.model import Job, SourceError
@@ -114,6 +114,76 @@ def test_a_cadence_can_be_set_utc_hours_and_a_bad_one_changes_nothing(tmp_path):
     assert re.search(r'cron: "\d{1,2} 0,12 \* \* \*"', path.read_text())
 
 
+def test_upgrade_with_a_cadence_always_writes_a_new_cron_line(tmp_path, monkeypatch):
+    root = tmp_path / "feed"
+    path = root / scaffold.WORKFLOW
+    monkeypatch.setattr(scaffold.random, "randint", lambda low, high: high)  # every draw is the same minute
+    scaffold.init(root, "6,18")
+    assert 'cron: "20 6,18 * * *"' in path.read_text()
+    scaffold.upgrade(root, "6,18")
+    assert 'cron: "3 6,18 * * *"' in path.read_text()  # the next minute in the range, wrapping around
+    scaffold.upgrade(root, "4h")
+    assert 'cron: "57 */4 * * *"' in path.read_text()  # a different line already, so the draw stands
+
+
+@pytest.fixture
+def no_identity(tmp_path, monkeypatch):
+    """Git as on a machine where nobody ever configured it: no identity in any config or variable."""
+    empty = tmp_path / "gitconfig"
+    empty.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for name in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_a_feed_repo_refuses_commits_under_an_address_git_would_make_up(tmp_path, no_identity):
+    root = tmp_path / "feed"
+    (warning,) = scaffold.init(root)["warnings"]
+    assert "git config user.email" in warning and "noreply" in warning
+    git(root, "add", "-A")
+    refused = subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "Set up"], capture_output=True, text=True)
+    assert refused.returncode and "auto-detection is disabled" in refused.stderr  # not user@laptop.local
+    git(root, "config", "user.name", "Owner")
+    git(root, "config", "user.email", "1+owner@users.noreply.github.com")
+    git(root, "commit", "-q", "-m", "Set up")
+    assert "warnings" not in scaffold.upgrade(root)
+    owner = scaffold.schedule(root)
+    assert (owner["author"], owner["committer"]) == ("1+owner@users.noreply.github.com",) * 2 and "warning" not in owner
+
+
+def test_status_names_the_commit_that_set_the_schedule_and_flags_a_made_up_address(tmp_path, no_identity, capsys):
+    root = tmp_path / "feed"
+    scaffold.init(root, "4h")
+    assert scaffold.schedule(root)["changed_in"] is None  # nothing committed yet
+    git(root, "add", "-A")
+    git(root, "-c", "user.name=me", "-c", "user.email=me@laptop.local", "commit", "-q", "-m", "Set up")
+    first = git(root, "rev-parse", "HEAD")
+    assert main(["--repo", str(root), "status"]) == 0
+    owner = json.loads(capsys.readouterr().out)["schedule"]
+    assert (owner["changed_in"], owner["author"]) == (first, "me@laptop.local")
+    assert first[:12] in owner["warning"] and "upgrade --cadence" in owner["warning"]
+    assert owner["warning"] in scaffold.upgrade(root)["warnings"]  # an upgrade says so too
+    for made_up in ("me@laptop", "me@host.(none)", "me@laptop.LOCAL"):
+        assert scaffold._made_up(made_up)
+    assert not scaffold._made_up("1+owner@users.noreply.github.com") and not scaffold._made_up("me@example.com")
+
+    git(root, "config", "user.name", "Owner")
+    git(root, "config", "user.email", "1+owner@users.noreply.github.com")
+    scaffold.upgrade(root, "4h")
+    git(root, "commit", "-qam", "Schedule from my account")
+    fixed = scaffold.schedule(root)
+    assert (fixed["changed_in"], fixed["author"]) == (
+        git(root, "rev-parse", "HEAD"),
+        "1+owner@users.noreply.github.com",
+    )
+    assert "warning" not in fixed
+    path = root / scaffold.WORKFLOW
+    path.write_text(path.read_text().replace("timeout-minutes: 45", "timeout-minutes: 50"))
+    git(root, "-c", "user.email=me@laptop.local", "commit", "-qam", "Longer timeout")
+    assert scaffold.schedule(root) == fixed  # only a change to the cron line moves the schedule to another account
+
+
 def test_the_three_forms_of_the_subagent_definitions_agree():
     agents = scaffold.load_agents()
     assert set(agents) == {"hunter-triage", "hunter-assess"}
@@ -123,7 +193,7 @@ def test_the_three_forms_of_the_subagent_definitions_agree():
         assert (REPO / "agents" / f"{name}.md").read_text() == scaffold.agent_markdown(name, spec)
 
 
-def test_a_whole_tick_runs_from_a_scaffolded_repo(tmp_path, monkeypatch):
+def test_a_whole_tick_runs_from_a_scaffolded_repo(tmp_path, monkeypatch, no_identity):
     root = tmp_path / "feed"
     scaffold.init(root)
     registry.add(root, ["greenhouse:acme:Acme"])
@@ -146,6 +216,7 @@ def test_a_whole_tick_runs_from_a_scaffolded_repo(tmp_path, monkeypatch):
     assert stages == ["triage", "assess"] and summary["apply"]["published"] == 2
     assert summary["publish"]["state"] == "committed" and git(root, "status", "--porcelain") == ""
     assert "Job-Hunter-Publish: auto" in git(root, "log", "-1", "--format=%B")
+    assert git(root, "log", "-1", "--format=%ae") == publish.FALLBACK_IDENTITY[1]  # as on a runner, with no identity
     quiet = tick.run(root, push=False, client=Client(board.transport, sleep=lambda s: None, retries=0))
     assert (
         stages == ["triage", "assess"] and quiet["publish"]["state"] == "unchanged"

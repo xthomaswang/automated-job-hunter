@@ -108,6 +108,7 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
         "failing_sources": (meta.get("sources") or {}).get("failing"),
         "judging_failed": meta.get("judging_failed"),
         "usage": meta.get("usage"),
+        "schedule": scaffold.schedule(layout.root),
     }
 
 

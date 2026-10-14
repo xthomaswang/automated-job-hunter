@@ -72,6 +72,17 @@ Do not copy the résumé file into the feed repo.
 - Optional: `thresholds` (`strong` 75, `good` 55, `publish_min` 40), `caps` (`max_triage` 1500,
   `max_assess` 100 per update), `backfill.days` (unset: judge every open posting on the first run;
   a number: skip postings older than that on the first run).
+- Optional, when the user treats something as a hard requirement:
+  - `thresholds.max_required_years`: leave out postings that require more years than this. A
+    posting that states no years is never left out, and preferred years never count.
+  - `thresholds.max_seniority` (`intern` to `staff`): leave out postings assessed as more senior,
+    which catches leadership roles that state no years. An unknown seniority never counts.
+  - `thresholds.direct_min`: the lowest fit at which a wanted role is still listed. Unset, a wanted
+    role is always listed, however low the fit.
+
+  These change only what is listed, so they judge nothing again and take effect at the next update,
+  for postings already listed too. Relaxing a hard requirement sends the postings it left out back
+  to be assessed.
 - Optional: `caps.max_usd_per_month`, a monthly budget in US dollars (unset: no budget). Before each
   update the engine adds up this month's spending from `feed/usage.jsonl`; once it has reached the
   budget, judging pauses until the first of next month, and new postings wait in the queue. Months

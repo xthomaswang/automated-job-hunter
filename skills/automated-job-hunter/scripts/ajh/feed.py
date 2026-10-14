@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from .criteria import employment_kinds
+from .criteria import SENIORITY, employment_kinds
 from .model import Job, path_id
 from .rubric import ASSESS_VERSION
 from .rules import parse_date, posting_flags
@@ -28,14 +28,31 @@ NEW_DAYS = 7
 def tier_of(assessment: Mapping[str, Any], thresholds: Mapping[str, int]) -> str | None:
     """The tier a scored posting is published under, or None when it is not published.
 
-    A posting whose work is a wanted role is always listed, even with a seniority or skills gap:
-    the score orders the list and the gaps say why. Related work is listed from `publish_min` up,
-    and unrelated work never.
+    A posting whose work is a wanted role is listed even with a seniority or skills gap, from
+    `direct_min` up when that is set: the score orders the list and the gaps say why. Related work is
+    listed from `publish_min` up, and unrelated work never.
     """
     fit, match = assessment["fit"], assessment["role_match"]
     if match == "unrelated" or (match != "direct" and fit < thresholds["publish_min"]):
         return None
+    if match == "direct" and thresholds.get("direct_min") is not None and fit < thresholds["direct_min"]:
+        return None
     return "strong" if fit >= thresholds["strong"] else "good" if fit >= thresholds["good"] else "stretch"
+
+
+def hard_limit(item: Mapping[str, Any], thresholds: Mapping[str, Any]) -> str | None:
+    """Why a scored posting breaks a hard requirement, as a tag value, or None when it does not.
+
+    Only what the posting states counts: years it does not state, or a seniority the assessment
+    could not tell, never leave it out. Preferred years never count.
+    """
+    years, most = item.get("required_years"), thresholds.get("max_required_years")
+    if most is not None and isinstance(years, (int, float)) and not isinstance(years, bool) and years > most:
+        return f"years={years:g}"
+    level, cap = item.get("seniority"), thresholds.get("max_seniority")
+    if cap is not None and level in SENIORITY and SENIORITY.index(level) > SENIORITY.index(cap):
+        return f"seniority={level}"
+    return None
 
 
 def build_record(
@@ -274,6 +291,7 @@ def latest_text(as_of: str, events: list[Mapping[str, Any]], applied: Mapping[st
         ("rescored", "Re-assessed"),
         ("closed", "Closed"),
         ("removed", "No longer a match"),
+        ("blocked", "Left out for a hard requirement"),
         ("declined", "Declined by you"),
     ):
         chosen = [e for e in events if e["event"] == kind]
@@ -345,6 +363,10 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
         lines.append(
             f"- Judging got no answers ({' and '.join(failed['stages'])}) on every update since {failed['since']}. "
             f"Last error: {_md(failed['detail'])}"
+        )
+    if counts.get("blocked"):
+        lines.append(
+            f"- Left out for a hard requirement in `thresholds` (required years or seniority): {counts['blocked']}."
         )
     if counts.get("applied") or counts.get("declined"):
         lines.append(

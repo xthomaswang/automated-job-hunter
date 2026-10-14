@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import criteria as C
-from . import decisions, packets, usage
+from . import decisions, feed, packets, usage
 from . import sources as S
 from .http import Client, HttpError
 from .layout import Layout
@@ -265,6 +265,25 @@ def assign_variants(state: State, seen: Mapping[str, Mapping[str, Seen]], kinds:
     return count
 
 
+def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
+    """Postings left out by a hard requirement that today's thresholds no longer impose: assess again.
+
+    Their assessment was not kept, so they go back to the queue rather than straight to the list.
+    """
+    freed = []
+    for sid in state.source_ids():
+        for jid, row in state.rows(sid).items():
+            reason = tag(row, "blk")
+            if row.status != "R" or reason is None:
+                continue
+            what, _, value = reason.partition("=")
+            stated: dict[str, Any] = {"required_years": float(value)} if what == "years" else {"seniority": value}
+            if not feed.hard_limit(stated, thresholds):
+                row.status, row.fit, row.ag, row.dsh, row.note = "K", "-", 0, "-", "-"
+                freed.append(f"{sid}:{jid}")
+    return freed
+
+
 def advance_generations(state: State, hashes: Mapping[str, str]) -> dict[str, int]:
     """Bump a stage's generation when its inputs changed. A new triage generation re-opens drops."""
     generations = {}
@@ -471,6 +490,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
             if row.status == "P" and state.titles.get(words_key(item.job.title)) == generations["triage"]:
                 row.status, row.tg = "D", generations["triage"]
     jobs = {sid: {jid: item.job for jid, item in items.items()} for sid, items in seen.items()}
+    summary["unblocked"] = len(unblock(state, criteria["thresholds"]))
     plan["queue"] = build_queue(state, jobs, criteria, generations, decisions.load(layout.decisions))
     budget = usage.budget(criteria["caps"]["max_usd_per_month"], usage.load(layout.usage), today.isoformat())
     if budget:

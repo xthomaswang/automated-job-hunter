@@ -57,7 +57,8 @@ def tag(row: Row, name: str) -> str | None:
     """A tag from a pending row's note, which holds `;`-separated `name` or `name:value` entries.
 
     Tags: `was:<status>` (a published posting being re-judged), `fb:<codes>` (why the last answer was
-    rejected), `canary` (a triage drop sent to assessment to measure what triage misses).
+    rejected), `canary` (a triage drop sent to assessment to measure what triage misses),
+    `blk:<facts>` (left out by a hard requirement; the facts it was checked on, see `feed.hard_limit`).
     """
     for part in row.note.split(";"):
         key, _, value = part.partition(":")

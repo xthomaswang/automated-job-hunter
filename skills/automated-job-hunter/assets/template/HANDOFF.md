@@ -30,11 +30,12 @@ which and when.
 | `source_kind` | `official` (the employer's own board) or `aggregator` (a third-party listing; find the employer's own posting before applying) |
 | `status` | `scored`, or `unscored` when the posting could not be assessed and only its facts are known |
 | `fit` | 0 to 100, how well the posting fits the profile. Null when unscored. |
-| `tier` | `strong`, `good`, `stretch` or `unscored`. A posting whose work is a wanted role is listed even when the fit is low, as a `stretch`, unless `thresholds` in `profile/criteria.json` sets a floor for it (`direct_min`) or a hard requirement it breaks (`max_required_years`, `max_seniority`). |
+| `tier` | `strong`, `good`, `stretch` or `unscored`. A posting whose work is a wanted role is listed even when the fit is low, as a `stretch`, unless `thresholds` in `profile/criteria.json` sets a floor for it (`direct_min`) or a hard requirement it breaks (`max_required_years`, `max_seniority`, `unmet_requirements`). |
 | `role_match` | `direct` (a wanted role) or `adjacent` (related work) |
 | `seniority`, `required_years`, `preferred_years` | What the posting asks for. Years are null when the posting does not state them: null means unknown, never zero. |
 | `why` | One or two sentences on the fit, written for the person |
 | `matches`, `gaps`, `notes` | Lists of `{label, quote}`. Every `quote` is copied from the posting. |
+| `unmet` | Mandatory requirements the profile does not meet, as a list of `{kind, quote}`: `kind` is `degree`, `enrollment`, `credential` or `license`, and `quote` is the requirement copied from the posting. A kind listed in `thresholds.unmet_requirements` leaves the posting out, so only the other kinds appear here. Missing on postings assessed before rubric `assess-v2` (see `judged`): missing means not checked, not met. |
 | `flags` | `sponsorship_not_offered`, `citizenship_required`: true when the posting text says so. False means no such statement was found, not that the opposite is true. |
 | `variants`, `also_on` | Other listings of the same opening: other locations, and copies on aggregators |
 | `brief` | Path of the posting's brief |

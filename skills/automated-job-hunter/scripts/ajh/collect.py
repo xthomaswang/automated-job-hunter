@@ -278,7 +278,8 @@ def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
             reason = tag(row, "blk")
             if row.status != "R" or reason is None:
                 continue
-            if not feed.hard_limit(feed.stated_by_tag(reason), thresholds):
+            stated = feed.stated_by_tag(reason)
+            if stated is not None and not feed.hard_limit(stated, thresholds):
                 row.status, row.fit, row.ag, row.dsh, row.note = "K", "-", 0, "-", "-"
                 freed.append(f"{sid}:{jid}")
     return freed

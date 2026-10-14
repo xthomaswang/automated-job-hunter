@@ -533,6 +533,9 @@ def test_relaxing_one_hard_requirement_frees_only_what_no_other_one_leaves_out(r
     full_tick(root, board, assess=judged)
     assert set(positions(root)) == {"acme:2"}
 
+    judge(root, "acme", "1", "R", note="blk:years=7+wage=9")  # a fact from a newer engine
+    newer, queued = collect_again(root, board)
+    assert newer["unblocked"] == 0 and queued == []  # left where it is, not judged again on part of its facts
     judge(root, "acme", "1", "R", note="blk:years=7")  # a tag written before every fact was kept
     older, queued = collect_again(root, board)
     assert older["unblocked"] == 1 and queued == ["acme:1"]  # it holds only the years, which are now allowed

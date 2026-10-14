@@ -7,12 +7,13 @@ verdict changes, so a tick that changes nothing rewrites nothing.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from .criteria import SENIORITY, employment_kinds
+from .criteria import SENIORITY, UNMET_KINDS, employment_kinds
 from .model import Job, path_id
 from .rubric import ASSESS_VERSION
 from .rules import parse_date, posting_flags
@@ -75,17 +76,24 @@ def hard_limit(item: Mapping[str, Any], thresholds: Mapping[str, Any]) -> str | 
     return "+".join(facts)
 
 
-def stated_by_tag(value: str) -> dict[str, Any]:
-    """The facts a `hard_limit` tag value holds, in the shape `hard_limit` reads them."""
+def stated_by_tag(value: str) -> dict[str, Any] | None:
+    """The facts a `hard_limit` tag value holds, in the shape `hard_limit` reads them.
+
+    None when it holds a fact this version cannot read, as one written by a newer engine may: that
+    posting is left where it is rather than judged again on part of its facts.
+    """
     stated: dict[str, Any] = {}
     for fact in value.split("+"):
         what, _, found = fact.partition("=")
-        if what == "years":
+        kinds = [kind for kind in found.split(",") if kind]
+        if what == "years" and re.fullmatch(r"\d+(?:\.\d+)?", found):
             stated["required_years"] = float(found)
-        elif what == "seniority":
+        elif what == "seniority" and found in SENIORITY:
             stated["seniority"] = found
-        elif what == "unmet":
-            stated["unmet"] = [{"kind": kind} for kind in found.split(",") if kind]
+        elif what == "unmet" and kinds and all(kind in UNMET_KINDS for kind in kinds):
+            stated["unmet"] = [{"kind": kind} for kind in kinds]
+        else:
+            return None
     return stated
 
 

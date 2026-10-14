@@ -192,6 +192,21 @@ def test_probe_finds_a_companys_board_by_trying_likely_slugs():
     assert registry.probe("Nobody Inc", Client(transport, retries=0))["matches"] == []
 
 
+def test_upgrade_refuses_to_install_an_engine_older_than_the_feeds(tmp_path):
+    root = tmp_path / "feed"
+    scaffold.init(root)
+    (root / "state").mkdir(exist_ok=True)
+    (root / "state/meta.json").write_text('{"schema_version": 9, "engine_version": "9.0.0", "as_of": "2026-10-13"}')
+    with pytest.raises(scaffold.ScaffoldError, match=r"state is schema 9, written by engine 9\.0\.0"):
+        scaffold.upgrade(root)
+    (root / "state/meta.json").write_text('{"schema_version": 2, "engine_version": "0.2.0", "as_of": "2026-10-13"}')
+    (root / ".hunter/VERSION").write_text("0.10.0\n")  # numerically newer than 0.2.0
+    with pytest.raises(scaffold.ScaffoldError, match=r"runs engine 0\.10\.0, newer than this copy"):
+        scaffold.upgrade(root)
+    (root / ".hunter/VERSION").write_text(scaffold.__version__ + "\n")  # the same version again is fine
+    assert scaffold.upgrade(root)["to"] == scaffold.__version__
+
+
 def test_the_skill_file_is_portable_and_its_links_resolve():
     text = (SKILL / "SKILL.md").read_text()
     front, body = text.split("---\n", 2)[1:]

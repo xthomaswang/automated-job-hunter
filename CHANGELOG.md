@@ -3,7 +3,19 @@
 What changes for people who run a feed. Bring a feed repo up to date with
 `scripts/hunter.py --repo <feed repo> upgrade` from the skill's copy, then commit.
 
-## Unreleased
+## Unreleased: engine 0.2.0, state schema 2
+
+### An engine never misreads state written by a newer one
+
+- The engine reports version 0.2.0 and writes state schema 2: `blk` tags now hold several facts,
+  which an earlier engine misreads. Earlier engines only ever reported 0.1.0, whatever they
+  contained, so a version number alone could not tell them apart.
+- An engine that finds state newer than it can read stops with the usual JSON error, naming both
+  versions, instead of failing part-way. Every earlier engine already refuses schema 2 that way.
+- `upgrade` refuses to install an engine older than the feed's: older than its `.hunter/VERSION`,
+  or unable to read its state schema. Upgrade from a newer copy of the skill instead.
+- A `blk` tag holding a fact this engine cannot read is left alone, never judged again on part of
+  its facts.
 
 ### Unmet requirements (assessment rubric `assess-v2`)
 

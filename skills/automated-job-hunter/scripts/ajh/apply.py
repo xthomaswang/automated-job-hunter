@@ -168,6 +168,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
                 set_tag(row, "blk", blocked)
         elif tier != record["tier"]:
             record["tier"] = tier
+            touched.add(key)  # the brief prints the tier too
 
     # Records follow the state: a posting stays published while it is A or U, or is being re-judged.
     keep = set()

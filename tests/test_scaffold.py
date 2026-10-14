@@ -94,7 +94,8 @@ def test_a_cadence_can_be_set_utc_hours_and_a_bad_one_changes_nothing(tmp_path):
     root = tmp_path / "feed"
     assert main(["--repo", str(root), "init", "--cadence", "20,6,14,10"]) == 0
     path = root / scaffold.WORKFLOW
-    assert re.search(r'cron: "\d{1,2} 6,10,14,20 \* \* \*"', path.read_text())
+    minute = re.search(r'cron: "(\d{1,2}) 6,10,14,20 \* \* \*"', path.read_text()).group(1)
+    assert 3 <= int(minute) <= 20  # set times stay early in their hour
     assert scaffold.cron_for("8h", 7) == "7 */8 * * *" and scaffold.cron_for("14, 2,14", 7) == "7 2,14 * * *"
     for bad in ("25", "6,,10", "", "every 4h", "6.5", "-1", "2h"):
         with pytest.raises(scaffold.ScaffoldError, match="UTC hours"):

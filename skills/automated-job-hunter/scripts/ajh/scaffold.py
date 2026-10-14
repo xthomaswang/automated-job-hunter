@@ -91,9 +91,11 @@ def _workflow(root: Path, cadence: str | None) -> None:
     if cadence is None and existing:
         cron = existing.group(1)
     else:
-        # an arbitrary minute keeps many feed repos from all starting on the hour, when GitHub is busiest
-        minute = random.randint(3, 57)
-        cron = cron_for(cadence or "4h", minute)
+        # An arbitrary minute keeps many feed repos from all starting on the hour, when GitHub is
+        # busiest. Set times of day stay early in their hour, close to the time that was asked for.
+        cadence = cadence or "4h"
+        minute = random.randint(3, 57 if cadence in CADENCES else 20)
+        cron = cron_for(cadence, minute)
     template = (ASSETS / "template" / "job-hunter.yml").read_text(encoding="utf-8")
     write_text(path, template.replace("__CRON__", cron).replace("__CLAUDE_CODE_VERSION__", claude_code_version()))
 

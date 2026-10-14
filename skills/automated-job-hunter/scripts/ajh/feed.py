@@ -240,10 +240,16 @@ def _row(record: Mapping[str, Any], recent_from: str) -> str:
         if on
     )
     fit = "–" if record["fit"] is None else str(record["fit"])
+    title = f"{_applied(record.get('applied'))}[{_md(record['title'])}]({record['brief']})"
     return (
-        f"| {fit} | [{_md(record['title'])}]({record['brief']}) | {_md(record['company'])} | {_md(record['location'])}"
+        f"| {fit} | {title} | {_md(record['company'])} | {_md(record['location'])}"
         f" | {record['posted'] or '–'} | {marks} |"
     )
+
+
+def _applied(day: str | None) -> str:
+    """The person's own mark, before the title. An emoji is the one green GitHub always renders."""
+    return f"✅ applied {day} · " if day else ""
 
 
 def _table(records: list[Mapping[str, Any]], recent_from: str) -> list[str]:
@@ -260,19 +266,22 @@ def _ranked(records: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
     return sorted(records, key=lambda r: (-(r["fit"] or 0), r["first_seen"], r["key"]))
 
 
-def latest_text(as_of: str, events: list[Mapping[str, Any]]) -> str:
+def latest_text(as_of: str, events: list[Mapping[str, Any]], applied: Mapping[str, str] | None = None) -> str:
+    applied = applied or {}
     lines = [f"# Latest changes ({as_of})", ""]
     for kind, heading in (
         ("added", "New matches"),
         ("rescored", "Re-assessed"),
         ("closed", "Closed"),
         ("removed", "No longer a match"),
+        ("declined", "Declined by you"),
     ):
         chosen = [e for e in events if e["event"] == kind]
         if chosen:
             lines += [f"## {heading} ({len(chosen)})", ""]
             lines += [
-                f"- {'–' if e['fit'] is None else e['fit']} · {_md(e['title'])} · {_md(e['company'])} · `{e['key']}`"
+                f"- {_applied(applied.get(e['key']))}{'–' if e['fit'] is None else e['fit']} · {_md(e['title'])} · "
+                f"{_md(e['company'])} · `{e['key']}`"
                 for e in chosen
             ]
             lines.append("")
@@ -336,6 +345,11 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
         lines.append(
             f"- Judging got no answers ({' and '.join(failed['stages'])}) on every update since {failed['since']}. "
             f"Last error: {_md(failed['detail'])}"
+        )
+    if counts.get("applied") or counts.get("declined"):
+        lines.append(
+            f"- Your decisions: {counts.get('applied', 0)} applied, {counts.get('declined', 0)} declined "
+            "([profile/decisions.jsonl](profile/decisions.jsonl)). Declined postings are not listed."
         )
     canary = meta["canary"]
     if canary["sampled"]:

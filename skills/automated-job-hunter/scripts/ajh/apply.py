@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import __version__, feed, usage
+from . import __version__, decisions, feed, usage
 from . import criteria as C
 from .advance import WorkError, check_seal, load_jobs
 from .collect import job_of, split_key
@@ -41,14 +41,24 @@ def check_tree(layout: Layout) -> None:
         )
 
 
-def _counts(state: State, assess_generation: int) -> dict[str, int]:
+def _counts(state: State, assess_generation: int, decided: decisions.Decided) -> dict[str, int]:
     tally = dict.fromkeys("PDKARUVSX", 0)
     stale = 0  # assessed under an earlier profile and queued to be assessed again; still listed meanwhile
+    mine = {"applied": 0, "declined": 0}
     for sid in state.source_ids():
-        for row in state.rows(sid).values():
+        for jid, row in state.rows(sid).items():
+            decision = decided.get(f"{sid}:{jid}")
+            if decision:
+                mine[decision["decision"]] += 1
+                if decision["decision"] == "declined":
+                    continue  # counted only as declined: never listed, never waiting
+            settled = decisions.never_judge(decision, row)  # the same rule the queue follows
+            if row.status in "PK" and settled:
+                continue
             tally[row.status] += 1
-            stale += row.status in "ARU" and row.ag < assess_generation
+            stale += row.status in "ARU" and row.ag < assess_generation and not settled
     return {
+        **mine,
         "published": tally["A"] + tally["U"],
         "pending_triage": tally["P"],
         "pending_assess": tally["K"],
@@ -71,6 +81,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     jobs = load_jobs(layout)
     index = read_json(layout.packet_index, {})
     records = feed.load_positions(layout.positions)
+    decided = decisions.load(layout.decisions)
     old_meta = read_json(layout.feed_meta, {})
     canary = dict(old_meta.get("canary") or {"sampled": 0, "missed": 0})
     counts = {"published": 0, "below_threshold": 0, "rejected": 0, "unscored": 0, "unanswered": 0}
@@ -137,9 +148,12 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
 
     # Records follow the state: a posting stays published while it is A or U, or is being re-judged.
     keep = set()
+    declined = {key for key, decision in decided.items() if decision["decision"] == "declined"}
     for sid in state.source_ids():
         for jid, row in state.rows(sid).items():
             key = f"{sid}:{jid}"
+            if key in declined:  # its record goes, and it is never assessed again
+                continue
             if row.status in "AU" or tag(row, "was"):
                 if key in records:
                     keep.add(key)
@@ -148,7 +162,8 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     closed = set(plan.get("closed", []))
     for key in sorted(set(records) - keep):
         record = records.pop(key)
-        events.append(feed.event("closed" if key in closed else "removed", as_of, record))
+        kind = "declined" if key in declined else "closed" if key in closed else "removed"
+        events.append(feed.event(kind, as_of, record))
         feed.remove_brief(layout.root, record)
 
     # Other listings of the same opening, refreshed for every source read this tick.
@@ -178,12 +193,18 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         job = jobs.get(sid, {}).get(jid)
         if key in records and job is not None:  # without this tick's text the brief cannot be rewritten
             feed.write_brief(layout.root, records[key], job.description)
+    applied = {key: decision["date"] for key, decision in decided.items() if decision["decision"] == "applied"}
+    for key, record in records.items():  # the person's own mark, kept apart from the assessment
+        if key in applied and record.get("applied") != applied[key]:
+            record["applied"] = applied[key]
+        elif key not in applied:
+            record.pop("applied", None)
     write_text(layout.positions, feed.positions_text(records))
-    order = {"added": 0, "rescored": 1, "closed": 2, "removed": 3}
+    order = {"added": 0, "rescored": 1, "closed": 2, "removed": 3, "declined": 4}
     events.sort(key=lambda item: (order[item["event"]], item["key"]))
     if events:
         feed.append_events(layout.feed, events)
-        write_text(layout.latest, feed.latest_text(as_of, events))
+        write_text(layout.latest, feed.latest_text(as_of, events, applied))
 
     state.save(layout.state_next, as_of)
     failing = {sid: info["fail_since"] for sid, info in state.sources.items() if info.get("fail_since")}
@@ -210,7 +231,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     meta = {
         "schema_version": feed.SCHEMA_VERSION,
         "as_of": as_of,
-        "counts": _counts(state, generations["assess"]),
+        "counts": _counts(state, generations["assess"], decided),
         "canary": canary,
         "generations": generations,
         "sources": {"total": len(state.sources), "failing": failing},

@@ -29,6 +29,10 @@ has to fix what the JSON describes.
 
 `--repo <path>` before the command points it at a feed repo other than the current directory.
 
+Commands: `init` (create a feed repo), `upgrade`, `sources` (`list`, `add`, `remove`, `probe`, `test`,
+`hosts`), `audit`, `tick` (one whole update), `status`, and the single steps of an update: `collect`,
+`advance`, `apply`, `publish`. For example, `scripts/hunter.py --repo ./my-feed init --cadence 4h`.
+
 ## What the user is asking for
 
 | They want to | Do this |

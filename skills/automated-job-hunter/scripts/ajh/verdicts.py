@@ -156,6 +156,8 @@ def check_assessment(fields: Mapping[str, list[str]], job: Job) -> tuple[dict[st
     for line in fields.get("unmet", [])[:UNMET_MAX]:
         kind, separator, quote = line.partition("||")
         kind = kind.strip().strip("`*.:").lower()
+        if not separator and kind in _NONE:  # `unmet: none`, as the years fields are written: nothing to check
+            continue
         kind = _SPELLINGS.get(kind, kind)
         span = _quote(source, quote) if separator else None
         if kind not in UNMET_KINDS or span is None or preference_only(span) or accepts_alternative(span):

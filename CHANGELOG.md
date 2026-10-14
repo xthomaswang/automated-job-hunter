@@ -25,7 +25,12 @@ What changes for people who run a feed. Bring a feed repo up to date with
   To check them, run `python3 .hunter/engine/hunter.py requeue --assessed` once in the feed repo,
   then commit `state/`. It prints the estimated cost, about $2 for every hundred assessed postings,
   and the work is spread over the next updates. If you are editing `profile/profile.md` anyway,
-  skip the requeue: a profile change assesses everything again by itself.
+  skip the requeue: a profile change assesses everything again by itself. Consider leaving
+  `unmet_requirements` empty until those assessments have arrived: the unmet requirements are then
+  only flagged, so you can check the model's claims against their quotes before any posting is
+  left out. Setting the kinds afterwards judges nothing again.
+- `hunter apply`'s `blocked` count no longer counts a listed posting twice when it is assessed
+  again and left out.
 - The `blk` tag in `state/` now records every fact a hard requirement checks, such as
   `blk:years=7+seniority=senior+unmet=degree`. Relaxing one requirement then sends back only the
   postings that no other requirement still leaves out. Tags written by earlier versions still work.

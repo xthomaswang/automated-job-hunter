@@ -5,7 +5,7 @@ import subprocess
 from datetime import timedelta
 
 import pytest
-from ajh import advance, apply, collect
+from ajh import advance, apply, collect, requeue
 from ajh.feed import readme_text
 from ajh.http import Client
 from ajh.layout import Layout
@@ -536,6 +536,21 @@ def test_relaxing_one_hard_requirement_frees_only_what_no_other_one_leaves_out(r
     judge(root, "acme", "1", "R", note="blk:years=7")  # a tag written before every fact was kept
     older, queued = collect_again(root, board)
     assert older["unblocked"] == 1 and queued == ["acme:1"]  # it holds only the years, which are now allowed
+
+
+def test_a_listed_posting_assessed_again_and_left_out_is_counted_once(repo):
+    enrolled = "Must be currently enrolled in a PhD program and returning to school after the internship."
+    root, board = repo(), Boards(acme=[posting(1, text=enrolled)])
+    full_tick(root, board)  # listed, assessed before unmet requirements were asked for
+    limits(root, unmet_requirements=["enrollment"])
+    requeue.run(root, "assessed")  # as a person checking older assessments once does
+
+    def judged(job):
+        return dict(good_assessment(job), unmet="enrollment || Must be currently enrolled in a PhD program")
+
+    summary = full_tick(root, board, assess=judged)
+    assert summary["blocked"] == 1 and Layout(root).positions.read_text() == ""
+    assert json.loads(Layout(root).feed_meta.read_text())["counts"]["blocked"] == 1
 
 
 def test_a_record_assessed_before_unmet_requirements_stays_listed_and_renders(repo):

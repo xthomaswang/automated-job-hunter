@@ -90,6 +90,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     counts = {"published": 0, "below_threshold": 0, "blocked": 0, "rejected": 0, "unscored": 0, "unanswered": 0}
     events: list[dict[str, Any]] = []
     touched: set[str] = set()
+    assessed_out: set[str] = set()  # assessed this update and left out by a hard requirement
 
     def publish(key: str, assessment: dict[str, Any] | None) -> None:
         sid, jid = split_key(key)
@@ -136,6 +137,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
                     counts["blocked" if blocked else "below_threshold"] += 1
                     if blocked:  # remembered, so that a relaxed limit sends it back to be assessed
                         set_tag(row, "blk", blocked)
+                        assessed_out.add(key)
                 if sampled:
                     canary["sampled"] += 1
                     canary["missed"] += row.status == "A"
@@ -275,8 +277,10 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         **counts,
         "open_matches": len(records),
         **{kind: sum(item["event"] == kind for item in events) for kind in order if kind != "blocked"},
-        # left out this update: assessments that broke a hard requirement, and listed postings a limit took out
-        "blocked": counts["blocked"] + sum(item["event"] == "blocked" for item in events),
+        # left out this update: assessments that broke a hard requirement, and listed postings a limit took
+        # out, each once (a listed posting assessed again and left out is both)
+        "blocked": counts["blocked"]
+        + sum(item["event"] == "blocked" and item["key"] not in assessed_out for item in events),
     }
 
 

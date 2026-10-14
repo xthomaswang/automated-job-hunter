@@ -84,7 +84,9 @@ Do not copy the résumé file into the feed repo.
     requirement that is only preferred, or that equivalent experience can replace, never counts.
     The assessment can only tell from what the profile says, so the profile must state the person's
     degrees and fields, whether they are enrolled now (in what program, finishing when), and any
-    certifications or licenses; otherwise nothing is ever left out for it.
+    certifications or licenses; otherwise nothing is ever left out for it. With the list empty,
+    unmet requirements are still flagged in the README and quoted in each brief, so the user can
+    see a few before deciding which kinds should leave postings out.
   - `thresholds.direct_min`: the lowest fit at which a wanted role is still listed. Unset, a wanted
     role is always listed, however low the fit.
 

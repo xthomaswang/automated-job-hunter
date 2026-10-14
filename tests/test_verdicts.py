@@ -167,6 +167,8 @@ STUDENT_POSTING = POSTING + (
 
 def test_an_unmet_requirement_is_kept_only_when_mandatory_quoted_and_without_an_alternative():
     assert check_assessment(fields(), job())[0]["unmet"] == []  # none stated: checked, nothing found
+    written_out = check_assessment(fields(unmet=["none", "None."]), job())  # as `preferred_years: none` is written
+    assert (written_out[0]["unmet"], written_out[0]["unverified"], written_out[1]) == ([], 0, [])
     assessment, codes = check_assessment(
         fields(
             unmet=[

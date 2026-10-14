@@ -29,7 +29,9 @@ DEFAULTS: dict[str, Any] = {
     "eligibility": {"needs_sponsorship": None, "rule_packs": ["us"]},
     "companies": {"prefer": [], "exclude": []},
     "thresholds": {"strong": 75, "good": 55, "publish_min": 40},
-    "caps": {"max_triage": 1500, "max_assess": 100, "max_attempts": 3},
+    # max_usd_per_month: judging pauses for the rest of the month (UTC) once the usage log says
+    # Claude Code's list-price estimate has reached it. Null means no budget.
+    "caps": {"max_triage": 1500, "max_assess": 100, "max_attempts": 3, "max_usd_per_month": None},
     # A number parks postings older than that many days when a source is first read. The default
     # judges everything, newest first: live boards keep most postings open far longer than a month.
     "backfill": {"days": None},
@@ -122,6 +124,11 @@ def normalize(data: Any, places: Places | None = None) -> dict[str, Any]:
     check(
         all(_int(out["caps"][k], 1) for k in ("max_triage", "max_assess", "max_attempts")),
         "caps must be positive whole numbers",
+    )
+    budget = out["caps"]["max_usd_per_month"]
+    check(
+        budget is None or (isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0),
+        "caps.max_usd_per_month must be a positive number of US dollars, or null for no budget",
     )
     days = out["backfill"]["days"]
     check(days is None or _int(days, 0), "backfill.days must be a number of days or null")

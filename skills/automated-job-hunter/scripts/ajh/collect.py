@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import criteria as C
-from . import packets
+from . import packets, usage
 from . import sources as S
 from .http import Client, HttpError
 from .layout import Layout
@@ -464,6 +464,10 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
                 row.status, row.tg = "D", generations["triage"]
     jobs = {sid: {jid: item.job for jid, item in items.items()} for sid, items in seen.items()}
     plan["queue"] = build_queue(state, jobs, criteria, generations)
+    budget = usage.budget(criteria["caps"]["max_usd_per_month"], usage.load(layout.usage), today.isoformat())
+    if budget:
+        plan["budget"] = budget  # apply reports it, even for an update that judged nothing
+    paused = bool(budget and budget["reached"])  # postings stay queued until next month; nothing is lost
 
     if layout.work.exists():
         shutil.rmtree(layout.work)
@@ -477,7 +481,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     index = packets.write_packets(
         layout,
         "triage",
-        [(key, job_of(jobs, key)) for key in plan["queue"]["triage"]],
+        [] if paused else [(key, job_of(jobs, key)) for key in plan["queue"]["triage"]],
         criteria,
         feedback=feedback_of(state, plan["queue"]["triage"]),
     )
@@ -489,7 +493,8 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         live=sum(row.status != "X" for sid in state.source_ids() for row in state.rows(sid).values()),
         queued={"triage": len(queue["triage"]), "assess": len(queue["assess"])},
         deferred=queue["deferred"],
-        judge_needed=bool(queue["triage"] or queue["assess"]),
+        judge_needed=bool(queue["triage"] or queue["assess"]) and not paused,
+        **({"budget": budget} if budget else {}),
         triage_packets=len(index),
         seal=seal,
     )

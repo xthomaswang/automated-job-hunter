@@ -24,7 +24,7 @@ def job(**changes):
 def test_a_minimal_file_gets_every_default():
     out = C.normalize(MINIMAL, PLACES)
     assert out["targets"] == {"roles": ["UX Researcher"], "adjacent": [], "avoid": []}
-    assert out["caps"] == {"max_triage": 1500, "max_assess": 100, "max_attempts": 3}
+    assert out["caps"] == {"max_triage": 1500, "max_assess": 100, "max_attempts": 3, "max_usd_per_month": None}
     assert out["backfill"] == {"days": None} and out["employment"] == [] and out["locations"]["regions"] == []
     assert C.normalize(dict(MINIMAL, backfill={"days": 45}), PLACES)["backfill"]["days"] == 45
 
@@ -178,3 +178,14 @@ def test_a_title_that_names_an_internship_counts_as_evidence():
     )
     assert stage0(employment=["full_time", "internship"]).check(job(title="Research Intern")) is None
     assert stage0().check(job(title="Research Intern")) is None  # no employment constraint, nothing to drop
+
+
+def test_a_monthly_budget_is_optional_and_judges_nothing_again():
+    for good in (None, 50, 12.5):
+        assert C.normalize(dict(MINIMAL, caps={"max_usd_per_month": good}), PLACES)["caps"]["max_usd_per_month"] == good
+    for bad in (0, -5, "50", True):
+        with pytest.raises(C.CriteriaError, match="max_usd_per_month"):
+            C.normalize(dict(MINIMAL, caps={"max_usd_per_month": bad}), PLACES)
+    plain = C.normalize(MINIMAL, PLACES)
+    budgeted = C.normalize(dict(MINIMAL, caps={"max_usd_per_month": 50}), PLACES)
+    assert C.profile_hashes(plain, "Five years of research.") == C.profile_hashes(budgeted, "Five years of research.")

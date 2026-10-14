@@ -195,3 +195,22 @@ def summary(lines: list[Mapping[str, Any]], as_of: str) -> dict[str, Any] | None
         "month": {"name": as_of[:7], **_tally(line for line in lines if _day(line)[:7] == as_of[:7])},
         "all_time": _tally(lines),
     }
+
+
+def budget(limit: float | None, lines: list[Mapping[str, Any]], today: str) -> dict[str, Any] | None:
+    """The monthly budget against this month's spending so far (UTC), or None when none is set."""
+    if limit is None:
+        return None
+    month = today[:7]
+    spent = round(
+        sum(_number((line.get("total") or {}).get("cost_usd")) for line in lines if _day(line)[:7] == month), 4
+    )
+    year, number = int(month[:4]), int(month[5:7])
+    return {
+        "usd_per_month": limit,
+        "month": month,
+        "spent_usd": spent,
+        "left_usd": round(max(limit - spent, 0.0), 4),
+        "reached": spent >= limit,
+        "resumes": f"{year + number // 12}-{number % 12 + 1:02d}-01",
+    }

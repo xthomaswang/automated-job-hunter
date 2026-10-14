@@ -45,6 +45,14 @@ def _github_output(values: dict[str, Any]) -> None:
 
 def _collect(args: argparse.Namespace) -> dict[str, Any]:
     summary = collect.run(args.repo)
+    budget = summary.get("budget")
+    if budget and budget["reached"] and os.environ.get("GITHUB_ACTIONS") == "true":
+        print(
+            f"::warning::Monthly budget reached: ${budget['spent_usd']:.2f} of ${budget['usd_per_month']:.2f} spent in "
+            f"{budget['month']} (Claude Code's list-price estimate). Judging is paused until {budget['resumes']}; "
+            "postings stay queued.",
+            file=sys.stderr,
+        )
     if args.github_output:
         _github_output(
             {

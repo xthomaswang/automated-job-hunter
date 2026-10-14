@@ -297,6 +297,53 @@ def test_an_update_that_judged_adds_one_line_to_the_usage_log_and_a_quiet_one_ad
     assert tracked(root) == before
 
 
+def test_a_reached_monthly_budget_pauses_judging_until_next_month(repo, monkeypatch, capsys):
+    from ajh import usage
+    from ajh.cli import main
+
+    root, board = repo(criteria={"caps": {"max_usd_per_month": 50}}), boards()
+    layout = Layout(root)
+    usage.append(layout.usage, {"at": "2026-10-02T08:00:00Z", "total": {"cost_usd": 50.5}})  # spent this month
+    client = Client(board.transport, sleep=lambda s: None, retries=0)
+    real_collect = collect.run
+    monkeypatch.setattr(collect, "run", lambda root, client_=None, now=None: real_collect(root, client, NOW))
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    assert main(["--repo", str(root), "collect"]) == 0  # as the workflow runs it
+    out = capsys.readouterr()
+    summary = json.loads(out.out)
+    assert (summary["judge_needed"], summary["triage_packets"], summary["queued"]["triage"]) == (False, 0, 4)
+    assert summary["budget"] == {
+        "usd_per_month": 50,
+        "month": "2026-10",
+        "spent_usd": 50.5,
+        "left_usd": 0.0,
+        "reached": True,
+        "resumes": "2026-11-01",
+    }
+    assert "::warning::Monthly budget reached: $50.50 of $50.00 spent in 2026-10" in out.err  # not a failure
+
+    apply.run(root, summary["seal"])  # the judging steps are skipped; apply and publish still run
+    meta = json.loads(layout.feed_meta.read_text())
+    assert meta["usage"]["budget"]["paused"] is True and "judging_failed" not in meta
+    readme = layout.readme.read_text()
+    assert "- Judging is paused until 2026-11-01: the monthly budget is reached (see Usage)." in readme
+    assert "Monthly budget reached: $50.50 of $50.00 spent in 2026-10. Judging is paused until 2026-11-01" in readme
+    assert len(usage.load(layout.usage)) == 1  # nothing judged, nothing logged
+
+    before = tracked(root)
+    again = real_collect(root, client, NOW)
+    apply.run(root, again["seal"])
+    assert tracked(root) == before  # a paused feed commits nothing new
+
+    november = real_collect(root, client, NOW.replace(month=11, day=2))
+    assert (november["judge_needed"], november["budget"]["reached"], november["budget"]["spent_usd"]) == (
+        True,
+        False,
+        0,
+    )
+
+
 def test_other_listings_of_the_same_opening_are_attached_to_its_record(repo):
     root = repo(sources=(ACME, REMOTIVE))
     same = prose(50)

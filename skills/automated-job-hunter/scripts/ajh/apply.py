@@ -201,6 +201,9 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         usage.append(layout.usage, line)
         log.append(line)
     used = usage.summary(log, as_of)
+    budget = usage.budget(criteria["caps"]["max_usd_per_month"], log, as_of)
+    if budget:
+        used = {**(used or {}), "budget": {**budget, "paused": plan.get("budget", {}).get("reached", False)}}
     meta = {
         "schema_version": feed.SCHEMA_VERSION,
         "as_of": as_of,

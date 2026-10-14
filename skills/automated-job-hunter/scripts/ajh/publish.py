@@ -49,10 +49,8 @@ class Git:
 def _message(layout: Layout) -> str:
     meta = read_json(layout.feed_meta, {})
     counts = meta.get("counts", {})
-    return (
-        f"Update job feed: {counts.get('published', 0)} open matches, "
-        f"{counts.get('pending_triage', 0) + counts.get('pending_assess', 0)} waiting to be judged\n\n{TRAILER}\n"
-    )
+    waiting = sum(counts.get(name, 0) for name in ("pending_triage", "pending_assess", "pending_reassess"))
+    return f"Update job feed: {counts.get('published', 0)} open matches, {waiting} waiting to be judged\n\n{TRAILER}\n"
 
 
 def _token_config() -> tuple[str, ...]:

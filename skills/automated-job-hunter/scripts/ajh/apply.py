@@ -41,15 +41,18 @@ def check_tree(layout: Layout) -> None:
         )
 
 
-def _counts(state: State) -> dict[str, int]:
+def _counts(state: State, assess_generation: int) -> dict[str, int]:
     tally = dict.fromkeys("PDKARUVSX", 0)
+    stale = 0  # assessed under an earlier profile and queued to be assessed again; still listed meanwhile
     for sid in state.source_ids():
         for row in state.rows(sid).values():
             tally[row.status] += 1
+            stale += row.status in "ARU" and row.ag < assess_generation
     return {
         "published": tally["A"] + tally["U"],
         "pending_triage": tally["P"],
         "pending_assess": tally["K"],
+        "pending_reassess": stale,
         "below_threshold": tally["R"],
         "dropped": tally["D"],
         "variants": tally["V"],
@@ -187,7 +190,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     meta = {
         "schema_version": feed.SCHEMA_VERSION,
         "as_of": as_of,
-        "counts": _counts(state),
+        "counts": _counts(state, generations["assess"]),
         "canary": canary,
         "generations": generations,
         "sources": {"total": len(state.sources), "failing": failing},

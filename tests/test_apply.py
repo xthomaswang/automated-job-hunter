@@ -276,3 +276,24 @@ def test_a_wanted_role_is_always_listed_and_related_work_only_above_the_bar(repo
     feed = positions(root)
     assert list(feed) == ["acme:1"] and (feed["acme:1"]["fit"], feed["acme:1"]["tier"]) == (25, "stretch")
     assert rows(root)["2"].status == "R"
+
+
+def test_postings_waiting_to_be_assessed_again_are_counted_and_shown(repo):
+    root, board = repo(), boards()
+    full_tick(root, board, triage=triage, assess=assess)
+    meta = json.loads(Layout(root).feed_meta.read_text())
+    assert meta["counts"]["pending_reassess"] == 0 and "assessed again" not in Layout(root).readme.read_text()
+    (root / "profile" / "profile.md").write_text("Ten years of quantitative research.")
+    full_tick(root, board, triage=triage, assess=lambda job: None)  # the profile changed and nothing was answered yet
+    meta = json.loads(Layout(root).feed_meta.read_text())
+    # both published postings and the one below the bar wait to be assessed again; the two stay listed meanwhile
+    assert (
+        meta["counts"]["pending_reassess"] == 3
+        and meta["counts"]["published"] == 2
+        and meta["counts"]["pending_assess"] == 0
+    )
+    assert (
+        "- Waiting to be judged: 0 for triage, 0 for assessment, and 3 to be assessed again because the search changed."
+        in (Layout(root).readme.read_text())
+    )
+    assert list(positions(root)) == ["acme:1", "acme:2"]

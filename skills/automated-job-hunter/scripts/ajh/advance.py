@@ -114,6 +114,10 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
             state.titles[title] = generations["triage"]
 
     queue = build_queue(state, jobs, criteria, generations)
+    # Triage does not run again in this tick, so every posting still waiting for it waits for the
+    # next tick. The cap only limits how many one tick takes on.
+    queue["deferred"]["triage"] += len(queue["triage"])
+    queue["triage"] = []
     plan["queue"] = queue
     plan["triage"] = counts
     assess_index = packets.write_packets(

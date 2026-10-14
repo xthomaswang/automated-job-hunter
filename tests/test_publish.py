@@ -168,3 +168,14 @@ def test_denied_terms_block_hand_written_files_but_not_posting_text(feed_repo, m
     assert audit.check(root) == []
     (root / "profile" / "profile.md").write_text("Previously at old employer ltd.")
     assert audit.check(root) == ["profile/profile.md contains a denied term (entry 3)"]
+
+
+def test_the_commit_message_counts_postings_waiting_to_be_assessed_again(feed_repo):
+    root, _ = feed_repo
+    tick(root)
+    meta_path = root / "feed" / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["counts"].update(pending_triage=5, pending_assess=7, pending_reassess=11)
+    meta_path.write_text(json.dumps(meta))
+    publish.run(root, push=False)
+    assert git(root, "log", "-1", "--format=%s") == "Update job feed: 2 open matches, 23 waiting to be judged"

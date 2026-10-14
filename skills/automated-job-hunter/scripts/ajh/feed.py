@@ -314,7 +314,12 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
     lines += [
         "## Status",
         "",
-        f"- Waiting to be judged: {counts['pending_triage']} for triage, {counts['pending_assess']} for assessment.",
+        f"- Waiting to be judged: {counts['pending_triage']} for triage, {counts['pending_assess']} for assessment"
+        + (
+            f", and {counts['pending_reassess']} to be assessed again because the search changed."
+            if counts.get("pending_reassess")
+            else "."
+        ),
     ]
     if counts["parked"]:
         lines.append(f"- Parked as older than the backfill limit: {counts['parked']}.")

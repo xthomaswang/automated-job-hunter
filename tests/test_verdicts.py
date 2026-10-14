@@ -44,7 +44,10 @@ def fields(**changes):
 
 
 def test_clean_text_removes_links_and_token_shapes_and_bounds_length():
-    dirty = "Great fit.  See https://evil.example/x?token=1 and www.example.com now sk-ant-abcdefghijklmnopqrstuvwxyz0123456789"
+    fake_key = (
+        "sk-ant-" + "abcdefghijklmnopqrstuvwxyz0123456789"
+    )  # assembled here so no scanner mistakes it for a real one
+    dirty = f"Great fit.  See https://evil.example/x?token=1 and www.example.com now {fake_key}"
     assert clean_text(dirty, 240) == "Great fit. See [link removed] and [link removed] now [removed]"
     long = clean_text("word " * 100, 40)
     assert len(long) <= 41 and long.endswith("…") and not long.endswith(" …")

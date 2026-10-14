@@ -4,9 +4,29 @@ An installable skill for Claude Code that keeps a private GitHub repo updated wi
 matched to your experience. A deterministic engine fetches public job boards and
 publishes the feed; the agent's cheap subagents judge fit.
 
-**Status: works locally, not yet published.** A feed repo can be created, updated end to end with
-real subagents, and committed. The scheduled GitHub Actions run is written but has not been tested
-on a runner yet. The skill file is written to be portable to Codex, but nothing has been run there.
+**Status: early.** A feed repo can be created, updated end to end with real subagents, and committed
+on one machine. Installing from GitHub and the scheduled GitHub Actions run have not been tested
+yet. The skill file is written to be portable to Codex, but nothing has been run there. Please
+[open an issue](https://github.com/xthomaswang/automated-job-hunter/issues) for anything that breaks.
+
+## Install
+
+In Claude Code:
+
+```
+/plugin install automated-job-hunter --marketplace xthomaswang/automated-job-hunter
+```
+
+On a version that does not accept that one-step form, add the marketplace first:
+
+```
+/plugin marketplace add xthomaswang/automated-job-hunter
+/plugin install automated-job-hunter@automated-job-hunter
+```
+
+Then ask Claude Code to "set up my job feed". You need Python 3.9 or newer and `git`. To put your
+feed on GitHub you also need `gh`, logged in with the `workflow` scope
+(`gh auth refresh -s workflow`), because the feed repo contains a workflow file.
 
 ## What it does
 
@@ -21,15 +41,12 @@ on a runner yet. The skill file is written to be portable to Codex, but nothing 
 A model never touches git or a link, never sees a credential, and in a scheduled run has no shell
 and no network: it can read packets and write result files, nothing else.
 
-## Try it from a checkout
+## Run from a checkout instead
 
 ```sh
-git clone <this repository> && cd automated-job-hunter
+git clone https://github.com/xthomaswang/automated-job-hunter && cd automated-job-hunter
 claude --plugin-dir .
 ```
-
-Then ask Claude Code to "set up my job feed". Needs Python 3.9 or newer, `git`, and for the first
-push `gh`.
 
 Measured cost at API prices: about $0.14 per 1,000 postings screened and $0.02 per posting
 assessed; an update that finds nothing new uses no model at all. See [docs/spikes.md](docs/spikes.md).

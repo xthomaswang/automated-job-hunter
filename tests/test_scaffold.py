@@ -160,10 +160,13 @@ def test_status_names_the_commit_that_set_the_schedule_and_flags_a_made_up_addre
     git(root, "-c", "user.name=me", "-c", "user.email=me@laptop.local", "commit", "-q", "-m", "Set up")
     first = git(root, "rev-parse", "HEAD")
     assert main(["--repo", str(root), "status"]) == 0
-    owner = json.loads(capsys.readouterr().out)["schedule"]
-    assert (owner["changed_in"], owner["author"]) == (first, "me@laptop.local")
+    printed = capsys.readouterr().out
+    owner = json.loads(printed)["schedule"]
+    assert (owner["changed_in"], owner["author"], owner["committer"]) == (first, scaffold.MADE_UP, scaffold.MADE_UP)
     assert first[:12] in owner["warning"] and "upgrade --cadence" in owner["warning"]
-    assert owner["warning"] in scaffold.upgrade(root)["warnings"]  # an upgrade says so too
+    upgraded = scaffold.upgrade(root)
+    assert owner["warning"] in upgraded["warnings"]  # an upgrade says so too
+    assert "laptop" not in printed + json.dumps(upgraded)  # described, never printed: it names the machine
     for made_up in ("me@laptop", "me@host.(none)", "me@laptop.LOCAL"):
         assert scaffold._made_up(made_up)
     assert not scaffold._made_up("1+owner@users.noreply.github.com") and not scaffold._made_up("me@example.com")

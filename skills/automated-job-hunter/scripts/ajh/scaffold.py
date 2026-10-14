@@ -170,6 +170,15 @@ def _made_up(email: str) -> bool:
     return "." not in domain or domain.endswith(".local") or "(none)" in domain
 
 
+MADE_UP = "made up by git from a machine's name"
+
+
+def _shown(email: str) -> str:
+    """An address as `status` prints it. A made-up one holds the machine's user and host names, which
+    nobody chose to show and `status` output can end up in a bug report, so it is only described."""
+    return MADE_UP if _made_up(email) else email
+
+
 def schedule(root: Path) -> dict[str, Any] | None:
     """The workflow's cron line and the commit that last changed it, whose account GitHub runs it as.
 
@@ -193,14 +202,13 @@ def schedule(root: Path) -> dict[str, Any] | None:
     if log.returncode or len(fields) != 3:
         return result  # not committed yet
     sha, author, committer = fields
-    result.update(changed_in=sha, author=author, committer=committer)
-    made_up = [email for email in dict.fromkeys((author, committer)) if _made_up(email)]
-    if made_up:
+    result.update(changed_in=sha, author=_shown(author), committer=_shown(committer))
+    if _made_up(author) or _made_up(committer):
         result["warning"] = (
-            f"The schedule was last changed in commit {sha[:12]} by {' and '.join(made_up)}, an address git made up "
-            "from a machine's name. No GitHub account has it, so GitHub does not start the scheduled runs. Set the "
-            "user's GitHub identity in this repo, then write the cron line anew with `upgrade --cadence` and their "
-            "cadence, commit and push."
+            f"The schedule was last changed in commit {sha[:12]} under an address git made up from a machine's "
+            "name. No GitHub account has it, so GitHub does not start the scheduled runs. Set the user's GitHub "
+            "identity in this repo, then write the cron line anew with `upgrade --cadence` and their cadence, "
+            "commit and push."
         )
     return result
 

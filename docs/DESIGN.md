@@ -349,7 +349,8 @@ jobs:
 - GitHub runs a schedule as the account behind the commit that last changed the cron line, and
   never runs it when no account has that commit's email (issue #41: git on an unconfigured machine
   makes one up from its name). `init` and `upgrade` therefore set `user.useConfigOnly` in the feed
-  repo, so git refuses such a commit; `status` names the commit behind the schedule; and
+  repo, so git refuses such a commit; `status` names the commit behind the schedule (describing a
+  made-up address rather than printing the machine's user and host names); and
   `upgrade --cadence` always writes a new cron line, so committing it moves the schedule to the
   committer's account. `publish` passes its own identity and is unaffected.
 - Constraints to state in the docs: GitHub cron is best-effort and can be delayed; hourly cadence on

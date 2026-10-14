@@ -116,10 +116,10 @@ python3 .hunter/engine/hunter.py sources add <id> <id> ...
 (see "When it runs" in [schedule.md](schedule.md)).
 
 Read what `init` printed before the first commit. A `warnings` entry about the email means git has
-no identity on this machine. `init` has told git to refuse to commit in the feed repo rather than
-make up an address from the machine's name: GitHub runs the schedule as the account behind the
-commit that last changed it, and never runs it for an address no account has. Set the user's GitHub
-identity in the feed repo only:
+no identity on this machine. `init` sets `user.useConfigOnly` in the feed repo's own git config, so
+git refuses to commit there rather than make up an address from the machine's name: GitHub runs the
+schedule as the account behind the commit that last changed it, and never runs it for an address no
+account has. Set the user's GitHub identity in the feed repo only:
 
 ```sh
 git config user.name "<their name or GitHub login>"

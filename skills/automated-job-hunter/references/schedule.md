@@ -47,8 +47,9 @@ Runs started by hand or by a push work, but `--event schedule` stays empty after
 times. GitHub runs a schedule as the account behind the commit that last changed the cron line, and
 never runs it when no account has that commit's email. That happens when git had no identity on the
 machine and made an address up from its name, such as `user@laptop.local`. `hunter status` shows
-that commit and its addresses under `schedule`, with a `warning` for a made-up one. For any other
-address, GitHub's answer is `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`: `null`
+that commit and its addresses under `schedule`. A made-up address is described, not printed, since
+it holds the machine's user and host names, and comes with a `warning`. For any other address,
+GitHub's answer is `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`: `null`
 means no account has it.
 
 To fix it, set the user's GitHub identity in the feed repo (step 5 of [setup.md](setup.md)). Then

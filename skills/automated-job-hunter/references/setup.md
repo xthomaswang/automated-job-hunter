@@ -66,7 +66,8 @@ Do not copy the résumé file into the feed repo.
   budget, judging pauses until the first of next month, and new postings wait in the queue. Months
   are UTC, and the spending is Claude Code's list-price estimate whatever the credential. An update
   that starts below the budget runs to the end, so a month can go over by one update's worth, about
-  $2 at the default caps. Changing it judges nothing again.
+  $2 at the default caps. Only updates logged since this version was installed count, so the first
+  month undercounts what was spent before then. Changing it judges nothing again.
 
 ## 4. Choose the boards
 

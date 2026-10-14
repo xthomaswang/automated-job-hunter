@@ -137,10 +137,14 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument("items", nargs="*", help="registry ids, `ats:slug:Company` entries, or a company name to probe")
     step.set_defaults(run=_sources)
     step = commands.add_parser("init", help="create a feed repo at --repo (run from the installed skill)")
-    step.add_argument("--cadence", choices=sorted(scaffold.CADENCES), default="4h", help="how often the workflow runs")
+    step.add_argument(
+        "--cadence", default="4h", help="when the workflow runs: 1h, 4h or 8h, or UTC hours such as 6,10,14,20"
+    )
     step.set_defaults(run=lambda a: scaffold.init(a.repo, a.cadence))
     step = commands.add_parser("upgrade", help="replace the feed repo's engine copy with this version")
-    step.add_argument("--cadence", choices=sorted(scaffold.CADENCES), help="also change how often the workflow runs")
+    step.add_argument(
+        "--cadence", help="also change when the workflow runs: 1h, 4h, 8h, or UTC hours such as 6,10,14,20"
+    )
     step.set_defaults(run=lambda a: scaffold.upgrade(a.repo, a.cadence))
     args = parser.parse_args(argv)
     try:

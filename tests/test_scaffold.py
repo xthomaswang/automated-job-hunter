@@ -90,6 +90,28 @@ def test_upgrade_replaces_the_engine_and_leaves_the_users_files_and_schedule_alo
         scaffold.upgrade(tmp_path / "elsewhere")
 
 
+def test_a_cadence_can_be_set_utc_hours_and_a_bad_one_changes_nothing(tmp_path):
+    root = tmp_path / "feed"
+    assert main(["--repo", str(root), "init", "--cadence", "20,6,14,10"]) == 0
+    path = root / scaffold.WORKFLOW
+    assert re.search(r'cron: "\d{1,2} 6,10,14,20 \* \* \*"', path.read_text())
+    assert scaffold.cron_for("8h", 7) == "7 */8 * * *" and scaffold.cron_for("14, 2,14", 7) == "7 2,14 * * *"
+    for bad in ("25", "6,,10", "", "every 4h", "6.5", "-1", "2h"):
+        with pytest.raises(scaffold.ScaffoldError, match="UTC hours"):
+            scaffold.cron_for(bad, 7)
+    assert main(["--repo", str(tmp_path / "other"), "init", "--cadence", "24"]) == 2
+    assert not (tmp_path / "other").exists()  # refused before anything was created
+    path.write_text(
+        path.read_text().replace(re.search(r'cron: "([^"]+)"', path.read_text()).group(1), "8 2,12 * * 1-5")
+    )
+    before = path.read_text()
+    assert main(["--repo", str(root), "upgrade", "--cadence", "7,31"]) == 2 and path.read_text() == before
+    scaffold.upgrade(root)
+    assert 'cron: "8 2,12 * * 1-5"' in path.read_text()  # a hand-edited schedule survives an upgrade
+    scaffold.upgrade(root, "0,12")
+    assert re.search(r'cron: "\d{1,2} 0,12 \* \* \*"', path.read_text())
+
+
 def test_the_three_forms_of_the_subagent_definitions_agree():
     agents = scaffold.load_agents()
     assert set(agents) == {"hunter-triage", "hunter-assess"}

@@ -18,6 +18,10 @@ already answer:
 - Companies they especially want, and any they want left out.
 - How often the feed should update: every hour, 4 hours (the default), or 8 hours.
 
+Also run `gh --version` now. If the GitHub CLI is missing, tell them at this point that putting the
+feed on GitHub (step 7) needs it, and how to get it, so they can install it while you work through
+the next steps.
+
 Treat a limit as hard only if they said so. A hard limit drops postings before any model sees them,
 so "I'd prefer remote" belongs in the profile text, not in the constraints.
 

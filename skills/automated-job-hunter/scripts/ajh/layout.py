@@ -1,0 +1,20 @@
+"""Where things live inside a feed repo."""
+from __future__ import annotations
+
+from pathlib import Path
+
+
+class Layout:
+    def __init__(self, root: Path | str) -> None:
+        self.root = Path(root).resolve()
+        self.criteria = self.root / "profile" / "criteria.json"
+        self.profile = self.root / "profile" / "profile.md"
+        self.sources = self.root / "config" / "sources.json"
+        self.state = self.root / "state"
+        # Untracked scratch space. Everything a tick produces before `apply` lives here.
+        self.work = self.root / ".hunter" / "work"
+        self.snapshot = self.work / "snapshot"
+        self.state_next = self.work / "state-next"
+        self.plan = self.work / "plan.json"
+        self.seal = self.work / "seal"
+        self.results = self.work / "results"

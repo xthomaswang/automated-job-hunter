@@ -1,0 +1,9 @@
+{
+  "name": "automated-job-hunter",
+  "version": "0.1.0",
+  "description": "Keeps a private GitHub repo updated with job postings matched to your experience: a deterministic engine fetches and publishes, cheap subagents judge fit",
+  "author": {
+    "name": "xthomaswang"
+  },
+  "keywords": ["jobs", "job-search", "automation", "subagents"]
+}

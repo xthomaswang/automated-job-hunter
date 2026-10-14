@@ -1,0 +1,267 @@
+"""The user's search criteria: validation, the stage-0 hard constraints, and profile hashes.
+
+Stage 0 drops a posting only on positive evidence that it breaks an explicit constraint. Anything
+it cannot read (an unknown employment label, a place it does not recognize) passes.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import re
+from collections.abc import Iterable, Mapping
+from pathlib import Path
+from typing import Any
+
+from .model import Job, digest
+from .textutil import company_key
+
+EMPLOYMENT_KINDS = ("full_time", "part_time", "contract", "internship", "temporary")
+SENIORITY = ("intern", "junior", "mid", "senior", "staff")
+RULE_PACKS = ("us",)
+
+DEFAULTS: dict[str, Any] = {
+    "schema_version": 1,
+    "targets": {"roles": [], "adjacent": [], "avoid": []},
+    "seniority": {"min": None, "max": None, "years": None},
+    "employment": [],  # empty means any
+    "locations": {"remote": "any", "regions": [], "cities": []},  # empty regions means anywhere
+    "eligibility": {"needs_sponsorship": None, "rule_packs": ["us"]},
+    "companies": {"prefer": [], "exclude": []},
+    "thresholds": {"strong": 75, "good": 55, "publish_min": 40},
+    "caps": {"max_triage": 1500, "max_assess": 100, "max_attempts": 3},
+    # A number parks postings older than that many days when a source is first read. The default
+    # judges everything, newest first: live boards keep most postings open far longer than a month.
+    "backfill": {"days": None},
+}
+
+
+class CriteriaError(ValueError):
+    """criteria.json needs a person: the message lists every problem found."""
+
+
+def _strings(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(x, str) and x.strip() for x in value)
+
+
+def _int(value: Any, low: int, high: int | None = None) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= low and (high is None or value <= high)
+
+
+def normalize(data: Any, places: Places | None = None) -> dict[str, Any]:
+    """Fill defaults and validate. Raises CriteriaError naming every problem."""
+    if not isinstance(data, dict):
+        raise CriteriaError("criteria.json must be a JSON object")
+    problems = [f"unknown key {key!r}" for key in data if key not in DEFAULTS]
+    out = copy.deepcopy(DEFAULTS)
+    for key, default in DEFAULTS.items():
+        if key not in data:
+            continue
+        if isinstance(default, dict):
+            if not isinstance(data[key], dict):
+                problems.append(f"{key} must be an object")
+                continue
+            problems += [f"unknown key {key}.{sub}" for sub in data[key] if sub not in default]
+            out[key].update({sub: value for sub, value in data[key].items() if sub in default})
+        else:
+            out[key] = data[key]
+
+    def check(ok: bool, message: str) -> None:
+        if not ok:
+            problems.append(message)
+
+    check(out["schema_version"] == 1, "schema_version must be 1")
+    targets, seniority, locations = out["targets"], out["seniority"], out["locations"]
+    check(_strings(targets["roles"]) and bool(targets["roles"]), "targets.roles needs at least one role")
+    check(_strings(targets["adjacent"]) and _strings(targets["avoid"]),
+          "targets.adjacent and targets.avoid must be lists of text")
+    for bound in ("min", "max"):
+        check(seniority[bound] is None or seniority[bound] in SENIORITY,
+              f"seniority.{bound} must be one of {SENIORITY} or null")
+    years = seniority["years"]
+    check(years is None or (isinstance(years, (int, float)) and not isinstance(years, bool) and 0 <= years <= 60),
+          "seniority.years must be a number of years or null")
+    check(isinstance(out["employment"], list) and all(x in EMPLOYMENT_KINDS for x in out["employment"]),
+          f"employment must list values from {EMPLOYMENT_KINDS}")
+    check(locations["remote"] in ("any", "only", "no"), "locations.remote must be any, only or no")
+    check(_strings(locations["cities"]), "locations.cities must be a list of text")
+    if not _strings(locations["regions"]):
+        problems.append("locations.regions must be a list of country codes")
+    elif places is not None:
+        unknown = [code for code in locations["regions"] if not places.known_region(code)]
+        check(not unknown, f"locations.regions has codes this version cannot read: {unknown}")
+    eligibility = out["eligibility"]
+    check(eligibility["needs_sponsorship"] in (None, True, False),
+          "eligibility.needs_sponsorship must be true, false or null")
+    check(isinstance(eligibility["rule_packs"], list) and all(x in RULE_PACKS for x in eligibility["rule_packs"]),
+          f"eligibility.rule_packs must list values from {RULE_PACKS}")
+    check(_strings(out["companies"]["prefer"]) and _strings(out["companies"]["exclude"]),
+          "companies.prefer and companies.exclude must be lists of names")
+    thresholds = out["thresholds"]
+    if all(_int(thresholds[k], 0, 100) for k in ("strong", "good", "publish_min")):
+        check(thresholds["strong"] >= thresholds["good"] >= thresholds["publish_min"],
+              "thresholds must satisfy strong >= good >= publish_min")
+    else:
+        problems.append("thresholds must be whole numbers from 0 to 100")
+    check(all(_int(out["caps"][k], 1) for k in ("max_triage", "max_assess", "max_attempts")),
+          "caps must be positive whole numbers")
+    days = out["backfill"]["days"]
+    check(days is None or _int(days, 0), "backfill.days must be a number of days or null")
+    if problems:
+        raise CriteriaError("; ".join(problems))
+    return out
+
+
+def load(path: Path, places: Places | None = None) -> dict[str, Any]:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise CriteriaError(f"{path} is missing") from None
+    except ValueError as error:
+        raise CriteriaError(f"{path} is not valid JSON: {error}") from None
+    return normalize(data, places)
+
+
+def profile_hashes(criteria: Mapping[str, Any], profile_text: str) -> dict[str, str]:
+    """What each judging stage depends on. A changed hash re-judges that stage and nothing else.
+
+    Triage sees only the targets and seniority. Assessment also sees the profile text and the
+    eligibility and location preferences. Thresholds, caps and preferred companies affect ordering
+    and tiers, never a verdict, so they are in neither hash.
+    """
+    triage = digest({"targets": criteria["targets"], "seniority": criteria["seniority"]})[:12]
+    assess = digest({"triage": triage, "eligibility": criteria["eligibility"], "locations": criteria["locations"],
+                     "employment": criteria["employment"], "profile": " ".join(profile_text.split())})[:12]
+    return {"triage": triage, "assess": assess}
+
+
+_EMPLOYMENT = [
+    ("internship", r"\bintern(?:ship)?\b|\bco-?op\b|apprentice|working student|werkstudent|trainee"),
+    ("contract", r"contract|freelance|consultant"),
+    ("temporary", r"temporary|\btemp\b|seasonal|fixed[\s_-]*term"),
+    ("part_time", r"part[\s_-]*time"),
+    ("full_time", r"full[\s_-]*time|permanent|regular"),
+]
+
+
+def employment_kinds(label: str | None) -> set[str]:
+    """Every kind a source's employment label could mean; empty when it says nothing readable."""
+    text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", label or "")  # "FullTime" -> "Full Time"
+    return {kind for kind, pattern in _EMPLOYMENT if re.search(pattern, text, re.I)}
+
+
+_PLACE_SEPARATOR = re.compile(r"\s*(?:/|;|\||•|·|\n|\bor\b)\s*", re.I)
+_NOISE = re.compile(r"\b(?:remote|hybrid|on-?site|in-?office|flexible|anywhere|worldwide|global|based|only|office|hq"
+                    r"|(?-i:in|the|within|from))\b", re.I)
+
+
+class Places:
+    """Reads the countries a location string names, using the bundled seed table."""
+
+    def __init__(self, data: Mapping[str, Any]) -> None:
+        self.countries = set(data["countries"])
+        self.names: dict[str, str] = {}
+        by_region: dict[str, set[str]] = {}
+        for code, entry in data["countries"].items():
+            by_region.setdefault(entry["region"], set()).add(code)
+            for name in entry["names"]:
+                self.names[name.casefold()] = code
+        self.region_words = {word.casefold(): set().union(*(by_region.get(tag, set()) for tag in tags))
+                             for word, tags in data["region_words"].items()}
+        self.groups = {name: set(codes) for name, codes in data["groups"].items()}
+        self.ambiguous = set(data["ambiguous_state_codes"])
+        ambiguous_names = set(data["ambiguous_state_names"])
+        self.us_states = set(data["us_states"])
+        self.state_names = {name for name in data["us_states"].values() if name not in ambiguous_names}
+        self.ca_provinces = set(data["ca_provinces"])
+        self.province_names = set(data["ca_provinces"].values())
+        self.cities = {city.casefold(): code for code, cities in data["cities"].items() for city in cities}
+
+    @classmethod
+    def bundled(cls) -> Places:
+        path = Path(__file__).with_name("data") / "places.json"
+        return cls(json.loads(path.read_text(encoding="utf-8")))
+
+    def known_region(self, code: str) -> bool:
+        return code in self.countries or code in self.groups
+
+    def expand(self, regions: Iterable[str]) -> set[str]:
+        out: set[str] = set()
+        for code in regions:
+            out |= self.groups.get(code, {code})
+        return out
+
+    def _place(self, place: str) -> set[str] | None:
+        """Countries one place certainly names, or None when it cannot be read with certainty."""
+        text = re.sub(r"[()\[\]:]|\s+[-–—]\s+|[–—]", ",", place)
+        tokens = [t for t in (" ".join(_NOISE.sub(" ", raw).split()).strip("- ") for raw in text.split(","))
+                  if t and not t.isdigit()]
+        if not tokens:
+            return None
+        countries: set[str] = set()
+        ambiguous: set[str] = set()
+        us = canada = False
+        for token in tokens:
+            low = token.casefold()
+            if low in self.names:
+                countries.add(self.names[low])
+            elif low in self.region_words:
+                countries |= self.region_words[low]
+            elif len(token) == 2 and token.isalpha():
+                code = token.upper()
+                if code in self.ambiguous:
+                    ambiguous.add(code)
+                elif code in self.us_states:
+                    us = True
+                elif code in self.ca_provinces:
+                    canada = True
+                elif code in self.countries:
+                    countries.add(code)
+            elif low in self.state_names:
+                us = True
+            elif low in self.province_names:
+                canada = True
+        if countries:
+            return countries
+        if us != canada:
+            return {"US"} if us else {"CA"}
+        city = self.cities.get(tokens[0].casefold())
+        if ambiguous:
+            # "Chicago, IL" and "Tel Aviv, IL": only a known city settles which IL this is.
+            return {city} if city and (city == "US" or city in ambiguous) else None
+        return {city} if city and not (us and canada) else None
+
+    def resolve(self, location: str | None) -> tuple[set[str], bool]:
+        """(countries named, whether every listed place could be read)."""
+        places = [p for p in _PLACE_SEPARATOR.split(location or "") if p.strip()]
+        found: set[str] = set()
+        complete = bool(places)
+        for place in places:
+            codes = self._place(place)
+            if codes is None:
+                complete = False
+            else:
+                found |= codes
+        return found, complete
+
+
+class Stage0:
+    """The hard constraints. `check` returns why a posting is dropped, or None when it passes."""
+
+    def __init__(self, criteria: Mapping[str, Any], places: Places) -> None:
+        self.excluded = {company_key(name) for name in criteria["companies"]["exclude"]}
+        self.employment = set(criteria["employment"])
+        self.allowed = places.expand(criteria["locations"]["regions"])
+        self.places = places
+
+    def check(self, job: Job) -> str | None:
+        if company_key(job.company) in self.excluded:
+            return "company"
+        if self.employment:
+            kinds = employment_kinds(job.employment_type)
+            if kinds and not kinds & self.employment:
+                return "employment"
+        if self.allowed:
+            countries, complete = self.places.resolve(job.location)
+            if complete and countries and not countries & self.allowed:
+                return "location"
+        return None

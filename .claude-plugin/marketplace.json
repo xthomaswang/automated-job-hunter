@@ -1,0 +1,14 @@
+{
+  "name": "automated-job-hunter",
+  "description": "automated-job-hunter: one plugin that keeps a private job feed repo matched to your experience.",
+  "owner": {
+    "name": "xthomaswang"
+  },
+  "plugins": [
+    {
+      "name": "automated-job-hunter",
+      "source": "./",
+      "description": "Keeps a private GitHub repo updated with job postings matched to your experience: a deterministic engine fetches and publishes, cheap subagents judge fit"
+    }
+  ]
+}

@@ -273,8 +273,9 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     return {
         **counts,
         "open_matches": len(records),
-        # "blocked" above counts this update's assessments; listed postings it removed are its events
         **{kind: sum(item["event"] == kind for item in events) for kind in order if kind != "blocked"},
+        # left out this update: assessments that broke a hard requirement, and listed postings a limit took out
+        "blocked": counts["blocked"] + sum(item["event"] == "blocked" for item in events),
     }
 
 

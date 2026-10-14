@@ -439,7 +439,7 @@ def test_hard_requirements_leave_postings_out_until_relaxed(repo):
     )
 
     limits(root, max_seniority="senior")  # takes a listed posting out without judging anything
-    full_tick(root, board, assess=judged)
+    assert full_tick(root, board, assess=judged)["blocked"] == 1  # the summary counts it too
     assert set(positions(root)) == {"acme:2"} and rows(root)["3"].note == "blk:seniority=staff"
     log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
     assert (log[-1]["event"], log[-1]["key"]) == ("blocked", "acme:3")

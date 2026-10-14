@@ -128,11 +128,6 @@ def test_a_whole_tick_runs_from_a_scaffolded_repo(tmp_path, monkeypatch):
     )  # nothing to judge, nothing to commit
 
 
-def test_a_failed_judging_stage_is_reported_and_the_tick_still_finishes(tmp_path, monkeypatch):
-    monkeypatch.setattr(tick, "JUDGE", tmp_path / "missing-judge.sh")
-    assert tick.judge(tmp_path)["ok"] is False
-
-
 def test_sources_are_added_from_the_registry_or_from_a_probed_board(tmp_path):
     scaffold.init(tmp_path / "feed")
     root = tmp_path / "feed"
@@ -204,24 +199,3 @@ def test_shipped_text_names_no_person_or_machine_and_the_contract_documents_ever
     handoff = (SKILL / "assets/template/HANDOFF.md").read_text()
     for field in feed.build_record(job, "2026-10-13", None, criteria, 1):
         assert f"`{field}`" in handoff or field in ("v", "source", "source_label"), field
-
-
-def test_a_judging_stage_is_reported_with_counts_the_engine_checked(tmp_path, monkeypatch):
-    layout_dir = tmp_path / ".hunter" / "work"
-    (layout_dir / "results").mkdir(parents=True)
-    rows = [
-        f"T-00{n} | .hunter/work/packets/T-00{n}.md | .hunter/work/results/T-00{n}.txt | hunter-triage"
-        for n in (1, 2, 3)
-    ]
-    (layout_dir / "manifest.md").write_text(
-        "# Judging manifest: triage\n\npacket | packet file | result file | agent\n" + "\n".join(rows) + "\n"
-    )
-    (layout_dir / "results" / "T-001.txt").write_text("packet T-001 nonce ab12\nend 0\n")
-    (layout_dir / "results" / "T-002.txt").write_text("packet T-002 nonce ab12\nend 0\n")
-    (layout_dir / "results" / "T-003.txt").write_text("")  # an empty file is not an answer
-    fake = tmp_path / "judge.sh"
-    fake.write_text('echo \'{"result": "2 of 2 done.", "total_cost_usd": 0.01, "permission_denials": []}\'\n')
-    monkeypatch.setattr(tick, "JUDGE", fake)
-    report = tick.judge(tmp_path)
-    assert report == {"ok": True, "packets": 3, "results": 2, "missing": ["T-003"], "orchestrator_said": "2 of 2 done.",
-                      "cost_usd": 0.01, "denied": 0}  # fmt: skip

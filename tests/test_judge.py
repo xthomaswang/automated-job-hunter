@@ -1,0 +1,121 @@
+"""The judging stage: fixed batches, a retry for unanswered packets, and counts the engine checked."""
+
+from ajh import judge
+from ajh.layout import Layout
+
+
+def manifest(root, count):
+    layout = Layout(root)
+    rows = [
+        f"T-{n:03d} | .hunter/work/packets/T-{n:03d}.md | .hunter/work/results/T-{n:03d}.txt | hunter-triage"
+        for n in range(1, count + 1)
+    ]
+    layout.work.mkdir(parents=True, exist_ok=True)
+    layout.manifest.write_text(
+        "# Judging manifest: triage\n\npacket | packet file | result file | agent\n" + "\n".join(rows) + "\n"
+    )
+    return layout
+
+
+def orchestrator(skip=lambda packet, attempt: False, ok=True, cost=0.01):
+    """A fake orchestrator that answers every row of the batch manifest it is given, except those `skip` names."""
+    calls = []
+
+    def invoke(root, path):
+        rows = (root / path).read_text().splitlines()[1:]
+        calls.append([row.split(" | ")[0] for row in rows])
+        for row in rows:
+            packet = row.split(" | ")[0]
+            if not skip(packet, len(calls)):
+                (Layout(root).results / f"{packet}.txt").write_text(f"packet {packet} nonce ab12\nend 0\n")
+        return {"ok": ok, "cost_usd": cost, "denied": 0}
+
+    return invoke, calls
+
+
+def test_packets_go_out_in_fixed_batches_of_twenty(tmp_path):
+    manifest(tmp_path, 47)
+    invoke, calls = orchestrator()
+    report = judge.run(tmp_path, invoke)
+    assert [len(batch) for batch in calls] == [20, 20, 7] and calls[2][-1] == "T-047"
+    assert report == {
+        "ok": True,
+        "packets": 47,
+        "results": 47,
+        "missing": [],
+        "batches": 3,
+        "cost_usd": 0.03,
+        "denied": 0,
+    }
+
+
+def test_a_packet_the_orchestrator_dropped_is_tried_once_more(tmp_path):
+    manifest(tmp_path, 47)
+    invoke, calls = orchestrator(skip=lambda packet, call: packet == "T-047" and call == 3)  # the observed failure
+    report = judge.run(tmp_path, invoke)
+    assert calls[3] == ["T-047"] and report["ok"] is True and report["results"] == 47 and report["batches"] == 4
+
+
+def test_a_packet_still_unanswered_after_the_retry_makes_the_stage_incomplete(tmp_path):
+    manifest(tmp_path, 3)
+    invoke, calls = orchestrator(skip=lambda packet, call: packet == "T-002")
+    report = judge.run(tmp_path, invoke)
+    assert calls == [["T-001", "T-002", "T-003"], ["T-002"]]
+    assert (report["ok"], report["results"], report["missing"]) == (False, 2, ["T-002"])
+
+
+def test_an_empty_result_file_is_not_an_answer(tmp_path):
+    layout = manifest(tmp_path, 2)
+
+    def invoke(root, path):
+        (layout.results / "T-001.txt").write_text("packet T-001 nonce ab12\nend 0\n")
+        (layout.results / "T-002.txt").write_text("")
+        return {"ok": True, "cost_usd": 0.0, "denied": 0}
+
+    assert judge.run(tmp_path, invoke)["missing"] == ["T-002"]
+
+
+def test_an_orchestrator_that_fails_is_reported_even_if_results_exist(tmp_path, monkeypatch):
+    manifest(tmp_path, 2)
+    invoke, _ = orchestrator(ok=False)
+    report = judge.run(tmp_path, invoke)
+    assert (
+        report["ok"] is False
+        and report["results"] == 2
+        and report["failures"] == ["the orchestrator reported an error"]
+    )
+    monkeypatch.setattr(judge, "CLAUDE", "no-such-command-for-this-test")
+    for path in Layout(tmp_path).results.glob("T-*.txt"):
+        path.unlink()
+    missing_cli = judge.run(tmp_path)
+    assert (
+        missing_cli["ok"] is False
+        and missing_cli["failures"][0] == "FileNotFoundError"
+        and missing_cli["missing"] == ["T-001", "T-002"]
+    )
+
+
+def test_nothing_to_judge_is_a_complete_stage(tmp_path):
+    manifest(tmp_path, 0)
+    invoke, calls = orchestrator()
+    assert judge.run(tmp_path, invoke) == {
+        "ok": True,
+        "packets": 0,
+        "results": 0,
+        "missing": [],
+        "batches": 0,
+        "cost_usd": 0,
+        "denied": 0,
+    }
+    assert calls == []
+
+
+def test_batch_manifests_stay_outside_the_seal_and_are_never_read_as_answers(tmp_path):
+    from ajh.collect import seal_of
+
+    layout = manifest(tmp_path, 25)
+    before = seal_of(layout.work)
+    invoke, _ = orchestrator()
+    judge.run(tmp_path, invoke)
+    assert sorted(p.name for p in layout.results.glob("_batch-*")) == ["_batch-1-1.md", "_batch-1-2.md"]
+    assert seal_of(layout.work) == before

@@ -267,9 +267,13 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   title) defers to the official posting. Within one source, postings with the same company and
   title and near-identical text defer to one representative. Variants are recomputed every tick;
   when a representative closes, a variant takes over and is judged.
-- **Profile changes.** Three hashes: constraints (stage 0, free to re-run), triage (targets), assess
-  (profile body and seniority). Thresholds, caps and preferred companies invalidate nothing. Stale
-  verdicts stay published until refreshed.
+- **Profile changes.** Stage 0 is re-run on every tick, so a change to the hard limits costs
+  nothing. Two hashes decide what else is judged again: the triage hash covers `targets` and
+  `seniority`, and the assess hash covers the triage hash plus the profile text, `eligibility`,
+  `locations` and `employment`. A target or seniority change therefore re-asks triage for every
+  dropped posting and every assessment; a profile-text or preference change re-asks every
+  assessment. Excluded companies are a stage-0 filter, so excluding one costs nothing. Thresholds,
+  caps and preferred companies invalidate nothing. Stale verdicts stay published until refreshed.
 - **Churn.** The only volatile datum is a day-granular `as_of`, so a quiet day produces at most one
   heartbeat commit.
 

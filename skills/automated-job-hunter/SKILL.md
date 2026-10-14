@@ -58,9 +58,19 @@ The search is two files in the feed repo, and they are the only inputs:
   details, no employer the user wants kept quiet.
 
 Edit them as the user asks, run `hunter audit`, then commit. Tell the user what the change will
-cost before committing: changing the wanted roles asks triage again for everything dropped so far,
-and changing the profile text asks for every assessment again. Thresholds, caps and preferred
-companies change no verdict.
+cost before committing, from this table (`hunter status` gives the counts):
+
+| What changes | What is judged again |
+|---|---|
+| `targets` (roles, adjacent or avoid) or `seniority` | Triage for every posting it dropped, **and** every assessment |
+| `profile.md`, `eligibility`, `locations` or `employment` | Every assessment (the hard limits also apply at once, free) |
+| `companies.exclude` | Nothing; that company's postings leave the feed the next time its board is read, free |
+| `thresholds`, `caps`, `companies.prefer` | Nothing |
+
+Triage costs about $0.14 per 1,000 postings and assessment about $0.02 per posting, at API prices.
+Assessments are redone at most `caps.max_assess` per update, so a few hundred take several updates,
+and new postings wait behind them. Published postings stay listed until their new assessment
+arrives. Group several edits into one commit rather than paying for each.
 
 Companies are `config/sources.json`. `hunter sources list` shows the boards this skill already
 knows; `hunter sources probe "Company Name"` looks for a company's public board; `hunter sources

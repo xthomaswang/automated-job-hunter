@@ -317,20 +317,25 @@ jobs:
           python3 .hunter/engine/hunter.py publish
 ```
 
-- `judge.sh` holds the one headless invocation, verified locally in [spikes.md](spikes.md), so CI
-  and a local `hunter tick` run the same command:
+- `judge.sh` runs `hunter judge`, so CI and a local `hunter tick` judge the same way. The engine
+  splits the manifest into batches of at most 20 packets and runs this invocation, verified locally in
+  [spikes.md](spikes.md), once per batch, pointing it at that batch's manifest:
 
   ```sh
-  claude -p "Read .hunter/work/manifest.md and hand each packet to its subagent, as .hunter/RUNBOOK.md describes." \
+  claude -p "<dispatch every row of the batch manifest to its subagent, in one message>" \
     --model haiku --restricted --tools "Agent,Read,Write" --agents .hunter/agents.json \
     --strict-mcp-config --permission-mode dontAsk \
     --allowedTools "Agent" "Edit(./.hunter/work/results/**)" --disallowedTools "Read(./.git/**)" \
     --output-format json --no-session-persistence < /dev/null
   ```
 
-  The orchestrator runs on Haiku because its job is only dispatch; the subagents carry their own
-  models. `anthropics/claude-code-action` is the fallback if spike E3 shows the direct CLI is a
-  problem on a runner.
+  Afterwards the engine checks which packets have a result file, runs one more pass for those that
+  do not, and reports `ok` only when every packet is answered. A single orchestrator that worked
+  through 47 packets in waves of 20 sometimes dropped the last one and reported its own count as
+  complete (issue #6), which is why batching and counting belong to the engine. The orchestrator runs
+  on Haiku because its job is only dispatch; the subagents carry their own models.
+  `anthropics/claude-code-action` is the fallback if spike E3 shows the direct CLI is a problem on a
+  runner.
 - Checkout leaves no credentials on disk. `hunter publish` reads `GH_TOKEN` from its environment and
   passes it to that one `git push` only; it is never written to `.git/config`.
 - Pushes made with the workflow token do not trigger workflows, so the `push` trigger fires only

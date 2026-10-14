@@ -18,8 +18,12 @@ Read the JSON it prints and tell the user, in plain words:
 - how many postings were new, and how many are still waiting (`deferred`, when the caps were hit);
 - how many matches were added, re-assessed or closed (`apply`);
 - any source that failed (`collect.sources.failures`);
-- whether a judging stage failed (`judge_triage.ok` or `judge_assess.ok` false). Its work is not
-  lost: whatever was judged is kept and the rest is asked again on the next update.
+- whether a judging stage is complete: `judge_triage.ok` and `judge_assess.ok` are true only when
+  every packet got an answer. `packets` and `results` are counted by the engine, and `missing` names
+  any packet still without a result after one retry. `failures`, when present, lists orchestrator
+  errors along the way, including ones the retry recovered from; with `ok` true, nothing is missing.
+  Unanswered work is not lost: whatever was judged is kept and the rest is asked again on the next
+  update.
 
 Then show what is new from `feed/latest.md`.
 

@@ -11,7 +11,7 @@ import os
 import sys
 from typing import Any
 
-from . import advance, apply, audit, collect, publish, registry, scaffold, tick
+from . import advance, apply, audit, collect, judge, publish, registry, scaffold, tick
 from .advance import WorkError
 from .collect import ConfigError
 from .criteria import CriteriaError
@@ -116,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument("--seal", help="the seal the previous step printed; defaults to the one on disk")
     step.add_argument("--github-output", action="store_true", help="also write step outputs for GitHub Actions")
     step.set_defaults(run=_advance)
+    step = commands.add_parser("judge", help="run the current judging stage headless with Claude Code, in batches")
+    step.set_defaults(run=lambda a: judge.run(a.repo))
     step = commands.add_parser("apply", help="fold in assessments, update the feed and adopt the new state")
     step.add_argument("--seal", help="the seal the previous step printed; defaults to the one on disk")
     step.set_defaults(run=_apply)

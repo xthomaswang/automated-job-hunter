@@ -128,11 +128,6 @@ def test_a_whole_tick_runs_from_a_scaffolded_repo(tmp_path, monkeypatch):
     )  # nothing to judge, nothing to commit
 
 
-def test_a_failed_judging_stage_is_reported_and_the_tick_still_finishes(tmp_path, monkeypatch):
-    monkeypatch.setattr(tick, "JUDGE", tmp_path / "missing-judge.sh")
-    assert tick.judge(tmp_path)["ok"] is False
-
-
 def test_sources_are_added_from_the_registry_or_from_a_probed_board(tmp_path):
     scaffold.init(tmp_path / "feed")
     root = tmp_path / "feed"

@@ -11,7 +11,7 @@ import os
 import sys
 from typing import Any
 
-from . import advance, apply, audit, collect, decisions, judge, publish, registry, scaffold, tick
+from . import advance, apply, audit, collect, decisions, judge, publish, registry, requeue, scaffold, tick
 from .advance import WorkError
 from .collect import ConfigError
 from .criteria import CriteriaError
@@ -147,6 +147,17 @@ def main(argv: list[str] | None = None) -> int:
     step.set_defaults(run=_publish)
     step = commands.add_parser("audit", help="check the profile and config for contact details and credentials")
     step.set_defaults(run=_audit)
+    step = commands.add_parser(
+        "requeue", help="ask for postings to be judged again: parked ones, or every assessed one"
+    )
+    which = step.add_mutually_exclusive_group(required=True)
+    which.add_argument(
+        "--parked", action="store_const", const="parked", dest="what", help="send parked postings to triage"
+    )
+    which.add_argument(
+        "--assessed", action="store_const", const="assessed", dest="what", help="assess every assessed posting again"
+    )
+    step.set_defaults(run=lambda a: requeue.run(a.repo, a.what))
     step = commands.add_parser("decide", help="record that the person applied to or declined a posting")
     step.add_argument("decision", choices=decisions.KINDS)
     step.add_argument("key", help="the posting's key, <source>:<id>, as in positions.jsonl")

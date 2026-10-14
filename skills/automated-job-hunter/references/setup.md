@@ -71,7 +71,8 @@ Do not copy the résumé file into the feed repo.
 - `locations.remote` and `locations.cities` are preferences passed to the assessment, not filters.
 - Optional: `thresholds` (`strong` 75, `good` 55, `publish_min` 40), `caps` (`max_triage` 1500,
   `max_assess` 100 per update), `backfill.days` (unset: judge every open posting on the first run;
-  a number: skip postings older than that on the first run).
+  a number: park postings older than that on the first run; `hunter requeue --parked` sends them to
+  triage later).
 - Optional, when the user treats something as a hard requirement:
   - `thresholds.max_required_years`: leave out postings that require more years than this. A
     posting that states no years is never left out, and preferred years never count.

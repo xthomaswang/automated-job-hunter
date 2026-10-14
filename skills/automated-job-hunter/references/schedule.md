@@ -2,6 +2,9 @@
 
 ## GitHub Actions (the default)
 
+This needs the feed repo on GitHub and the GitHub CLI logged in with the `workflow` scope; step 7 of
+[setup.md](setup.md) says how to install it and log in.
+
 The feed repo already contains `.github/workflows/job-hunter.yml`. Once the repo is on GitHub the
 workflow runs on its schedule, and also whenever `profile/` or `config/` changes on `main`. Most
 runs only read the boards and use no model. The judging steps start only when something is waiting.

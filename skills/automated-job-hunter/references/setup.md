@@ -3,6 +3,9 @@
 Do these in order. `hunter` below means this skill's own copy, `scripts/hunter.py`, until the feed
 repo exists; after step 5 it means the feed repo's `python3 .hunter/engine/hunter.py`.
 
+Steps 1 to 6 need only Python 3.9 or newer and `git`. Step 7, putting the feed on GitHub, also needs
+the GitHub CLI (`gh`); check for it early with `gh --version` so the user can install it while you work.
+
 ## 1. Learn what they are looking for
 
 Ask for their résumé or CV (a file path, or pasted text) and read it. Then ask only what it does not
@@ -14,6 +17,10 @@ already answer:
 - Whether they need visa sponsorship in those countries.
 - Companies they especially want, and any they want left out.
 - How often the feed should update: every hour, 4 hours (the default), or 8 hours.
+
+Also run `gh --version` now. If the GitHub CLI is missing, tell them at this point that putting the
+feed on GitHub (step 7) needs it, and how to get it, so they can install it while you work through
+the next steps.
 
 Treat a limit as hard only if they said so. A hard limit drops postings before any model sees them,
 so "I'd prefer remote" belongs in the profile text, not in the constraints.
@@ -103,6 +110,19 @@ instead). A large backlog finishes over the next few updates.
 Then show them the result: the top of `README.md`, and one brief from `jobs/`.
 
 ## 7. Put it on GitHub and schedule it
+
+This step needs the GitHub CLI, logged in with the `workflow` scope, because the feed repo contains
+a workflow file. Check:
+
+```sh
+gh --version && gh auth status
+```
+
+If `gh` is missing, the user installs it: the macOS package installer
+(`gh_<version>_macOS_universal.pkg`) from https://github.com/cli/cli/releases needs no Homebrew, or
+with Homebrew, `brew install gh`. Then they run `gh auth login`, and `gh auth refresh -s workflow` if
+`gh auth status` does not list the `workflow` scope. Until then the feed works on this machine:
+updates commit locally, and it can go on GitHub later.
 
 Only with their go-ahead: create a **private** repository and push.
 

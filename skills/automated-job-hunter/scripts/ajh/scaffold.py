@@ -102,8 +102,8 @@ def _workflow(root: Path, cadence: str | None) -> bool:
         low, high = 3, 57 if cadence in CADENCES else 20
         minute = random.randint(low, high)
         if existing and cron_for(cadence, minute) == existing.group(1):
-            # Always a new cron line: committing one is what makes an account the schedule's owner on
-            # GitHub (see `schedule`), so `upgrade --cadence` must be able to repair the owner.
+            # Always a new cron line. GitHub ties a schedule to the user who last changed the cron line
+            # (see `schedule`), so `upgrade --cadence` must give the user a change to commit.
             minute = low + (minute - low + 1) % (high - low + 1)
         cron = cron_for(cadence, minute)
     template = (ASSETS / "template" / "job-hunter.yml").read_text(encoding="utf-8")
@@ -145,10 +145,10 @@ def commit_email(root: Path) -> str | None:
 def _identity(root: Path) -> list[str]:
     """Keep git from making up who commits in a feed repo, and say so when nobody is set.
 
-    GitHub runs a schedule as the account behind the commit that last changed the cron line. With no
-    email configured, git invents one from the machine's name (`user@laptop.local`), no account has
-    it, and GitHub never starts the scheduled runs. `user.useConfigOnly` makes git refuse such a
-    commit instead. `publish` passes its own identity when none is set, so it is unaffected.
+    With no email configured, git invents one from the machine's name (`user@laptop.local`). No GitHub
+    account has it, so the feed's commits belong to nobody, including the one GitHub ties the
+    schedule to (see `schedule`). `user.useConfigOnly` makes git refuse such a commit instead.
+    `publish` passes its own identity when none is set, so it is unaffected.
     """
     if (root / ".git").exists():
         subprocess.run(["git", "-C", str(root), "config", "--local", "user.useConfigOnly", "true"], capture_output=True)
@@ -156,9 +156,8 @@ def _identity(root: Path) -> list[str]:
         return []
     return [
         "git has no email for commits in this repo, so it now refuses to commit rather than make one up from the "
-        "machine's name: no GitHub account has such an address, and GitHub never runs a schedule committed under "
-        "one. Before committing, set the user's GitHub identity in this repo only: `git config user.name <name>` "
-        "and `git config user.email "
+        "machine's name, which no GitHub account has. Before committing, set the user's GitHub identity in this "
+        "repo only: `git config user.name <name>` and `git config user.email "
         "<an address on their GitHub account>`; with gh logged in, their noreply address is "
         "`gh api user --jq '\"\\(.id)+\\(.login)@users.noreply.github.com\"'`."
     ]
@@ -180,10 +179,13 @@ def _shown(email: str) -> str:
 
 
 def schedule(root: Path) -> dict[str, Any] | None:
-    """The workflow's cron line and the commit that last changed it, whose account GitHub runs it as.
+    """The workflow's cron line and the commit that last changed it.
 
-    Addresses no account can have are flagged. For any other, GitHub's own answer is
-    `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`, where null means no account.
+    GitHub sends notifications for scheduled workflows to "the user who last modified the cron syntax
+    in the workflow file", and when a commit that changes the cron line reactivates a disabled
+    schedule, its user becomes the actor of the runs. Addresses no account can have are flagged; for
+    any other, GitHub's own answer is `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`,
+    where null means no account. None of this tells whether GitHub starts the scheduled runs.
     """
     path = root / WORKFLOW
     if not path.exists():
@@ -206,9 +208,9 @@ def schedule(root: Path) -> dict[str, Any] | None:
     if _made_up(author) or _made_up(committer):
         result["warning"] = (
             f"The schedule was last changed in commit {sha[:12]} under an address git made up from a machine's "
-            "name. No GitHub account has it, so GitHub does not start the scheduled runs. Set the user's GitHub "
-            "identity in this repo, then write the cron line anew with `upgrade --cadence` and their cadence, "
-            "commit and push."
+            "name. No GitHub account has it, and GitHub's documentation does not say who then gets the schedule's "
+            "notifications. Set the user's GitHub identity in this repo, then write the cron line anew with "
+            "`upgrade --cadence` and their cadence, commit and push."
         )
     return result
 

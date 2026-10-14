@@ -41,27 +41,7 @@ A run started by hand says nothing about the schedule. Once the first scheduled 
 gh run list --repo <owner>/<repo> --event schedule --limit 3
 ```
 
-### If scheduled runs never start
-
-Runs started by hand or by a push work, but `--event schedule` stays empty after two scheduled
-times. GitHub runs a schedule as the account behind the commit that last changed the cron line, and
-never runs it when no account has that commit's email. That happens when git had no identity on the
-machine and made an address up from its name, such as `user@laptop.local`. `hunter status` shows
-that commit and its addresses under `schedule`. A made-up address is described, not printed, since
-it holds the machine's user and host names, and comes with a `warning`. For any other address,
-GitHub's answer is `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`: `null`
-means no account has it.
-
-To fix it, set the user's GitHub identity in the feed repo (step 5 of [setup.md](setup.md)). Then
-write the cron line anew, which gives it a new minute, commit and push:
-
-```sh
-python3 <this skill>/scripts/hunter.py --repo <feed repo> upgrade --cadence <their cadence>
-git -C <feed repo> commit -am "Run the schedule from my account" && git -C <feed repo> push
-```
-
-Only a change to the cron line itself counts; other edits to the workflow file do not. The next
-scheduled time then starts a run.
+If it is still empty after two scheduled times, see "If scheduled runs never start" below.
 
 Things to tell the user:
 
@@ -92,7 +72,52 @@ the same local times, run `upgrade --cadence` again with the new UTC hours after
 The line may also be edited by hand. `upgrade` keeps the first `cron:` line exactly as written (only
 `--cadence` replaces it), so keep the whole schedule on that one line and off the top of the hour.
 
+### If scheduled runs never start
+
+Runs started by hand or by a push work, but `--event schedule` is still empty after two scheduled
+times. First rule out the feed repo's side:
+
+- `gh workflow list --all --repo <owner>/<repo>` lists `job-hunter` as `active`. If it is
+  disabled, `gh workflow enable job-hunter.yml --repo <owner>/<repo>`.
+- The workflow is on the default branch, the only branch GitHub reads schedules from.
+
+If both hold, GitHub's scheduler is not starting runs for this repo. In the case this section was
+written from ([issue #41](https://github.com/xthomaswang/automated-job-hunter/issues/41)), nothing
+tried in the feed repo helped: not committing under the owner's account, not changing the cron line,
+not pushing, and not a new workflow with nothing but a schedule.
+[GitHub staff have said](https://github.com/orgs/community/discussions/185355) that a commit pushed
+to the default branch makes GitHub read the schedules again; there, it did not help. Start the runs
+from somewhere else instead: see "Alternatives" below. The first one keeps the runs on GitHub.
+
+### Who GitHub ties the schedule to
+
+GitHub sends notifications for scheduled workflows to "the user who last modified the cron syntax in
+the workflow file". When a commit that changes the cron line reactivates a disabled schedule, that
+commit's user also becomes the actor of its runs. `hunter status` shows the cron line, the commit
+that last changed it and that commit's addresses under `schedule`. A `warning` there means git made
+the address up from the machine's name, so no account has it. Such an address is described rather
+than printed, since it holds the machine's user and host names. For any other address, GitHub's
+answer is `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`: `null` means no account
+has it.
+
+To tie the schedule to the user's account, set their GitHub identity in the feed repo (step 5 of
+[setup.md](setup.md)). Then write the cron line anew, which gives it a new minute, commit and push:
+
+```sh
+python3 <this skill>/scripts/hunter.py --repo <feed repo> upgrade --cadence <their cadence>
+git -C <feed repo> commit -am "Change the schedule from my account" && git -C <feed repo> push
+```
+
+GitHub's documentation speaks of the cron syntax, so change the cron line itself, not just other
+parts of the file. This does not make GitHub start scheduled runs it was not starting.
+
 ## Alternatives
+
+**Start the workflow from elsewhere.** Anything that runs on a schedule can run
+`gh workflow run job-hunter.yml --repo <owner>/<repo>`. The run then happens on GitHub as before,
+with the repo's secrets; only the start comes from elsewhere. On a machine where `gh` is logged in,
+this needs no new secret, but the machine has to be awake. An external scheduler that calls GitHub's
+API instead needs a token that can start workflows in the feed repo, stored with that service.
 
 **Claude Code Routine.** A cloud routine on the feed repo with the prompt "Read .hunter/RUNBOOK.md
 and run one tick. Push to main." Two things must be set by the user: the routine's environment has

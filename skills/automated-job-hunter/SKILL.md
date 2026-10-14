@@ -40,7 +40,7 @@ Commands: `init` (create a feed repo), `upgrade`, `sources` (`list`, `add`, `rem
 | Start: "set up my job feed", "find me jobs", first use | Follow [references/setup.md](references/setup.md) |
 | Update now: "run it", "check for new jobs" | Follow [references/run.md](references/run.md) |
 | Have it update by itself | Follow [references/schedule.md](references/schedule.md) |
-| Know how it is going | Run `hunter status`, then read `README.md` and `feed/latest.md` in the feed repo and summarize. A `warning` under `schedule` means GitHub cannot run the schedule; follow "If scheduled runs never start" in [references/schedule.md](references/schedule.md) |
+| Know how it is going | Run `hunter status`, then read `README.md` and `feed/latest.md` in the feed repo and summarize. A `warning` under `schedule` means the schedule was last changed under an address no GitHub account has; follow "Who GitHub ties the schedule to" in [references/schedule.md](references/schedule.md) |
 | Change what it looks for, or which companies | "Changing the search" below |
 | Use the results | Read `HANDOFF.md` in the feed repo; that file is the contract for consuming the feed |
 | Judge again: every assessed posting (say, after the assessment rubric changed), or the postings parked by the backfill limit | `hunter requeue --assessed` or `--parked` in the feed repo; tell them the estimated cost it prints, then commit `state/`. Listed postings stay listed while they wait. |

@@ -184,7 +184,7 @@ def test_status_names_the_commit_that_set_the_schedule_and_flags_a_made_up_addre
     path = root / scaffold.WORKFLOW
     path.write_text(path.read_text().replace("timeout-minutes: 45", "timeout-minutes: 50"))
     git(root, "-c", "user.email=me@laptop.local", "commit", "-qam", "Longer timeout")
-    assert scaffold.schedule(root) == fixed  # only a change to the cron line moves the schedule to another account
+    assert scaffold.schedule(root) == fixed  # it follows the cron line, not other edits to the workflow
 
 
 def test_the_three_forms_of_the_subagent_definitions_agree():

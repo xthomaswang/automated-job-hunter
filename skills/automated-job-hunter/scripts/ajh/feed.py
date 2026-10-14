@@ -324,7 +324,7 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
         lines.append(f"- Parked as older than the backfill limit: {counts['parked']}.")
     if failed:
         lines.append(
-            f"- Judging failed ({' and '.join(failed['stages'])}) on every update since {failed['since']}. "
+            f"- Judging got no answers ({' and '.join(failed['stages'])}) on every update since {failed['since']}. "
             f"Last error: {_md(failed['detail'])}"
         )
     canary = meta["canary"]

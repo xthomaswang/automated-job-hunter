@@ -171,16 +171,20 @@ normalization, wrapping, simhash, snippet), `http` (retries, per-host delay, inj
 
 | Command | Purpose |
 |---|---|
-| `hunter init --dir D` | Scaffold a feed repo from the template and vendor the engine |
+| `hunter --repo D init [--cadence 1h\|4h\|8h]` | Scaffold a feed repo from the template and vendor the engine |
+| `hunter sources list` / `add` / `remove` / `test` | The bundled registry of known boards, and which ones this feed watches |
 | `hunter sources probe "Company"` | Try slug candidates against public ATS endpoints; report matches |
 | `hunter sources hosts` | List job-board hosts (for a Routine's network allowlist) |
-| `hunter profile check` | Validate the profile; report what a change would re-judge |
+| `hunter audit` | Check the profile and config for contact details and credentials |
 | `hunter collect [--github-output]` | Stage 0 and triage packets; reports new/changed/closed, `triage_packets`, `seal` |
 | `hunter advance [--github-output]` | Validate triage results, fetch lazy details, write assess packets; reports accepted/invalid/missing, `assess_packets` |
 | `hunter apply --seal X` | Validate assess results, fold verdicts into state and feed; report added/closed/rescored |
 | `hunter publish [--dry-run]` | Audit, commit, push; reports `published`, `unchanged`, `stale_base` or `blocked` |
-| `hunter tick --runner claude\|codex` | The whole tick locally, for timers |
-| `hunter status`, `upgrade`, `selftest` | Health, re-vendor the engine, offline fixtures |
+| `hunter tick [--no-push]` | The whole tick locally with headless Claude Code, for a terminal or a timer |
+| `hunter status`, `upgrade [--cadence]` | Health and counts; replace the feed repo's engine copy |
+
+Not built yet: `hunter profile check` (report what a profile change would re-judge before committing
+it), `hunter requeue --parked`, and a Codex runner for `tick`.
 
 ## Feed repo layout and published contract
 

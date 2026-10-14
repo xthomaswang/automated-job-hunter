@@ -8,8 +8,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True  # a feed repo carries this engine; leave no stray files in it
 
-from ajh.cli import main
+from ajh.cli import main  # noqa: E402  (the two lines above must run first)
 
 if __name__ == "__main__":
     sys.exit(main())

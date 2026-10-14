@@ -1,0 +1,206 @@
+"""Creating, upgrading and running a feed repo from the skill's own files."""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from ajh import feed, registry, scaffold, tick
+from ajh.cli import main
+from ajh.http import Client
+from ajh.model import Job, SourceError
+from helpers import Boards, answer_assess, answer_triage, posting
+
+SKILL = Path(scaffold.SCRIPTS).parent
+REPO = SKILL.parent.parent
+
+
+def git(root, *args):
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def engine(root, *args):
+    done = subprocess.run([sys.executable, ".hunter/engine/hunter.py", *args], cwd=root, capture_output=True, text=True)
+    return done.returncode, json.loads(done.stdout)
+
+
+def test_init_creates_a_feed_repo_that_runs_on_its_own_engine_copy(tmp_path):
+    root = tmp_path / "job-feed"
+    result = scaffold.init(root, "8h")
+    assert result["cadence"] == "8h" and (root / ".git").is_dir()
+    for path in ("AGENTS.md", "CLAUDE.md", "HANDOFF.md", ".gitignore", ".hunter/RUNBOOK.md", ".hunter/VERSION",
+                 ".hunter/agents.json", ".hunter/engine/hunter.py", ".hunter/engine/judge.sh", ".hunter/engine/ajh/cli.py",
+                 ".hunter/engine/ajh/data/places.json", ".claude/agents/hunter-triage.md", ".claude/agents/hunter-assess.md",
+                 ".github/workflows/job-hunter.yml", "config/sources.json"):  # fmt: skip
+        assert (root / path).is_file(), path
+    workflow = (root / ".github/workflows/job-hunter.yml").read_text()
+    assert re.search(r'cron: "\d{1,2} \*/8 \* \* \*"', workflow) and "__" not in workflow
+    assert f"@anthropic-ai/claude-code@{scaffold.claude_code_version()}" in workflow
+    assert ".hunter/work/" in (root / ".gitignore").read_text() and (root / "config/sources.json").read_text() == "[]\n"
+    code, status = engine(root, "status")  # the copy runs with nothing but Python
+    assert code == 0 and status["engine"] == {
+        "vendored": True,
+        "engine_version": scaffold.__version__,
+        "intact": True,
+        "changed": [],
+    }
+    assert engine(root, "collect") == (
+        2,
+        {"error": "CriteriaError", "detail": f"{root.resolve()}/profile/criteria.json is missing", "needs": "a person"},
+    )
+    assert not list(root.rglob("__pycache__"))  # running the copy leaves no stray files in the repo
+    git(root, "add", "-A")
+    assert git(root, "status", "--porcelain", "--ignored").count("!!") == 0
+
+
+def test_init_refuses_a_directory_that_holds_something_else(tmp_path):
+    (tmp_path / "thesis.tex").write_text("unrelated work")
+    with pytest.raises(scaffold.ScaffoldError, match="not empty"):
+        scaffold.init(tmp_path)
+    assert main(["--repo", str(tmp_path), "init"]) == 2 and not (tmp_path / ".hunter").exists()
+    empty = tmp_path / "new"
+    empty.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(empty)], check=True)
+    assert scaffold.init(empty)["engine_version"] == scaffold.__version__  # an empty git repo is fine
+
+
+def test_upgrade_replaces_the_engine_and_leaves_the_users_files_and_schedule_alone(tmp_path):
+    root = tmp_path / "feed"
+    scaffold.init(root, "1h")
+    cron = re.search(r'cron: "([^"]+)"', (root / ".github/workflows/job-hunter.yml").read_text()).group(1)
+    (root / "profile").mkdir()
+    (root / "profile/profile.md").write_text("mine")
+    (root / "config/sources.json").write_text(
+        '[{"id": "acme", "company": "Acme", "ats": "greenhouse", "slug": "acme"}]\n'
+    )
+    (root / ".hunter/engine/ajh/cli.py").write_text("tampered")
+    (root / ".hunter/engine/ajh/leftover.py").write_text("stale file from an older version")
+    (root / ".hunter/VERSION").write_text("0.0.1\n")
+    assert scaffold.verify(root)["changed"] == ["engine/ajh/cli.py"]
+    result = scaffold.upgrade(root)
+    assert (result["from"], result["to"]) == ("0.0.1", scaffold.__version__) and scaffold.verify(root)["intact"]
+    assert not (root / ".hunter/engine/ajh/leftover.py").exists()
+    assert (root / "profile/profile.md").read_text() == "mine" and "acme" in (root / "config/sources.json").read_text()
+    assert f'cron: "{cron}"' in (root / ".github/workflows/job-hunter.yml").read_text()
+    scaffold.upgrade(root, "4h")
+    assert re.search(r'cron: "\d{1,2} \*/4 \* \* \*"', (root / ".github/workflows/job-hunter.yml").read_text())
+    with pytest.raises(scaffold.ScaffoldError, match="not a feed repo"):
+        scaffold.upgrade(tmp_path / "elsewhere")
+
+
+def test_the_three_forms_of_the_subagent_definitions_agree():
+    agents = scaffold.load_agents()
+    assert set(agents) == {"hunter-triage", "hunter-assess"}
+    assert (agents["hunter-triage"]["model"], agents["hunter-assess"]["model"]) == ("haiku", "sonnet")
+    for name, spec in agents.items():
+        assert spec["tools"] == ["Read", "Write"]  # a judging subagent can do nothing else
+        assert (REPO / "agents" / f"{name}.md").read_text() == scaffold.agent_markdown(name, spec)
+
+
+def test_a_whole_tick_runs_from_a_scaffolded_repo(tmp_path, monkeypatch):
+    root = tmp_path / "feed"
+    scaffold.init(root)
+    registry.add(root, ["greenhouse:acme:Acme"])
+    (root / "profile").mkdir()
+    (root / "profile/criteria.json").write_text('{"schema_version": 1, "targets": {"roles": ["UX Researcher"]}}')
+    (root / "profile/profile.md").write_text("Three years of user research.")
+    git(root, "add", "-A")
+    git(root, "-c", "user.name=t", "-c", "user.email=t@users.noreply.github.com", "commit", "-q", "-m", "Set up")
+    stages = []
+
+    def scripted(repo):
+        stage = (repo / ".hunter/work/manifest.md").read_text().splitlines()[0].split(": ")[1]
+        stages.append(stage)
+        (answer_triage if stage == "triage" else answer_assess)(repo)
+        return {"ok": True}
+
+    monkeypatch.setattr(tick, "judge", scripted)
+    board = Boards(acme=[posting(1), posting(2)])
+    summary = tick.run(root, push=False, client=Client(board.transport, sleep=lambda s: None, retries=0))
+    assert stages == ["triage", "assess"] and summary["apply"]["published"] == 2
+    assert summary["publish"]["state"] == "committed" and git(root, "status", "--porcelain") == ""
+    assert "Job-Hunter-Publish: auto" in git(root, "log", "-1", "--format=%B")
+    quiet = tick.run(root, push=False, client=Client(board.transport, sleep=lambda s: None, retries=0))
+    assert (
+        stages == ["triage", "assess"] and quiet["publish"]["state"] == "unchanged"
+    )  # nothing to judge, nothing to commit
+
+
+def test_a_failed_judging_stage_is_reported_and_the_tick_still_finishes(tmp_path, monkeypatch):
+    monkeypatch.setattr(tick, "JUDGE", tmp_path / "missing-judge.sh")
+    assert tick.judge(tmp_path)["ok"] is False
+
+
+def test_sources_are_added_from_the_registry_or_from_a_probed_board(tmp_path):
+    scaffold.init(tmp_path / "feed")
+    root = tmp_path / "feed"
+    known = registry.listing()
+    assert len(known["boards"]) >= 40 and {"id": "figma", "company": "Figma", "ats": "greenhouse"} in known["boards"]
+    result = registry.add(root, ["figma", "remotive", "lever:initech:Initech Corp", "nonesuch"])
+    assert result == {"added": ["figma", "remotive", "initech"], "unknown": ["nonesuch"], "configured": 3}
+    configured = json.loads((root / "config/sources.json").read_text())
+    assert [s["id"] for s in configured] == ["figma", "initech", "remotive"]
+    assert configured[1] == {"id": "initech", "company": "Initech Corp", "ats": "lever", "slug": "initech"}
+    assert registry.add(root, ["figma"])["added"] == [] and registry.remove(root, ["initech"]) == {
+        "removed": 1,
+        "configured": 2,
+    }
+    assert registry.hosts(root) == {"hosts": ["boards-api.greenhouse.io", "remotive.com"]}
+    with pytest.raises(SourceError):
+        registry.add(root, ["greenhouse:../etc:Bad"])
+    assert main(["--repo", str(root), "sources", "add", "greenhouse:a b:Bad"]) == 2
+
+
+def test_probe_finds_a_companys_board_by_trying_likely_slugs():
+    assert registry.slug_candidates("Acme Rocket Co.") == ["acmerocket", "acme-rocket", "acme"]
+
+    def transport(method, url, headers, body, timeout):
+        if url == "https://api.lever.co/v0/postings/acme-rocket?mode=json":
+            row = {
+                "id": "a1",
+                "text": "Propulsion Engineer",
+                "hostedUrl": "https://jobs.lever.co/acme-rocket/a1",
+                "description": "Build engines.",
+            }
+            return 200, {}, json.dumps([row]).encode()
+        return 404, {}, b"{}"
+
+    result = registry.probe("Acme Rocket Co.", Client(transport, retries=0))
+    assert result["matches"] == [{"ats": "lever", "slug": "acme-rocket", "postings": 1, "sample": ["Propulsion Engineer"],
+                                  "add": "lever:acme-rocket:Acme Rocket Co."}]  # fmt: skip
+    assert registry.probe("Nobody Inc", Client(transport, retries=0))["matches"] == []
+
+
+def test_the_skill_file_is_portable_and_its_links_resolve():
+    text = (SKILL / "SKILL.md").read_text()
+    front, body = text.split("---\n", 2)[1:]
+    fields = dict(line.split(": ", 1) for line in front.strip().splitlines())
+    assert set(fields) == {"name", "description"}  # only the keys every agent's skill loader understands
+    assert fields["name"] == SKILL.name == "automated-job-hunter" and len(fields["description"]) <= 1024
+    assert len(body.splitlines()) < 500
+    for link in re.findall(r"\]\((references/[^)]+)\)", text):
+        assert (SKILL / link).is_file(), link
+    for reference in (SKILL / "references").glob("*.md"):
+        for link in re.findall(r"\]\(([a-z-]+\.md)\)", reference.read_text()):
+            assert (SKILL / "references" / link).is_file(), f"{reference.name} -> {link}"
+
+
+def test_shipped_text_names_no_person_or_machine_and_the_contract_documents_every_field():
+    shipped = [
+        *SKILL.rglob("*.md"),
+        *SKILL.rglob("*.json"),
+        *SKILL.rglob("*.yml"),
+        *SKILL.rglob("*.sh"),
+        *(REPO / "agents").glob("*.md"),
+    ]
+    assert len(shipped) > 15
+    for path in shipped:
+        text = path.read_text()
+        assert "/Users/" not in text and "@gmail" not in text, path
+    job = Job(key="a:1", source="a", source_id="1", company="A", title="T", location="L", url="https://example.com/1")
+    criteria = {"eligibility": {"rule_packs": ["us"]}, "thresholds": {"strong": 75, "good": 55, "publish_min": 40}}
+    handoff = (SKILL / "assets/template/HANDOFF.md").read_text()
+    for field in feed.build_record(job, "2026-10-13", None, criteria, 1):
+        assert f"`{field}`" in handoff or field in ("v", "source", "source_label"), field

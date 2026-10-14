@@ -1,0 +1,12 @@
+# Scratch space for one tick. Nothing in it is ever committed.
+.hunter/work/
+
+__pycache__/
+*.pyc
+
+# Never commit the source documents a profile was written from.
+resume.*
+*.pdf
+*.docx
+.env
+.DS_Store

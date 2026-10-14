@@ -1,0 +1,67 @@
+# Written by automated-job-hunter. `hunter upgrade` replaces this file and keeps the schedule.
+name: Job hunter
+
+on:
+  schedule:
+    - cron: "__CRON__"
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: ["profile/**", "config/**"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: job-hunter
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # No credentials are left on disk: the judging steps below must not be able to push.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Collect
+        id: collect
+        run: python3 .hunter/engine/hunter.py collect --github-output
+
+      - name: Install Claude Code
+        if: steps.collect.outputs.judge_needed == 'true'
+        run: npm install -g @anthropic-ai/claude-code@__CLAUDE_CODE_VERSION__
+
+      # To bill an API key instead of a subscription, replace the env line in both judging steps
+      # with: ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Judge (triage)
+        if: steps.collect.outputs.triage_packets != '0'
+        timeout-minutes: 15
+        continue-on-error: true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: sh .hunter/engine/judge.sh
+
+      - name: Advance
+        id: advance
+        if: steps.collect.outputs.judge_needed == 'true'
+        run: python3 .hunter/engine/hunter.py advance --seal "${{ steps.collect.outputs.seal }}" --github-output
+
+      - name: Judge (assess)
+        if: steps.advance.outputs.assess_packets != '' && steps.advance.outputs.assess_packets != '0'
+        timeout-minutes: 20
+        continue-on-error: true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: sh .hunter/engine/judge.sh
+
+      # Runs even when a judging step failed, so whatever was judged still lands.
+      - name: Apply and publish
+        if: always() && steps.collect.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .hunter/engine/hunter.py apply --seal "${{ steps.advance.outputs.seal || steps.collect.outputs.seal }}"
+          python3 .hunter/engine/hunter.py publish

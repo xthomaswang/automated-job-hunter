@@ -165,6 +165,11 @@ invocation from E2 through `scripts/judge.sh`.
   title that says "Intern" now counts), and quotes stopped where a packet line wrapped (they are now
   completed to the end of the sentence).
 
+The same tick was then run from a freshly scaffolded feed repo with one command,
+`python3 .hunter/engine/hunter.py tick --no-push`, using only that repo's own engine copy: four
+boards, 255 postings past the hard limits, 17 kept by triage, 8 assessed (the cap in that test), 3
+published, a clean tree and one commit, in about a minute for $0.18.
+
 ## Still open
 
 | Spike | Needs |

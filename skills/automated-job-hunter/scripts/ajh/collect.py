@@ -489,11 +489,17 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     write_text(layout.seal, seal + "\n")
 
     queue = plan["queue"]
+    if paused:  # nothing goes out this update, so the whole queue counts as deferred
+        queue = {
+            "triage": [],
+            "assess": [],
+            "deferred": {stage: queue["deferred"][stage] + len(queue[stage]) for stage in ("triage", "assess")},
+        }
     summary.update(
         live=sum(row.status != "X" for sid in state.source_ids() for row in state.rows(sid).values()),
         queued={"triage": len(queue["triage"]), "assess": len(queue["assess"])},
         deferred=queue["deferred"],
-        judge_needed=bool(queue["triage"] or queue["assess"]) and not paused,
+        judge_needed=bool(queue["triage"] or queue["assess"]),
         **({"budget": budget} if budget else {}),
         triage_packets=len(index),
         seal=seal,

@@ -312,7 +312,8 @@ def test_a_reached_monthly_budget_pauses_judging_until_next_month(repo, monkeypa
     assert main(["--repo", str(root), "collect"]) == 0  # as the workflow runs it
     out = capsys.readouterr()
     summary = json.loads(out.out)
-    assert (summary["judge_needed"], summary["triage_packets"], summary["queued"]["triage"]) == (False, 0, 4)
+    assert (summary["judge_needed"], summary["triage_packets"]) == (False, 0)
+    assert summary["queued"] == {"triage": 0, "assess": 0} and summary["deferred"]["triage"] == 4  # all still waiting
     assert summary["budget"] == {
         "usd_per_month": 50,
         "month": "2026-10",

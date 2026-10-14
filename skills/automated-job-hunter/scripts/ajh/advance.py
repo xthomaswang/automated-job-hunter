@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import criteria as C
-from . import packets
+from . import decisions, packets
 from .collect import build_queue, feedback_of, job_of, seal_of, split_key
 from .layout import Layout
 from .model import Job
@@ -113,7 +113,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         if verdicts_seen == {"drop_title"}:
             state.titles[title] = generations["triage"]
 
-    queue = build_queue(state, jobs, criteria, generations)
+    queue = build_queue(state, jobs, criteria, generations, decisions.load(layout.decisions))
     # Triage does not run again in this tick, so every posting still waiting for it waits for the
     # next tick. The cap only limits how many one tick takes on.
     queue["deferred"]["triage"] += len(queue["triage"])

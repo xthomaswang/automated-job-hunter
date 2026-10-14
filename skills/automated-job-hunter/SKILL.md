@@ -43,6 +43,7 @@ Commands: `init` (create a feed repo), `upgrade`, `sources` (`list`, `add`, `rem
 | Know how it is going | Run `hunter status`, then read `README.md` and `feed/latest.md` in the feed repo and summarize |
 | Change what it looks for, or which companies | "Changing the search" below |
 | Use the results | Read `HANDOFF.md` in the feed repo; that file is the contract for consuming the feed |
+| Record that they applied to or declined a posting | `hunter decide applied <key>` (or `declined`) in the feed repo, then commit `profile/decisions.jsonl` |
 | Fix a failure | [references/troubleshooting.md](references/troubleshooting.md) |
 | Get a newer engine into their feed repo | `scripts/hunter.py --repo <feed repo> upgrade` from this skill's copy, then commit |
 

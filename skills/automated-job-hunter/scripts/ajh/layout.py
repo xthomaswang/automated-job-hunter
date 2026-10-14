@@ -10,6 +10,7 @@ class Layout:
         self.root = Path(root).resolve()
         self.criteria = self.root / "profile" / "criteria.json"
         self.profile = self.root / "profile" / "profile.md"
+        self.decisions = self.root / "profile" / "decisions.jsonl"
         self.sources = self.root / "config" / "sources.json"
         self.state = self.root / "state"
         # The published feed.

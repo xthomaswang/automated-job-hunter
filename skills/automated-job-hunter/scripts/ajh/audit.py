@@ -10,6 +10,7 @@ import os
 import re
 from pathlib import Path
 
+from . import decisions
 from .layout import Layout
 
 GENERATED = ("README.md", "positions.jsonl", "jobs", "feed", "state")
@@ -25,7 +26,8 @@ SECRET_ENV = (
 
 _CONTACT = [
     ("an email address", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
-    ("a phone number", re.compile(r"(?<![\w.])\+?\d[\d\s().-]{8,}\d(?![\w.])")),
+    # A run of digits that is not an ISO date: a date like 2026-10-14 is ten digits and dashes too.
+    ("a phone number", re.compile(r"(?<![\w.])(?!\d{4}-\d{2}-\d{2}(?![\d-]))\+?\d[\d\s().-]{8,}\d(?![\w.])")),
     ("a personal profile link", re.compile(r"(?:linkedin\.com/in/|github\.com/|twitter\.com/|x\.com/)[\w.-]+", re.I)),
 ]
 _CREDENTIAL = [
@@ -54,7 +56,9 @@ def check(root: Path | str) -> list[str]:
     for path in _files(layout.root, HAND_WRITTEN):
         text = path.read_text(encoding="utf-8", errors="replace")
         relative = path.relative_to(layout.root).as_posix()
-        if path.parts[-2] == "profile":
+        if path == layout.decisions:  # keys, decisions and dates only, so its structure is what to check
+            problems += [f"{relative} {why}" for why in decisions.read(path)[1]]
+        elif path.parts[-2] == "profile":
             problems += [f"{relative} contains {what}" for what, pattern in _CONTACT if pattern.search(text)]
         problems += [f"{relative} contains {what}" for what, pattern in _CREDENTIAL if pattern.search(text)]
     secrets = {name: os.environ[name] for name in SECRET_ENV if len(os.environ.get(name, "")) >= 12}
@@ -74,3 +78,13 @@ def check(root: Path | str) -> list[str]:
                 if term.casefold() in lowered
             ]
     return problems
+
+
+def warnings(root: Path | str) -> list[str]:
+    """Worth knowing, not worth blocking: decisions about postings this feed does not track."""
+    layout = Layout(root)
+    return [
+        f"profile/decisions.jsonl names {key}, which this feed does not track (closed, or on a board it does not "
+        "watch); the decision waits for it"
+        for key in decisions.unknown(layout, decisions.load(layout.decisions))
+    ]

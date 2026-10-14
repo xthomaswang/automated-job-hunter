@@ -11,10 +11,11 @@ import os
 import sys
 from typing import Any
 
-from . import advance, apply, audit, collect, judge, publish, registry, scaffold, tick
+from . import advance, apply, audit, collect, decisions, judge, publish, registry, scaffold, tick
 from .advance import WorkError
 from .collect import ConfigError
 from .criteria import CriteriaError
+from .decisions import DecisionError
 from .layout import Layout
 from .model import SourceError
 from .packets import ProfileTooLong
@@ -26,6 +27,7 @@ from .state import StateError, read_json
 HANDLED = (
     CriteriaError,
     ConfigError,
+    DecisionError,
     StateError,
     WorkError,
     ProfileTooLong,
@@ -90,7 +92,8 @@ def _audit(args: argparse.Namespace) -> dict[str, Any]:
     problems = audit.check(args.repo)
     if problems:
         raise PublishBlocked("; ".join(problems))
-    return {"audit": "passed"}
+    notes = audit.warnings(args.repo)
+    return {"audit": "passed", **({"warnings": notes} if notes else {})}
 
 
 def _status(args: argparse.Namespace) -> dict[str, Any]:
@@ -144,6 +147,11 @@ def main(argv: list[str] | None = None) -> int:
     step.set_defaults(run=_publish)
     step = commands.add_parser("audit", help="check the profile and config for contact details and credentials")
     step.set_defaults(run=_audit)
+    step = commands.add_parser("decide", help="record that the person applied to or declined a posting")
+    step.add_argument("decision", choices=decisions.KINDS)
+    step.add_argument("key", help="the posting's key, <source>:<id>, as in positions.jsonl")
+    step.add_argument("--date", help="YYYY-MM-DD (default: today, UTC)")
+    step.set_defaults(run=lambda a: decisions.record(a.repo, a.decision, a.key, a.date))
     step = commands.add_parser("tick", help="one whole tick on this machine, judging with headless Claude Code")
     step.add_argument("--no-push", action="store_true", help="commit locally only")
     step.set_defaults(run=lambda a: tick.run(a.repo, push=not a.no_push))

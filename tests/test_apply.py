@@ -53,7 +53,7 @@ def test_a_whole_tick_publishes_the_matches_and_adopts_the_state(repo):
     root = repo()
     summary = full_tick(root, boards(), triage=triage, assess=assess)
     assert summary == {"published": 2, "below_threshold": 1, "rejected": 0, "unscored": 0, "unanswered": 0,
-                       "open_matches": 2, "added": 2, "rescored": 0, "closed": 0, "removed": 0}  # fmt: skip
+                       "open_matches": 2, "added": 2, "rescored": 0, "closed": 0, "removed": 0, "declined": 0}  # fmt: skip
     feed = positions(root)
     assert list(feed) == ["acme:1", "acme:2"]
     strong = feed["acme:1"]
@@ -347,6 +347,64 @@ def test_a_reached_monthly_budget_pauses_judging_until_next_month(repo, monkeypa
         False,
         0,
     )
+
+
+def test_a_declined_posting_leaves_the_feed_and_is_never_judged_again(repo):
+    from ajh import decisions
+
+    root, board = repo(), boards()
+    layout = Layout(root)
+    full_tick(root, board, triage=triage, assess=assess)
+    assert set(positions(root)) == {"acme:1", "acme:2"}
+    decisions.record(root, "declined", "acme:2", "2026-10-13")
+    summary = full_tick(root, board, triage=triage, assess=assess)
+    assert (summary["declined"], summary["open_matches"]) == (1, 1) and set(positions(root)) == {"acme:1"}
+    assert not (root / "jobs" / "acme" / "2.md").exists()  # its brief went with it
+    latest = layout.latest.read_text()
+    assert "## Declined by you (1)" in latest and "`acme:2`" in latest
+    log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
+    assert (log[-1]["event"], log[-1]["key"]) == ("declined", "acme:2")
+    counts = json.loads(layout.feed_meta.read_text())["counts"]
+    assert (counts["declined"], counts["published"], counts["pending_assess"], counts["pending_reassess"]) == (
+        1,
+        1,
+        0,
+        0,
+    )
+    assert "Your decisions: 0 applied, 1 declined" in layout.readme.read_text()
+
+    (root / "profile" / "profile.md").write_text(
+        "Seven years of mixed-methods research."
+    )  # a new assessment generation
+    collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    queued = json.loads(layout.plan.read_text())["queue"]
+    assert "acme:2" not in queued["assess"] + queued["triage"] and "acme:1" in queued["assess"]
+
+
+def test_an_applied_posting_is_marked_and_not_judged_again_after_a_search_change(repo):
+    from ajh import decisions
+
+    root, board = repo(), boards()
+    layout = Layout(root)
+    full_tick(root, board, triage=triage, assess=assess)
+    decisions.record(root, "applied", "acme:1", "2026-10-06")
+    full_tick(root, board, triage=triage, assess=assess)
+    assert positions(root)["acme:1"]["applied"] == "2026-10-06" and "applied" not in positions(root)["acme:2"]
+    readme = layout.readme.read_text()
+    assert "| ✅ applied 2026-10-06 · [UX Researcher](jobs/acme/1.md) |" in readme
+    assert "Your decisions: 1 applied, 0 declined" in readme
+
+    (root / "profile" / "profile.md").write_text(
+        "Seven years of mixed-methods research."
+    )  # a new assessment generation
+    summary = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    queued = json.loads(layout.plan.read_text())["queue"]["assess"]
+    assert "acme:2" in queued and "acme:1" not in queued  # the other one is assessed again; the applied one is not
+    apply.run(root, summary["seal"])  # nothing judged this time
+    counts = json.loads(layout.feed_meta.read_text())["counts"]
+    assert counts["applied"] == 1 and "acme:1" in positions(root)  # still listed and marked
+    assert counts["pending_reassess"] == len(queued)  # waiting: what the queue holds, never the applied one
+    assert positions(root)["acme:1"]["applied"] == "2026-10-06"
 
 
 def test_other_listings_of_the_same_opening_are_attached_to_its_record(repo):

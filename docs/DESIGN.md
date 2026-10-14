@@ -272,8 +272,8 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   `seniority`, and the assess hash covers the triage hash plus the profile text, `eligibility`,
   `locations` and `employment`. A target or seniority change therefore re-asks triage for every
   dropped posting and every assessment; a profile-text or preference change re-asks every
-  assessment. Thresholds, caps and preferred companies invalidate nothing. Stale verdicts stay
-  published until refreshed.
+  assessment. Excluded companies are a stage-0 filter, so excluding one costs nothing. Thresholds,
+  caps and preferred companies invalidate nothing. Stale verdicts stay published until refreshed.
 - **Churn.** The only volatile datum is a day-granular `as_of`, so a quiet day produces at most one
   heartbeat commit.
 

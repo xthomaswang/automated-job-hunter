@@ -63,6 +63,8 @@ on what changed:
   every assessment.
 - `profile.md`, `eligibility`, `locations` or `employment`: every assessment. The hard limits in
   `locations` and `employment` also apply at once, at no cost.
+- `companies.exclude`: nothing is judged again; that company's postings leave the feed the next time its
+  board is read, at no cost.
 - `thresholds`, `caps` or `companies.prefer`: nothing.
 
 Assessments are redone at most `caps.max_assess` per tick, so a large backlog takes several ticks.

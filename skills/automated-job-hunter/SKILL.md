@@ -64,6 +64,7 @@ cost before committing, from this table (`hunter status` gives the counts):
 |---|---|
 | `targets` (roles, adjacent or avoid) or `seniority` | Triage for every posting it dropped, **and** every assessment |
 | `profile.md`, `eligibility`, `locations` or `employment` | Every assessment (the hard limits also apply at once, free) |
+| `companies.exclude` | Nothing; that company's postings leave the feed the next time its board is read, free |
 | `thresholds`, `caps`, `companies.prefer` | Nothing |
 
 Triage costs about $0.14 per 1,000 postings and assessment about $0.02 per posting, at API prices.

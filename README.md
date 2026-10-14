@@ -25,8 +25,10 @@ On a version that does not accept that one-step form, add the marketplace first:
 ```
 
 Then ask Claude Code to "set up my job feed". You need Python 3.9 or newer and `git`. To put your
-feed on GitHub you also need `gh`, logged in with the `workflow` scope
-(`gh auth refresh -s workflow`), because the feed repo contains a workflow file.
+feed on GitHub you also need the [GitHub CLI](https://cli.github.com) (on macOS, the package
+installer on its [releases page](https://github.com/cli/cli/releases) needs no Homebrew), logged in
+with the `workflow` scope (`gh auth refresh -s workflow`), because the feed repo contains a workflow
+file.
 
 ## What it does
 

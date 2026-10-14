@@ -4,6 +4,7 @@ import json
 import random
 import re
 import shutil
+import urllib.parse
 from datetime import datetime, timezone
 
 from ajh import collect
@@ -23,6 +24,7 @@ INITECH = {
     "host": "initech.wd1.myworkdayjobs.com",
     "site": "External",
 }
+HOOLI = {"id": "hooli", "company": "Hooli", "ats": "smartrecruiters", "slug": "Hooli"}
 CRITERIA = {"schema_version": 1, "targets": {"roles": ["UX Researcher"]}}
 
 
@@ -64,18 +66,61 @@ def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=No
     }
 
 
+def sr_posting(jid, name="UX Researcher", full="San Jose, CA, , United States", remote=False, kind="Full-time"):
+    """A posting in the fake SmartRecruiters API: its listing row, and the sections its detail returns."""
+    return {
+        "row": {
+            "id": jid,
+            "name": name,
+            "releasedDate": "2026-10-09T08:00:00.000Z",
+            "location": {"city": "San Jose", "region": "CA", "country": "us", "remote": remote, "fullLocation": full},
+            "typeOfEmployment": {"id": "permanent", "label": kind},
+            "department": {"label": "Design"},
+            "company": {"identifier": "Hooli", "name": "Hooli"},
+        },
+        "sections": {
+            "jobDescription": {"title": "Job Description", "text": f"<p>{prose(int(jid) % 997)}</p>"},
+            "qualifications": {"title": "Qualifications", "text": "<ul><li>Three years of research.</li></ul>"},
+            "videos": {"title": "Videos", "urls": []},
+        },
+    }
+
+
 class Boards:
     """Fake job boards. Tests change `jobs` and `status` between ticks.
 
     `workday` holds the fake Workday site's postings by id. Its search matches a title containing
     the query, within the job categories asked for, and `workday_down` lists ids whose detail
-    request fails.
+    request fails. `hooli` is the same for the fake SmartRecruiters API, where only the company
+    Hooli exists (in any case, as there) and an unknown company has no postings.
     """
 
     def __init__(self, **boards):
         self.jobs = {slug: {p["id"]: p for p in postings} for slug, postings in boards.items()}
         self.status, self.remotive, self.requests = {}, [], []
         self.workday, self.workday_down = {}, set()
+        self.hooli, self.hooli_down = {}, set()
+
+    def _smartrecruiters(self, url):
+        parts = urllib.parse.urlsplit(url)
+        path = parts.path.split("/")  # "", "v1", "companies", <company>, "postings"[, <id>]
+        known = path[3].casefold() == "hooli"
+        if len(path) == 6:
+            jid = path[5]
+            self.requests.append(("detail", jid))
+            if not known or jid in self.hooli_down or jid not in self.hooli:
+                return 404, {}, b"{}"
+            posting = self.hooli[jid]
+            link = f"https://jobs.smartrecruiters.com/Hooli/{jid}-ux-researcher"
+            detail = {"id": jid, "active": True, "postingUrl": link, "applyUrl": link + "?oga=true",
+                      "jobAd": {"sections": posting["sections"]}}  # fmt: skip
+            return 200, {}, json.dumps(detail).encode()
+        ask = dict(urllib.parse.parse_qsl(parts.query))
+        self.requests.append(("search", ask.get("q", "")))
+        rows = [p["row"] for p in self.hooli.values() if known and ask.get("q", "").lower() in p["row"]["name"].lower()]
+        offset, limit = int(ask.get("offset", 0)), int(ask.get("limit", 100))
+        page = {"offset": offset, "limit": limit, "totalFound": len(rows), "content": rows[offset : offset + limit]}
+        return 200, {}, json.dumps(page).encode()
 
     def _workday(self, method, url, body):
         if method == "POST":
@@ -117,6 +162,8 @@ class Boards:
         return asked
 
     def transport(self, method, url, headers, body, timeout):
+        if "://api.smartrecruiters.com/v1/companies/" in url:
+            return self._smartrecruiters(url)
         if ".myworkdayjobs.com/wday/cxs/" in url or ".myworkdaysite.com/wday/cxs/" in url:
             return self._workday(method, url, body)
         if "remotive.com" in url:

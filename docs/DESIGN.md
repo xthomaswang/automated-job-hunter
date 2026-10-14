@@ -91,7 +91,7 @@ source's first snapshot every newly listed posting is judged whatever date it ca
 detail source, whose postings arrive over several updates and are each held to the limit as they
 arrive.
 
-**Lazy details.** Workday (and later SmartRecruiters) lists postings without their text and needs one
+**Lazy details.** Workday and SmartRecruiters list postings without their text and need one
 request per posting for it; one old source alone took 937. So such a source is read through its own
 search (`queries`, by default the wanted and related roles), and `collect` gives the adapter a rank
 function built from state. The adapter fetches text, at most `max_details` (100) per source per

@@ -18,8 +18,14 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <owner>/<repo>
 ```
 
 The first prints a long-lived token for their Claude subscription; the second asks for it and
-stores it as a repository secret. (To bill an API key instead, they set `ANTHROPIC_API_KEY` and
-change the two `env:` lines in the workflow as its comment says.)
+stores it as a repository secret. To bill an API key instead, they set an `ANTHROPIC_API_KEY`
+secret (`gh secret set ANTHROPIC_API_KEY --repo <owner>/<repo>`) holding a key created inside a
+workspace in the Claude Console; the API rejects a key that is not scoped to a workspace with
+`400 This API key is not scoped to a workspace`. Either secret works without editing the workflow;
+if both are set, the API key is used. If neither is set, or the token has expired, the judging
+steps fail, whatever else the run did still lands, and the run is marked failed. GitHub then sends
+its failed-run notification; for scheduled runs it goes to whoever last changed the workflow's
+schedule, normally the repository owner.
 
 Then start one run and watch it:
 

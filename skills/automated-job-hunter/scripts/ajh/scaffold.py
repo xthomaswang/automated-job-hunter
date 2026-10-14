@@ -84,10 +84,15 @@ def _vendor(root: Path) -> list[str]:
     return [".hunter/engine/", ".hunter/agents.json", ".claude/agents/", ".hunter/VERSION", *TEMPLATE.values()]
 
 
-def _workflow(root: Path, cadence: str | None) -> None:
-    """Write the scheduled workflow, keeping an existing schedule unless a cadence is given."""
+def _workflow(root: Path, cadence: str | None) -> bool:
+    """Write the scheduled workflow, keeping an existing schedule unless a cadence is given.
+
+    Returns whether the file changed. The workflow is engine-owned: anything but the schedule is
+    replaced, so the credential choice is made with repository secrets, never by editing it.
+    """
     path = root / WORKFLOW
-    existing = re.search(r'cron: "([^"]+)"', path.read_text(encoding="utf-8")) if path.exists() else None
+    before = path.read_text(encoding="utf-8") if path.exists() else ""
+    existing = re.search(r'cron: "([^"]+)"', before)
     if cadence is None and existing:
         cron = existing.group(1)
     else:
@@ -96,7 +101,9 @@ def _workflow(root: Path, cadence: str | None) -> None:
         # an arbitrary minute keeps many feed repos from all starting on the hour
         cron = CADENCES[cadence or "4h"].format(minute=random.randint(3, 57))
     template = (ASSETS / "template" / "job-hunter.yml").read_text(encoding="utf-8")
-    write_text(path, template.replace("__CRON__", cron).replace("__CLAUDE_CODE_VERSION__", claude_code_version()))
+    after = template.replace("__CRON__", cron).replace("__CLAUDE_CODE_VERSION__", claude_code_version())
+    write_text(path, after)
+    return after != before
 
 
 def claude_code_version() -> str:
@@ -133,8 +140,14 @@ def upgrade(directory: Path | str, cadence: str | None = None) -> dict[str, Any]
         raise ScaffoldError(f"{root} is not a feed repo (no .hunter/VERSION); use `init` first")
     previous = version.read_text(encoding="utf-8").strip()
     updated = _vendor(root)
-    _workflow(root, cadence)
-    return {"root": str(root), "from": previous, "to": __version__, "updated": [*updated, WORKFLOW]}
+    result = {"root": str(root), "from": previous, "to": __version__, "updated": [*updated, WORKFLOW]}
+    if _workflow(root, cadence):
+        result["workflow_changed"] = True
+        result["note"] = (
+            f"{WORKFLOW} was rewritten from this version's template; only its schedule was kept. "
+            "Review `git diff` before committing."
+        )
+    return result
 
 
 def verify(directory: Path | str) -> dict[str, Any]:

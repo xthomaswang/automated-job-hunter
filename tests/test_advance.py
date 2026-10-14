@@ -181,3 +181,16 @@ def test_a_published_posting_that_triage_now_drops_loses_its_record(repo):
     answer(root)
     advance.run(root)
     assert proposed(root)["1"].status == "D" and proposed(root)["1"].note == "-" and plan(root)["removed"] == ["acme:1"]
+
+
+def test_after_triage_every_posting_still_waiting_counts_as_deferred(repo):
+    root = repo(criteria={"caps": {"max_triage": 2, "max_assess": 100, "max_attempts": 3}})
+    summary = tick(root, boards(), adopt=False)
+    assert summary["queued"]["triage"] == 2 and summary["deferred"]["triage"] == 3
+    answer(root)
+    result = advance.run(root, summary["seal"])
+    # the two answered are folded in; the other three wait for the next tick, all of them
+    assert result["deferred"]["triage"] == 3 and plan(root)["queue"]["triage"] == []
+    assert sum(row.status == "P" for row in proposed(root).values()) == 3
+    again = advance.run(root, result["seal"])  # nothing new answered: still the same three
+    assert again["deferred"]["triage"] == 3

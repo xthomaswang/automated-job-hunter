@@ -22,19 +22,64 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 CSS = """
-body{margin:0;padding:24px;width:880px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
-font-size:15px;line-height:1.5;color:#1f2328;background:#ffffff}
-.caption{font-size:13px;font-weight:600;color:#59636e;text-transform:uppercase;letter-spacing:.04em;margin:0 0 12px}
-h1,h2,h3{border-bottom:1px solid #d1d9e0;padding-bottom:.3em;margin:20px 0 12px}h1{font-size:24px}h2{font-size:20px}h3{font-size:17px}
-table{border-collapse:collapse;margin:12px 0;font-size:14px}th,td{border:1px solid #d1d9e0;padding:6px 12px;text-align:left}
-th{background:#f6f8fa;font-weight:600}tr:nth-child(2n) td{background:#f6f8fa}
-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;background:#eff1f3;padding:.15em .35em;border-radius:6px}
-pre{background:#f6f8fa;padding:12px 16px;border-radius:6px;overflow:hidden}pre code{background:none;padding:0}
-a{color:#0969da;text-decoration:none}strong{font-weight:600}
-.term{background:#0d1117;color:#e6edf3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.55;
-padding:16px 18px;border-radius:8px;white-space:pre-wrap;word-break:break-word}
-.flow{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;font-size:13px}.box{border:1px solid #d1d9e0;border-radius:8px;padding:10px 12px;background:#f6f8fa;text-align:center}.box b{display:block;font-size:13px;margin-bottom:4px}.arrow{color:#59636e;font-size:18px}.stack{display:flex;flex-direction:column;gap:6px}.ok{background:#dafbe1;border-color:#4ac26b}.warn{background:#fff8c5;border-color:#d4a72c}
-.term .bad{color:#ff7b72}.term .good{color:#7ee787}.term .dim{color:#8b949e}
+body {
+  margin:0;
+  padding:24px;
+  width:880px;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  color:#1f2328;
+  background:#ffffff;
+}
+.caption {
+  font-size:13px;
+  font-weight:600;
+  color:#59636e;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  margin:0 0 12px;
+}
+h1,h2,h3 {border-bottom:1px solid #d1d9e0; padding-bottom:.3em; margin:20px 0 12px}
+h1 {font-size:24px}
+h2 {font-size:20px}
+h3 {font-size:17px}
+table {border-collapse:collapse; margin:12px 0; font-size:14px}
+th,td {border:1px solid #d1d9e0; padding:6px 12px; text-align:left}
+th {background:#f6f8fa; font-weight:600}
+tr:nth-child(2n) td {background:#f6f8fa}
+code {
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:13px;
+  background:#eff1f3;
+  padding:.15em .35em;
+  border-radius:6px;
+}
+pre {background:#f6f8fa; padding:12px 16px; border-radius:6px; overflow:hidden}
+pre code {background:none; padding:0}
+a {color:#0969da; text-decoration:none}
+strong {font-weight:600}
+.term {
+  background:#0d1117;
+  color:#e6edf3;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:13px;
+  line-height:1.55;
+  padding:16px 18px;
+  border-radius:8px;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.flow {display:flex; align-items:center; gap:10px; flex-wrap:nowrap; font-size:13px}
+.box {border:1px solid #d1d9e0; border-radius:8px; padding:10px 12px; background:#f6f8fa; text-align:center}
+.box b {display:block; font-size:13px; margin-bottom:4px}
+.arrow {color:#59636e; font-size:18px}
+.stack {display:flex; flex-direction:column; gap:6px}
+.ok {background:#dafbe1; border-color:#4ac26b}
+.warn {background:#fff8c5; border-color:#d4a72c}
+.term .bad {color:#ff7b72}
+.term .good {color:#7ee787}
+.term .dim {color:#8b949e}
 """
 
 

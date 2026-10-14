@@ -112,6 +112,7 @@ def reconcile(
     events: dict[str, Any] = {
         "new": 0,
         "parked": 0,
+        "waiting": 0,
         "changed": [],
         "revived": [],
         "closed": [],
@@ -152,8 +153,14 @@ def reconcile(
         info.pop("shrink_seen", None)
     hold = events["held"] or rebaselined
 
-    for jid, item in seen.items():
+    for jid, item in list(seen.items()):
         row = rows.get(jid)
+        if row is None and item.job.detail_skipped:
+            # It enters with its text on a later update. Nothing knew it, so nothing closes, and until
+            # then it is in no group and no packet either.
+            events["waiting"] += 1
+            del seen[jid]
+            continue
         if row is None:
             # A detail source's postings arrive over several updates as their text is fetched, so
             # the backfill limit applies to each one as it arrives, not only to the first read.
@@ -456,6 +463,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         "sources": {"fetched": 0, "gated": len(sources) - len(to_fetch), "failed": 0, "failures": {}},
         "new": 0,
         "parked": 0,
+        "waiting_for_text": 0,
         "changed": 0,
         "closed": 0,
         "revived": 0,
@@ -493,6 +501,11 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         summary["sources"]["fetched"] += 1
         for name in ("new", "parked"):
             summary[name] += events[name]
+        summary["waiting_for_text"] += events["waiting"]
+        if events["waiting"]:  # shown in the feed, so that a source filling in slowly is not a mystery
+            info["waiting"] = events["waiting"]
+        else:
+            info.pop("waiting", None)
         for name in ("changed", "revived", "closed"):
             summary[name] += len(events[name])
             plan[name] += events[name]

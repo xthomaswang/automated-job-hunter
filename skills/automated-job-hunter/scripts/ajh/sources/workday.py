@@ -183,7 +183,7 @@ def _detail(client: Client, root: str, job: Job, path: str) -> Job | None:
     )
 
 
-def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None, new: int) -> list[Job]:
+def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None) -> list[Job]:
     host, base, root = site(source)
     client.space(host, DELAY)
     queries, names = source.get("queries"), source.get("categories") or []
@@ -213,6 +213,6 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int |
     for jid, (job, _) in listed.items():
         if jid in detailed:
             jobs.append(detailed[jid])
-        elif ranks.get(jid) != new:  # a new posting waits for its text; nothing knew it, so nothing closes
+        else:
             jobs.append(replace(job, detail_skipped=True))
     return jobs

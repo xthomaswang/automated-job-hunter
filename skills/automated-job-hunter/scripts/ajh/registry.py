@@ -13,7 +13,7 @@ from . import sources as S
 from .http import Client
 from .layout import Layout
 from .model import SourceError
-from .sources import ats, lists, smartrecruiters, workday
+from .sources import ats, lists, smartrecruiters, successfactors, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
 
@@ -23,7 +23,7 @@ UNSUPPORTED = (
     (r"(^|\.)oraclecloud\.com$", "Oracle Recruiting Cloud"),
     (r"(^|\.)taleo\.net$", "Oracle Taleo"),
     (r"(^|\.)icims\.com$", "iCIMS"),
-    (r"(^|\.)(successfactors|sapsf)\.(com|eu)$", "SAP SuccessFactors"),
+    (r"(^|\.)(successfactors|sapsf)\.(com|eu)$", "SAP SuccessFactors on SAP's own hosts (closed by robots.txt)"),
     (r"(^|\.)eightfold\.ai$", "Eightfold"),
     (r"(^|\.)avature\.net$", "Avature"),
     (r"(^|\.)phenompeople\.com$", "Phenom"),
@@ -103,6 +103,17 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
             other = current.get(entry["id"])
             if other and (other.get("host"), other.get("site")) != (host, name):  # a second site of one tenant
                 entry["id"] = re.sub(r"[^a-z0-9]+", "-", f"{tenant}-{name}".lower()).strip("-")
+        elif len(parts) == 3 and parts[0] in successfactors.KINDS:
+            _, target, company = parts
+            host, _, brand = target.partition("/")  # host, or host/brand for a brand's site under its own path
+            entry = {"id": "", "company": company, "ats": "successfactors", "host": host.lower()}
+            if brand:
+                entry["brand"] = brand
+            successfactors.site(entry)  # refuses anything but a plain host name and brand, and SAP's own hosts
+            entry["id"] = successfactors.source_id(entry["host"], brand)
+            other = current.get(entry["id"])
+            if other and (other.get("host"), other.get("brand")) != (entry["host"], entry.get("brand")):  # another site
+                entry["id"] = re.sub(r"[^a-z0-9]+", "-", f"{host}-{brand}".lower()).strip("-")
         elif item in known:
             entry = dict(known[item])
         else:
@@ -243,6 +254,17 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             count, sample = data["totalFound"], [row.get("name") for row in rows]
             add = f"smartrecruiters:{slug}:{company}"
             return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add}
+        elif found["ats"] == "successfactors":
+            facts = {k: v for k, v in found.items() if v is not None}
+            _, base = successfactors.site(found)
+            client.sleep(successfactors.DELAY)  # the site's own page was read from this host a moment ago
+            try:
+                data = successfactors.search(client, base, "")
+            except successfactors.ScriptListing:
+                return {**facts, "system": successfactors.SCRIPTED, "supported": False}
+            sample = [" ".join(row.get("title", "").split()) for row in data.rows[:3]]
+            add = f"successfactors:{'/'.join(p for p in (found['host'], found.get('brand')) if p)}:{company}"
+            return {**facts, "supported": True, "postings": data.total, "sample": sample, "add": add}
         else:
             jobs = ats.fetch_board(
                 client, {"id": "probe", "company": company, "ats": found["ats"], "slug": found["slug"]}
@@ -279,6 +301,9 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
             if label not in seen and len(systems) < 10:
                 seen.add(label)
                 systems.append(system)
+        site = successfactors.recognize(url, page)  # the page is itself a SuccessFactors career site: its links
+        if site:  # to SAP's hosts are its own scripts and sign-in, not another board
+            systems = [site]
     results = [_try(system, name, client) for system in systems]
     result: dict[str, Any] = {
         "url": url,
@@ -310,6 +335,8 @@ def hosts(root: Path | str) -> dict[str, Any]:
             found.add(source["host"])
         elif source["ats"] in smartrecruiters.KINDS:
             found.add(smartrecruiters.HOST)
+        elif source["ats"] in successfactors.KINDS:
+            found.add(source["host"])
         elif source["ats"] in lists.KINDS:
             found.update(lists.HOSTS)  # a list can lead to any board on the systems it reads
         elif source.get("provider") in PROVIDERS:

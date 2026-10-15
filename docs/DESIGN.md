@@ -108,7 +108,7 @@ matching more than 500 is refused; sites also refuse deep pages. Each request ca
 the site's pages name, so an entry names host and domain, and the probe recognizes a site on a
 company's own host by the settings its pages embed. The listing gives place, remote work and date
 for stage 0. It has no employment type: that stays in the text, as for Workday, with the site's own
-posting fields. Robots.txt allows these paths; spike E9 in [spikes.md](spikes.md) records the terms
+posting fields. Robots.txt allows these paths; spike E11 in [spikes.md](spikes.md) records the terms
 read.
 
 **Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail

@@ -6,7 +6,7 @@ every page, and each posting's text is one more request (`GET /api/pcsx/position
 need the site's `domain`, which its pages name. So, like Workday, a site is read through searches
 (`queries`, by default the wanted roles), every matching posting is listed, and text is fetched
 only where the rank function asks for it, at most `max_details` per update, one request a second,
-as no rate is documented. docs/spikes.md (E9) records what the endpoints returned when this was
+as no rate is documented. docs/spikes.md (E11) records what the endpoints returned when this was
 written; this is not a versioned API, so any change of shape fails the source and keeps its last
 good snapshot.
 """

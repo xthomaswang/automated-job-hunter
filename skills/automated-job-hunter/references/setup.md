@@ -117,6 +117,13 @@ README counts the ones still waiting for their text. SmartRecruiters companies
 shared host (`wd1.myworkdaysite.com/recruiting/<tenant>/<site>`) work the same way; the probe
 prints their add line with the tenant.
 
+Eightfold career sites are searched and filled in the same way. They are on
+`<company>.eightfold.ai/careers`, or the same site on the company's own careers host. Probe the
+careers page or one posting's link, and add the line it prints, `eightfold:<host>/<domain>:Company`.
+The domain is the one the site's own pages name; the probe reads it from them. A search there
+lists 10 postings a request, so a search matching more than 500 postings fails the source: set
+fewer, more specific `queries` on the entry.
+
 The job feeds (`remotive`, `remoteok`, `jobicy`) list remote jobs from many employers. They are
 broad and noisy; add them only if the user wants remote work.
 

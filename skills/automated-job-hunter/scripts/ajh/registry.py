@@ -13,7 +13,7 @@ from . import sources as S
 from .http import Client
 from .layout import Layout
 from .model import SourceError
-from .sources import ats, lists, smartrecruiters, workday
+from .sources import ats, eightfold, lists, smartrecruiters, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
 
@@ -24,7 +24,6 @@ UNSUPPORTED = (
     (r"(^|\.)taleo\.net$", "Oracle Taleo"),
     (r"(^|\.)icims\.com$", "iCIMS"),
     (r"(^|\.)(successfactors|sapsf)\.(com|eu)$", "SAP SuccessFactors"),
-    (r"(^|\.)eightfold\.ai$", "Eightfold"),
     (r"(^|\.)avature\.net$", "Avature"),
     (r"(^|\.)phenompeople\.com$", "Phenom"),
     (r"(^|\.)brassring\.com$", "Kenexa BrassRing"),
@@ -103,6 +102,15 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
             other = current.get(entry["id"])
             if other and (other.get("host"), other.get("site")) != (host, name):  # a second site of one tenant
                 entry["id"] = re.sub(r"[^a-z0-9]+", "-", f"{tenant}-{name}".lower()).strip("-")
+        elif len(parts) == 3 and parts[0] in eightfold.KINDS:
+            _, target, company = parts
+            host, _, domain = target.partition("/")  # the site's host, then the domain its pages name
+            entry = {"id": "", "company": company, "ats": "eightfold", "host": host.lower(), "domain": domain.lower()}
+            eightfold.site(entry)  # refuses anything but a plain host name and domain name
+            entry["id"] = re.sub(r"[^a-z0-9]+", "-", entry["domain"].split(".")[0]).strip("-")
+            other, same = current.get(entry["id"]), ("ats", "host", "domain")
+            if other and [other.get(k) for k in same] != [entry[k] for k in same]:  # another board has the name
+                entry["id"] += "-eightfold"
         elif item in known:
             entry = dict(known[item])
         else:
@@ -196,6 +204,9 @@ def _system(url: str) -> dict[str, Any] | None:
     elif workday.SHARED_HOST.match(host):
         tenant, name = (path[1], path[2]) if len(path) >= 3 and path[0] == "recruiting" else (None, None)
         return {"system": "Workday", "ats": "workday", "host": host, "tenant": tenant, "site": name}
+    elif eightfold.HOST.match(host) and path[:1] == ["careers"]:  # not the vendor's own pages that sites link to
+        domain = (parse_qs(parts.query).get("domain") or [None])[0]
+        return {"system": "Eightfold", "ats": "eightfold", "host": host, "domain": domain}
     elif _FORBIDDEN.search(host):
         return {
             "system": "LinkedIn or Indeed, whose terms forbid automated reading",
@@ -243,6 +254,19 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             count, sample = data["totalFound"], [row.get("name") for row in rows]
             add = f"smartrecruiters:{slug}:{company}"
             return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add}
+        elif found["ats"] == "eightfold":
+            client.space(found["host"], eightfold.DELAY)
+            named = found.get("domain") or eightfold.page_domain(
+                client.get(f"https://{found['host']}/careers").raise_for_status().text
+            )  # the site's pages name its domain, which its search needs
+            if not named:
+                error = "No Eightfold career site answers at this address: probe the careers page itself"
+                return {**{k: v for k, v in found.items() if v is not None}, "supported": True, "error": error}
+            host, domain = eightfold.site({"host": found["host"], "domain": named})
+            data = eightfold.search(client, host, domain, "")
+            count, sample = data["count"], [row.get("name") for row in data["positions"]]
+            return {**found, "domain": domain, "supported": True, "postings": count, "sample": sample[:3],
+                    "add": f"eightfold:{host}/{domain}:{company}"}  # fmt: skip
         else:
             jobs = ats.fetch_board(
                 client, {"id": "probe", "company": company, "ats": found["ats"], "slug": found["slug"]}
@@ -271,9 +295,14 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
                 "next": f"The page could not be read: {type(error).__name__}",
             }
         systems, seen = [], set()
+        named = eightfold.page_domain(page)
+        if named:  # an Eightfold career site itself, on the company's own host or eightfold.ai
+            systems.append({"system": "Eightfold", "ats": "eightfold", "host": urlsplit(url).hostname, "domain": named})
         for link in _LINK.findall(page):
             system = _system(link)
             if not system or system.get("forbidden"):  # a footer link says nothing about where postings are
+                continue
+            if named and system.get("ats") == "eightfold":  # the site is the board, not the ones it links to
                 continue
             label = json.dumps(system, sort_keys=True)
             if label not in seen and len(systems) < 10:
@@ -310,6 +339,8 @@ def hosts(root: Path | str) -> dict[str, Any]:
             found.add(source["host"])
         elif source["ats"] in smartrecruiters.KINDS:
             found.add(smartrecruiters.HOST)
+        elif source["ats"] in eightfold.KINDS:
+            found.add(eightfold.site(source)[0])
         elif source["ats"] in lists.KINDS:
             found.update(lists.HOSTS)  # a list can lead to any board on the systems it reads
         elif source.get("provider") in PROVIDERS:

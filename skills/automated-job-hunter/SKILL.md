@@ -81,8 +81,10 @@ other systems: find the company's careers page, or one posting's link, and run
 `hunter sources probe <url> Company Name`. It reads Workday sites (added as
 `workday:<host>/<site>:Company`; on a very large site, also set `categories` from the job
 categories it lists), follows a company's own careers page to the board it links to, and
-names the systems this version cannot read, such as Oracle, Taleo, iCIMS, SuccessFactors or
-Eightfold; for those, tell the user there is no board to add rather than searching further. Only
+names the systems this version cannot read, such as Oracle, Taleo, iCIMS or SuccessFactors; for
+those, tell the user there is no board to add rather than searching further. It also reads
+Eightfold career sites, on `<company>.eightfold.ai` or the company's own host (added as
+`eightfold:<host>/<domain>:Company`, with the domain the probe reads from the site). Only
 boards with a public, no-login listing are supported. Never scrape LinkedIn or Indeed: their terms
 forbid it. A job list kept on GitHub can be a source as well (`"ats": "github-list"`, step 4 of
 [references/setup.md](references/setup.md)): its rows that link to one posting on a supported

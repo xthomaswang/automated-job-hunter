@@ -123,8 +123,9 @@ From this skill's copy, show the user what it would do:
 scripts/hunter.py --repo <feed repo> timer
 ```
 
-`starts` are the times on the Mac's own clock. Every start that finds postings waiting spends their
-usage, so ask before installing it:
+`starts` are the cron line's times on the Mac's own clock. If the user wants other times, change the
+cron line first (see "When it runs"), commit and push it. Every start that finds postings waiting
+spends their usage, so ask before installing it:
 
 ```sh
 scripts/hunter.py --repo <feed repo> timer install
@@ -135,9 +136,11 @@ user logs in. `install` first checks that `gh`, run the way launchd will run it,
 workflow, and that the workflow is enabled. A start while a run is going waits for it, and a newer
 start replaces one already waiting, so starts never pile up. While the Mac sleeps, nothing starts;
 when it wakes, launchd starts the workflow once if a time went by. A failed start is tried again
-for about five minutes, since the network can come back a little after the Mac wakes. The timer
-keeps its times on the Mac's clock when the clocks change. Install it on one Mac only, or every run
-starts twice.
+for about five minutes, since the network can come back a little after the Mac wakes. If the login
+keychain is set to lock when the Mac sleeps (it is not by default), `gh` may not reach its login
+after waking, and the start fails; the log and `timer` show it. When the clocks change, the timer
+keeps its times on the Mac's clock and does not warn; `timer install` again moves them back to the
+cron line's UTC times. Install it on one Mac only, or every run starts twice.
 
 - `timer` shows when it starts and how the last start went; `hunter status` shows the same under
   `timer`. A `warning` there says what to fix.

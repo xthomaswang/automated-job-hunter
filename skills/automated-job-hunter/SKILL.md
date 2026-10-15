@@ -30,8 +30,9 @@ has to fix what the JSON describes.
 `--repo <path>` before the command points it at a feed repo other than the current directory.
 
 Commands: `init` (create a feed repo), `upgrade`, `sources` (`list`, `add`, `remove`, `probe`, `test`,
-`hosts`), `audit`, `tick` (one whole update), `status`, and the single steps of an update: `collect`,
-`advance`, `apply`, `publish`. For example, `scripts/hunter.py --repo ./my-feed init --cadence 4h`.
+`hosts`), `audit`, `tick` (one whole update), `status`, `timer` (`show`, `install`, `remove`: start
+the workflow from this Mac), and the single steps of an update: `collect`, `advance`, `apply`,
+`publish`. For example, `scripts/hunter.py --repo ./my-feed init --cadence 4h`.
 
 ## What the user is asking for
 
@@ -40,13 +41,13 @@ Commands: `init` (create a feed repo), `upgrade`, `sources` (`list`, `add`, `rem
 | Start: "set up my job feed", "find me jobs", first use | Follow [references/setup.md](references/setup.md) |
 | Update now: "run it", "check for new jobs" | Follow [references/run.md](references/run.md) |
 | Have it update by itself | Follow [references/schedule.md](references/schedule.md) |
-| Know how it is going | Run `hunter status`, then read `README.md` and `feed/latest.md` in the feed repo and summarize |
+| Know how it is going | Run `hunter status`, then read `README.md` and `feed/latest.md` in the feed repo and summarize. A `warning` under `schedule` means the schedule was last changed under an address no GitHub account has; follow "Who GitHub ties the schedule to" in [references/schedule.md](references/schedule.md). That alone does not explain scheduled runs that never start; for those, see "If scheduled runs never start" there. A `warning` under `timer` says why this Mac's timer did not start the workflow, or what it no longer matches |
 | Change what it looks for, or which companies | "Changing the search" below |
 | Use the results | Read `HANDOFF.md` in the feed repo; that file is the contract for consuming the feed |
 | Judge again: every assessed posting (say, after the assessment rubric changed), or the postings parked by the backfill limit | `hunter requeue --assessed` or `--parked` in the feed repo; tell them the estimated cost it prints, then commit `state/`. Listed postings stay listed while they wait. |
 | Record that they applied to or declined a posting | `hunter decide applied <key>` (or `declined`) in the feed repo, then commit `profile/decisions.jsonl` |
 | Fix a failure | [references/troubleshooting.md](references/troubleshooting.md) |
-| Get a newer engine into their feed repo | `scripts/hunter.py --repo <feed repo> upgrade` from this skill's copy, then commit |
+| Get a newer engine into their feed repo | `scripts/hunter.py --repo <feed repo> upgrade` from this skill's copy, act on any `warnings` it prints, then commit |
 
 If you do not know where the user's feed repo is, ask. Do not create a second one.
 
@@ -68,6 +69,7 @@ cost before committing, from this table (`hunter status` gives the counts):
 | `profile.md`, `eligibility`, `locations` or `employment` | Every assessment (the hard limits also apply at once, free) |
 | `companies.exclude` | Nothing; that company's postings leave the feed the next time its board is read, free |
 | `thresholds`, `caps`, `companies.prefer` | Nothing. Thresholds also reach postings already listed: a higher floor or a stricter hard requirement takes them out, and relaxing a hard requirement sends the postings it left out back to be assessed |
+| `thresholds.unmet_requirements` | Nothing, but it only reaches postings assessed since rubric `assess-v2` (`judged.rubric` in `positions.jsonl`). Postings assessed earlier stay listed, unchecked. To check them, run `hunter requeue --assessed` once and tell the user the cost it prints; skip that when `profile.md` is edited in the same change, since that assesses everything again anyway. Suggest letting those assessments arrive with the list still empty: unmet requirements are then only flagged ("unmet degree" in the README, quoted in the brief), so the user can check them before setting the kinds that leave postings out |
 
 Triage costs about $0.14 per 1,000 postings and assessment about $0.02 per posting, at API prices.
 Assessments are redone at most `caps.max_assess` per update, so a few hundred take several updates,

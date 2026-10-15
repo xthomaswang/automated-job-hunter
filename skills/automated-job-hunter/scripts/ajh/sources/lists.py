@@ -307,15 +307,53 @@ def _json_rows(source: Mapping[str, Any], text: str) -> list[tuple[dict[str, str
     return rows
 
 
+def _stated(value: Any) -> set[str]:
+    """The values a row gives for a field, compared without case; none when it does not say."""
+    values = value if isinstance(value, list) else [value]
+    return {str(v).strip().casefold() for v in values if isinstance(v, (str, int, float)) and str(v).strip()}
+
+
 def _kept(raw: Mapping[str, Any], filters: Mapping[str, list[str]]) -> bool:
     """Whether a row passes the source's filters. A row that does not say is kept: unknown is not a no."""
     for field, allowed in filters.items():
-        value = raw.get(field)
-        values = value if isinstance(value, list) else [value]
-        stated = {str(v).strip().casefold() for v in values if isinstance(v, (str, int, float)) and str(v).strip()}
+        stated = _stated(raw.get(field))
         if stated and not stated & {a.casefold() for a in allowed}:
             return False
     return True
+
+
+def _under(heading: str, names: list[str]) -> bool:
+    """Whether a heading contains one of the names as whole words: `Mid` is in "UXR Mid", not "Midwest"."""
+    return any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", heading) for name in names)
+
+
+def _unmatched(source: Mapping[str, Any], rows: list[tuple[dict[str, str], dict[str, Any]]]) -> dict[str, list[str]]:
+    """Section names and filter values that nothing in the list has.
+
+    When none of a filter's values, or none of the section names, matches anything, every row would be
+    left out and every posting the list had would close; that is far likelier a typo or a renamed
+    heading than a list with nothing for the feed, so the list fails instead and nothing closes.
+    """
+    unmatched: dict[str, list[str]] = {}
+    names = [name.casefold() for name in source.get("sections") or []]
+    if names:
+        headings = {raw.get("section") or "" for _, raw in rows}
+        missing = [name for name in source["sections"] if not any(_under(h, [name.casefold()]) for h in headings)]
+        if len(missing) == len(names):
+            shown = ", ".join(sorted(h for h in headings if h)[:12]) or "none"
+            raise SourceError(f"No heading of the list contains any of `sections`; its headings are: {shown}")
+        if missing:
+            unmatched["sections"] = missing
+    for field, allowed in (source.get("filters") or {}).items():
+        stated = set().union(*(_stated(raw.get(field)) for _, raw in rows))
+        if not stated:
+            raise SourceError(f"No row of the list has a value for the filter field {field!r}")
+        missing = [value for value in allowed if value.casefold() not in stated]
+        if len(missing) == len(allowed):
+            raise SourceError(f"None of {allowed} is a {field} in the list; it has {sorted(stated)[:12]}")
+        if missing:
+            unmatched[field] = missing
+    return unmatched
 
 
 def read(client: Client, source: Mapping[str, Any]) -> tuple[dict[str, tuple[Job, Link]], dict[str, Any]]:
@@ -329,13 +367,16 @@ def read(client: Client, source: Mapping[str, Any]) -> tuple[dict[str, tuple[Job
     if not rows:
         # A moved or emptied file must not close every posting the list had.
         raise SourceError("The list has no rows of jobs; refusing an empty snapshot")
+    unmatched = _unmatched(source, rows)
     tally: dict[str, Any] = {"rows": len(rows), "filtered": 0, "skipped": {}, "repeated": 0, "systems": {}}
+    if unmatched:
+        tally["unmatched"] = unmatched
     listed: dict[str, tuple[Job, Link]] = {}
     sections = [name.casefold() for name in source.get("sections") or []]
     for facts, raw in rows:
         under = raw.get("section") if _format(source) == "markdown" else None
         if not _kept(raw, source.get("filters") or {}) or (
-            sections and under is not None and not under.startswith(tuple(sections))
+            sections and under is not None and not _under(under, sections)
         ):
             tally["filtered"] += 1
             continue

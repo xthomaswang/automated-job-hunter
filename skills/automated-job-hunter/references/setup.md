@@ -139,10 +139,14 @@ to `config/sources.json` by hand:
   leaves the field empty is kept.
 - Markdown: every table whose headings name a company, a role and a link (`Application`, `Apply`,
   `Link`) is read; `↳` in the company column means the company of the row above. Map other
-  headings with `columns`. `sections` keeps only the tables under the page headings that start with
-  one of the names, for example `["Junior", "Mid"]`.
-- `hunter sources test` shows what became of each list's rows: left out by `filters`, skipped and
-  why, named twice, and how many postings each system gave.
+  headings with `columns`. `sections` keeps only the tables under the page headings that contain
+  one of the names as whole words: `["Junior", "Mid"]` keeps a table under "🌱 Team Junior" and
+  leaves out one under "Midwest".
+- `hunter sources test` shows what became of each list's rows: left out by `filters` or `sections`,
+  skipped and why, named twice, and how many postings each system gave. `unmatched` lists the
+  section names and filter values nothing in the list has today. When none of the section names,
+  or none of a filter's values, matches anything, or no row has the filter's field at all, the list
+  fails with a message naming what it has, instead of leaving out every row and closing its postings.
 
 A posting a list shares with a board the feed watches, or with another list, is judged once. Each
 update fetches the text of up to 50 of a list's new postings (`max_details`), so a long list fills

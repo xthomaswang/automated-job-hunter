@@ -66,14 +66,14 @@ ROLES = [
 ]
 TABLES = """# Open roles
 
-## Mid
+## 🌿 Open Mid
 
 | Company | Role | Location | Application | Age |
 |:---|:---|:---|:---:|:---:|
 | **Hooli** 🔥 🇺🇸<br><sub>via Remotive</sub> | UX Researcher ⚠️<br><sub>req 2y</sub> | Remote<br>restrictions unspecified | [Apply](HOOLI) | 0d |
 | ↳ | Research Ops<br><sub>pref 1–3y</sub> | San Jose, CA | [Apply](https://jobs.lever.co/hooli/99999999-1111-2222-3333-444455556666) | 3d |
 
-## Senior
+## 🌳 Open Senior
 
 <details><summary>Show 1 role</summary>
 
@@ -178,6 +178,18 @@ def test_sections_keep_only_the_tables_under_the_headings_named(repo):
     assert (tally["rows"], tally["filtered"], tally["skipped"]) == (3, 1, {})  # the Senior table is left out
     assert sorted(listed) == ["lever~hooli~99999999-1111-2222-3333-444455556666", "smartrecruiters~Hooli~744000001"]
     assert L.problems({**README, "sections": "Mid"}) == ["tables: sections must be a list of headings"]
+    # names are words in the heading, which may begin with a picture and a shared word
+    assert L.read(client, {**README, "sections": ["Mid", "Junior"]})[1]["unmatched"] == {"sections": ["Junior"]}
+    with pytest.raises(SourceError, match=r"No heading of the list contains any of `sections`.*open mid, open senior"):
+        L.read(client, {**README, "sections": ["Junior", "Midwest"]})  # a typo would empty the list: refused
+
+
+def test_a_filter_that_matches_nothing_in_the_list_is_refused_rather_than_closing_its_postings(repo):
+    client = Client(boards().transport, sleep=lambda s: None, retries=0)
+    with pytest.raises(SourceError, match="No row of the list has a value for the filter field 'Region'"):
+        L.read(client, {**JSON_LIST, "filters": {"Region": ["US"]}})
+    with pytest.raises(SourceError, match=r"None of \['USA'\] is a region in the list; it has \['europe', 'us'\]"):
+        L.read(client, {**JSON_LIST, "filters": {"region": ["USA"]}})
 
 
 def test_sources_test_says_what_became_of_every_row_and_hosts_name_every_system(repo):
@@ -191,6 +203,7 @@ def test_sources_test_says_what_became_of_every_row_and_hosts_name_every_system(
         "repeated": 1,
         "systems": {"greenhouse": 1, "lever": 1, "ashby": 1, "smartrecruiters": 1, "workday": 1},
         "postings": 5,
+        "unmatched": {"seniority": ["junior"]},  # no junior role in the list today: said, not refused
     }
     assert report["sources"]["tables"]["skipped"] == {"re-poster": 1}
     hosts = registry.hosts(root)["hosts"]

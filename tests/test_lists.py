@@ -18,6 +18,7 @@ from helpers import (
     lever_posting,
     plan,
     posting,
+    prose,
     remotive_posting,
     rows,
     sr_posting,
@@ -49,6 +50,11 @@ def role(company, url, title="UX Researcher", region="US", seniority="mid"):
     return {"title": title, "company": company, "location": "Remote, US", "region": region, "state": "",
             "locationType": "remote", "seniority": seniority, "tags": ["Qualitative"], "salary": "", "url": url,
             "source": "Example", "postedAt": ""}  # fmt: skip
+
+
+def workday_url(site, jid, tenant="acme"):
+    """A link to a posting on one site of a synthetic tenant's Workday."""
+    return f"https://{tenant}.wd5.myworkdayjobs.com/{site}/job/US-CA-San-Jose/UX-Researcher_{jid}"
 
 
 ROLES = [
@@ -156,8 +162,26 @@ def test_a_watched_boards_posting_lives_where_a_lists_link_to_it_says():
         "site": "External",
     }
     linked = L.link("https://globex.wd5.myworkdayjobs.com/External/job/Springfield/UX-Researcher_R1")
-    assert L.board_identity(site, "R1") == L.identity(linked.source_id) == ("workday", "globex/external", "r1")
+    assert L.board_identity(site, "R1") == L.identity(linked.source_id) == ("workday", "globex", "r1")
     assert L.board_identity(REMOTIVE, "1") is None and L.identity("acme-123") is None
+
+
+@pytest.mark.parametrize(
+    "source_id, where",
+    [
+        ("workday~acme~externalsite~1234567", ("workday", "acme", "1234567")),
+        ("workday~acme~exteu-site~1234567-2", ("workday", "acme", "1234567")),  # its second posting, on another site
+        ("workday~Acme~External~JR-0012345-1", ("workday", "acme", "jr-0012345")),
+        ("workday~acme~externalsite~R-12", ("workday", "acme", "r-12")),  # R alone is no requisition
+        ("workday~acme~exteu-site~R-13", ("workday", "acme", "r-13")),
+        ("workday~acme~externalsite~R-2024-1", ("workday", "acme", "r-2024-1")),  # perhaps a year and a count
+        ("workday~acme~externalsite~1234567-02", ("workday", "acme", "1234567-02")),  # Workday adds no leading zero
+        ("workday~acme~externalsite~1234567-100", ("workday", "acme", "1234567-100")),
+        ("workday~initech~External~1234567", ("workday", "initech", "1234567")),  # another tenant's requisition
+    ],
+)
+def test_a_workday_posting_is_known_by_its_tenant_and_requisition_whatever_the_site(source_id, where):
+    assert L.identity(source_id) == where
 
 
 def test_markdown_tables_give_their_rows_and_other_tables_are_skipped():
@@ -234,6 +258,57 @@ def test_each_posting_is_judged_once_wherever_it_is_listed(repo):
         f"joblist:{hooli}",
         "joblist:workday~globex~External~R1",
     ]
+
+
+def test_one_workday_requisition_a_list_names_on_two_sites_is_judged_once(repo):
+    root = repo(sources=(JSON_LIST,))
+    found = Boards()
+    same = prose(51)  # Workday gives both postings of the requisition the same text
+    found.workday = {jid: wd_posting(jid, text=same) for jid in ("1234567", "1234567-2")}
+    found.workday.update({jid: wd_posting(jid) for jid in ("R-12", "R-13")})
+    found.lists["someone/job-list/main/jobs.json"] = json.dumps(
+        [
+            role("Acme", workday_url("externalsite", "1234567")),
+            role("Acme (exteu AC Careersite)", workday_url("exteu-site", "1234567-2")),  # the same requisition
+            role("Acme", workday_url("externalsite", "R-12")),
+            role("Acme", workday_url("exteu-site", "R-13")),  # another requisition
+            role("Initech", workday_url("External", "1234567", tenant="initech")),  # another tenant's
+        ]
+    )
+    summary = tick(root, found)
+    listed = rows(root, "joblist")
+    second = "workday~acme~exteu-site~1234567-2"
+    assert (listed[second].status, listed[second].note) == ("V", "joblist:workday~acme~externalsite~1234567")
+    assert summary["variants"] == 1 and len(listed) == 5
+    assert all(row.status == "P" for jid, row in listed.items() if jid != second)
+    assert sorted(plan(root)["queue"]["triage"]) == sorted(f"joblist:{jid}" for jid in listed if jid != second)
+
+
+def test_a_list_row_defers_to_a_watched_workday_sites_posting_of_its_requisition_on_another_site(repo):
+    site_a = {
+        "id": "acme-wd",
+        "company": "Acme",
+        "ats": "workday",
+        "host": "acme.wd5.myworkdayjobs.com",
+        "site": "externalsite",
+    }
+    root = repo(sources=(site_a, JSON_LIST))
+    found = Boards()
+    same = prose(51)
+    found.workday = {
+        "1234567": wd_posting("1234567", text=same, site="externalsite"),
+        "1234567-2": wd_posting("1234567-2", text=same, site="exteu-site"),
+    }
+    found.lists["someone/job-list/main/jobs.json"] = json.dumps(
+        [role("Acme (exteu AC Careersite)", workday_url("exteu-site", "1234567-2"))]
+    )
+    tick(root, found)
+    assert list(rows(root, "acme-wd")) == ["1234567"]  # the watched site lists only its own posting
+    listed = rows(root, "joblist")["workday~acme~exteu-site~1234567-2"]
+    assert (listed.status, listed.note) == ("V", "acme-wd:1234567")
+    assert plan(root)["queue"]["triage"] == ["acme-wd:1234567"]
+    # a watched site's own later posting of a requisition is matched the same way
+    assert L.board_identity(site_a, "7654321-2") == L.identity("workday~acme~exteu-site~7654321")
 
 
 def test_a_lists_posting_is_the_employers_own_with_its_text_and_date_from_their_system(repo):

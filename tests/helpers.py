@@ -75,8 +75,11 @@ def ashby_posting(uuid, board="globex", title="UX Researcher", text=None):
             "employmentType": "FullTime", "isListed": True}  # fmt: skip
 
 
-def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=None, category="Research"):
-    """A posting on the fake Workday site: its listing row, and the text its detail returns."""
+def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=None, category="Research", site=None):
+    """A posting on the fake Workday site: its listing row, and the text its detail returns.
+
+    With `site`, only that site's search lists it, as on a tenant with several sites.
+    """
     where = places[0] if len(places) == 1 else f"{len(places)} Locations"
     slug = re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")
     return {
@@ -90,6 +93,7 @@ def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=No
         "places": list(places),
         "text": text or prose(sum(map(ord, jid))),
         "category": category,
+        "site": site,
     }
 
 
@@ -117,9 +121,10 @@ class Boards:
     """Fake job boards. Tests change `jobs` and `status` between ticks.
 
     `workday` holds the fake Workday site's postings by id. Its search matches a title containing
-    the query, within the job categories asked for, and `workday_down` lists ids whose detail
-    request fails. `hooli` is the same for the fake SmartRecruiters API, where only the company
-    Hooli exists (in any case, as there) and an unknown company has no postings.
+    the query, within the job categories asked for and on the posting's own site if it has one, and
+    `workday_down` lists ids whose detail request fails. `hooli` is the same for the fake
+    SmartRecruiters API, where only the company Hooli exists (in any case, as there) and an unknown
+    company has no postings.
     """
 
     def __init__(self, **boards):
@@ -155,7 +160,12 @@ class Boards:
             ask = json.loads(body)
             self.requests.append(("search", ask["searchText"]))
             wanted = set(ask["appliedFacets"].get("jobFamilyGroup", []))
-            matched = [p for p in self.workday.values() if ask["searchText"].lower() in p["row"]["title"].lower()]
+            site = url.split("/wday/cxs/", 1)[1].split("/")[1]
+            matched = [
+                p
+                for p in self.workday.values()
+                if p.get("site") in (None, site) and ask["searchText"].lower() in p["row"]["title"].lower()
+            ]
             rows = [p["row"] for p in matched if not wanted or f"cat-{p['category']}" in wanted]
             page = rows[ask["offset"] : ask["offset"] + ask["limit"]]
             counts = {}

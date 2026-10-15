@@ -109,8 +109,12 @@ Workday), and that posting's text, date and link come from the system, so the po
 `official`. Rows linking to re-posters, redirects, systems without such an API, or employers' own
 pages are skipped, and `sources test` counts every row by outcome. A list posting's id is where it
 lives, `<system>~<board>~<id>`, which is enough to find the same posting on a watched board or in
-another list without storing anything more. Title and place stay the list's, since they are what
-change is measured on every update; the employment type stays in the text, as for Workday.
+another list without storing anything more. Workday postings are compared by tenant and
+requisition, whatever the site, since a tenant can post one requisition on several sites; a
+requisition's later postings add `-1`, `-2` and so on to its id, which the comparison drops where
+it is plainly that ending (`workday.requisition`). The id itself still names the site. Title and
+place stay the list's, since they are what change is measured on every update; the employment type
+stays in the text, as for Workday.
 
 A posting whose text was not fetched comes back with `detail_skipped`. If it is new, `collect` keeps
 it out of the state until an update brings its text (nothing knew it, so nothing closes) and counts
@@ -289,14 +293,14 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   shrinks by more than 40% is held until the shrink repeats. Changing a query-scoped source's
   queries re-baselines it without closures. A failed fetch keeps the previous snapshot.
 - **Duplicates.** A list's posting on a board the feed watches (by where it lives, or by company and
-  title) defers to the board's own, and a posting several lists name defers to one of them. An
-  aggregator copy of an opening an employer's own board lists, or a list names (same company and
-  title), defers to that posting. Copies on several aggregators defer to one of them: one
-  already judged, else the one with the lowest key, so the choice never flips. Within one source,
-  postings with the same company and title and near-identical text defer to one representative;
-  that includes one aggregator, which can list an opening once per location. Variants are
-  recomputed every tick from the state of every source; when a representative closes, a variant
-  takes over and is judged.
+  title) defers to the board's own, and a posting several lists name, or one list names on two
+  Workday sites, defers to one of them. An aggregator copy of an opening an employer's own board
+  lists, or a list names (same company and title), defers to that posting. Copies on several
+  aggregators defer to one of them: one already judged, else the one with the lowest key, so the
+  choice never flips. Within one source, postings with the same company and title and
+  near-identical text defer to one representative; that includes one aggregator, which can list an
+  opening once per location. Variants are recomputed every tick from the state of every source;
+  when a representative closes, a variant takes over and is judged.
 - **Profile changes.** Stage 0 is re-run on every tick, so a change to the hard limits costs
   nothing. Two hashes decide what else is judged again: the triage hash covers `targets` and
   `seniority`, and the assess hash covers the triage hash plus the profile text, `eligibility`,

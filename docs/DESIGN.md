@@ -387,7 +387,12 @@ jobs:
 - GitHub's scheduler can fail to start a repo's scheduled runs while pushes and dispatches still
   work (issue #41: a private repo where even a new, minimal schedule never ran, and nothing tried in
   the feed repo helped). The fallback is to start runs from elsewhere with `workflow_dispatch`, as
-  `references/schedule.md` describes.
+  `references/schedule.md` describes. `hunter timer install` does it from a Mac: a launchd agent
+  runs `gh workflow run` at the cron line's times, converted to the Mac's clock when it is
+  installed. launchd starts a missed job once on wake, and the concurrency group keeps at most one
+  run waiting. The agent gets neither the shell's variables nor its PATH, so the plist names `gh`
+  by its full path, and `install` first runs `gh` the same way to check that it can see the
+  workflow.
 - Constraints to state in the docs: GitHub cron is best-effort and can be delayed; hourly cadence on
   a private repo can approach the free Actions-minutes quota, which is why 4 h is the default.
 
@@ -396,7 +401,8 @@ Alternatives using the same commands:
 | Option | How | Caveats |
 |---|---|---|
 | Claude Code Routine | Prompt: read the runbook, run the full tick, push to `main` | 1 h minimum; research preview; the cloud environment's network must allow the hosts from `hunter sources hosts`; plugins do not load there (hence the vendored engine); the session runs the engine itself, so the tool restrictions of the headless judge stage do not apply; subagents there are unverified, so the runbook falls back to inline packets |
-| Local timer | launchd/cron running `hunter tick` | Pauses when the machine sleeps |
+| Mac timer | `hunter timer install`: a launchd agent runs `gh workflow run` at the cron line's times; the run stays on GitHub | Needs the Mac on and its user logged in; a missed start runs once on wake |
+| Local tick | launchd/cron running `hunter tick` | Pauses when the machine sleeps |
 | Codex | `codex exec` or `openai/codex-action` with the same runbook; TOML subagents on a cheap OpenAI model | API key only in CI; no Haiku/Sonnet; smoke-tested only |
 
 ## Setup flow (`/automated-job-hunter setup`)
@@ -471,6 +477,6 @@ Each phase ends in something runnable and tested.
 
 Public/anonymous mode (with its full privacy audit and a keepalive for the 60-day cron disable),
 per-link verification, the Google adapter, application tracking and a `hunt` procedure,
-notifications, automated local-timer install, Batch API or local-model judge backends, Windows, and
-an optional mirror of the job-facts layer (no profile, fit or gaps) to an unlisted URL for agents
-that can only fetch a link.
+notifications, automated install of a timer for a local `hunter tick`, Batch API or local-model
+judge backends, Windows, and an optional mirror of the job-facts layer (no profile, fit or gaps) to
+an unlisted URL for agents that can only fetch a link.

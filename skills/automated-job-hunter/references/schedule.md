@@ -87,7 +87,8 @@ tried in the feed repo helped: not committing under the owner's account, not cha
 not pushing, and not a new workflow with nothing but a schedule.
 [GitHub staff have said](https://github.com/orgs/community/discussions/185355) that a commit pushed
 to the default branch makes GitHub read the schedules again; there, it did not help. Start the runs
-from somewhere else instead: see "Alternatives" below. The first one keeps the runs on GitHub.
+from somewhere else instead: see "Alternatives" below. The first two keep the runs on GitHub; on a
+Mac, the first is `timer install`.
 
 ### Who GitHub ties the schedule to
 
@@ -113,14 +114,45 @@ parts of the file. This does not make GitHub start scheduled runs it was not sta
 
 ## Alternatives
 
-**Start the workflow from elsewhere.** Anything that runs on a schedule can run
-`gh workflow run job-hunter.yml --repo <owner>/<repo>`. The run then happens on GitHub as before,
-with the repo's secrets; only the start comes from elsewhere. A start while a run is going waits for
-it, and a newer start replaces one already waiting, so starts never pile up. On a machine where `gh`
-is logged in, this needs no new secret, but the machine has to be on: cron skips a start that falls
-while the machine sleeps, while launchd on macOS, with `StartCalendarInterval`, starts once when it
-wakes. An external scheduler that calls GitHub's API instead needs a token stored with that service:
-a fine-grained token for the feed repo alone, with the Actions permission set to read and write.
+**Start the workflow from a Mac.** On a Mac where `gh` is logged in and that is usually on, a timer
+can run `gh workflow run job-hunter.yml --repo <owner>/<repo>` at the times of the cron line. The
+runs then happen on GitHub as before, with the repo's secrets; only the start comes from the Mac.
+From this skill's copy, show the user what it would do:
+
+```sh
+scripts/hunter.py --repo <feed repo> timer
+```
+
+`starts` are the cron line's times on the Mac's own clock. If the user wants other times, change the
+cron line first (see "When it runs"), commit and push it. Every start that finds postings waiting
+spends their usage, so ask before installing it:
+
+```sh
+scripts/hunter.py --repo <feed repo> timer install
+```
+
+The timer is a launchd agent, so it needs no new secret and keeps working after a restart once the
+user logs in. `install` first checks that `gh`, run the way launchd will run it, can see the
+workflow, and that the workflow is enabled. A start while a run is going waits for it, and a newer
+start replaces one already waiting, so starts never pile up. While the Mac sleeps, nothing starts;
+when it wakes, launchd starts the workflow once if a time went by. A failed start is tried again
+for about five minutes, since the network can come back a little after the Mac wakes. If the login
+keychain is set to lock when the Mac sleeps (it is not by default), `gh` may not reach its login
+after waking, and the start fails; the log and `timer` show it. When the clocks change, the timer
+keeps its times on the Mac's clock and does not warn; `timer install` again moves them back to the
+cron line's UTC times. Install it on one Mac only, or every run starts twice.
+
+- `timer` shows when it starts and how the last start went; `hunter status` shows the same under
+  `timer`. A `warning` there says what to fix.
+- After `upgrade --cadence`, run `timer install` again; the timer keeps the times it was made with.
+- `timer remove` takes it away and keeps its log. If `gh run list --event schedule` shows GitHub
+  starting scheduled runs again, remove it; until then, a slot that both start runs a second time,
+  which mostly finds nothing new.
+
+**Start the workflow from elsewhere.** Any other scheduler can run the same command, on a machine
+that is on and where `gh` is logged in; cron skips a start that falls while the machine sleeps. An
+external scheduler that calls GitHub's API instead needs a token stored with that service: a
+fine-grained token for the feed repo alone, with the Actions permission set to read and write.
 
 **Claude Code Routine.** A cloud routine on the feed repo with the prompt "Read .hunter/RUNBOOK.md
 and run one tick. Push to main." Two things must be set by the user: the routine's environment has
@@ -128,6 +160,6 @@ to allow the job-board hosts (`hunter sources hosts` lists them), and the minimu
 hour. The routine session runs the engine itself, so the tight tool limits of the headless judging
 stage do not apply there.
 
-**A timer on their own machine.** Run `python3 .hunter/engine/hunter.py tick` from the feed repo on
-a schedule (cron, launchd, systemd). Nothing to configure in the cloud, but it stops whenever the
-machine sleeps.
+**Run the whole update on their own machine.** Run `python3 .hunter/engine/hunter.py tick` from the
+feed repo on a schedule (cron, launchd, systemd). The judging then happens on that machine, with
+its Claude Code login. Nothing to configure in the cloud, but it stops whenever the machine sleeps.

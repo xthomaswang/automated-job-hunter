@@ -5,7 +5,7 @@ import subprocess
 from datetime import timedelta
 
 import pytest
-from ajh import advance, apply, collect
+from ajh import advance, apply, collect, requeue
 from ajh.feed import readme_text
 from ajh.http import Client
 from ajh.layout import Layout
@@ -18,6 +18,7 @@ from helpers import (
     answer_triage,
     full_tick,
     good_assessment,
+    judge,
     posting,
     prose,
     rows,
@@ -65,7 +66,7 @@ def test_a_whole_tick_publishes_the_matches_and_adopts_the_state(repo):
         and strong["brief"] == "jobs/acme/1.md"
     )
     assert (
-        strong["judged"] == {"assess": 1, "rubric": "assess-v1", "unverified": 0} and feed["acme:2"]["tier"] == "good"
+        strong["judged"] == {"assess": 1, "rubric": "assess-v2", "unverified": 0} and feed["acme:2"]["tier"] == "good"
     )
     assert "last_seen" not in strong and not any(
         "T" in str(strong[k]) for k in ("first_seen", "posted")
@@ -433,9 +434,10 @@ def test_hard_requirements_leave_postings_out_until_relaxed(repo):
     limits(root, max_required_years=3)
     summary = full_tick(root, board, assess=judged)
     assert summary["blocked"] == 1 and set(positions(root)) == {"acme:2", "acme:3"}
-    assert rows(root)["1"].status == "R" and rows(root)["1"].note == "blk:years=7"
+    assert rows(root)["1"].status == "R" and rows(root)["1"].note == "blk:years=7+seniority=mid"  # every fact
     assert (
-        "Left out for a hard requirement in `thresholds` (required years or seniority): 1." in layout.readme.read_text()
+        "Left out for a hard requirement in `thresholds` (required years, seniority or an unmet requirement): 1."
+        in layout.readme.read_text()
     )
 
     limits(root, max_seniority="senior")  # takes a listed posting out without judging anything
@@ -457,6 +459,140 @@ def test_hard_requirements_leave_postings_out_until_relaxed(repo):
     ]
     full_tick(root, board, assess=judged)
     assert set(positions(root)) == {"acme:1", "acme:2", "acme:3"}
+
+
+def collect_again(root, board):
+    """A collect on its own, as the next update starts, with what it would send to be assessed."""
+    summary = collect.run(root, Client(board.transport, sleep=lambda s: None, retries=0), NOW)
+    return summary, sorted(json.loads(Layout(root).plan.read_text())["queue"]["assess"])
+
+
+def test_an_unmet_requirement_is_shown_and_leaves_a_posting_out_only_when_its_kind_is_hard(repo):
+    enrolled = "Must be currently enrolled in a PhD program and returning to school after the internship."
+    licensed = "An active state nursing license is required for this clinical research role."
+    board = Boards(acme=[posting(1, text=enrolled), posting(2, "Clinical Researcher", text=licensed),
+                         posting(3, "Design Researcher")])  # fmt: skip
+
+    def judged(job):
+        fields = good_assessment(job, fit=80)
+        if job["title"] == "UX Researcher":
+            fields["unmet"] = "enrollment || Must be currently enrolled in a PhD program"
+        if job["title"] == "Clinical Researcher":
+            fields["unmet"] = "Licence || An active state nursing license is required"
+        return fields
+
+    root = repo()
+    layout = Layout(root)
+    full_tick(root, board, assess=judged)  # no kind is hard yet: all listed, the unmet ones say so
+    feed = positions(root)
+    assert set(feed) == {"acme:1", "acme:2", "acme:3"} and feed["acme:3"]["unmet"] == []
+    assert feed["acme:1"]["unmet"] == [{"kind": "enrollment", "quote": enrolled}]
+    assert f"## Unmet requirements\n\n- **enrollment**: “{enrolled}”" in (root / "jobs/acme/1.md").read_text()
+    assert "| new, unmet license |" in layout.readme.read_text()
+
+    limits(root, unmet_requirements=["degree", "enrollment"])  # takes the listed one out, judging nothing
+    summary = full_tick(root, board, assess=judged)
+    assert summary["blocked"] == 1 and set(positions(root)) == {"acme:2", "acme:3"}
+    assert rows(root)["1"].note == "blk:seniority=mid+unmet=enrollment;unmet:enrollment"
+    log = [json.loads(line) for line in (layout.feed / "changes" / "2026-10.jsonl").read_text().splitlines()]
+    assert (log[-1]["event"], log[-1]["key"]) == ("blocked", "acme:1")
+    assert json.loads(layout.feed_meta.read_text())["counts"]["blocked"] == 1
+    assert "(required years, seniority or an unmet requirement): 1." in layout.readme.read_text()
+    again, queued = collect_again(root, board)
+    assert again["unblocked"] == 0 and queued == []  # still left out: nothing is assessed again
+
+    limits(root, unmet_requirements=["degree"])  # relaxed: it goes back to be assessed
+    relaxed, queued = collect_again(root, board)
+    assert relaxed["unblocked"] == 1 and queued == ["acme:1"]
+    full_tick(root, board, assess=judged)
+    assert set(positions(root)) == {"acme:1", "acme:2", "acme:3"}
+
+
+def test_relaxing_one_hard_requirement_frees_only_what_no_other_one_leaves_out(repo):
+    years = "Requires 7 years of experience in research."
+    board = Boards(acme=[posting(1, text=years + " A PhD in Psychology is required for this role."),
+                         posting(2, "Design Researcher", text=years)])  # fmt: skip
+
+    def judged(job):
+        fields = good_assessment(job, fit=80)
+        fields.update(required_years=7, required_years_quote="Requires 7 years of experience")
+        if job["title"] == "UX Researcher":
+            fields["unmet"] = "degree || A PhD in Psychology is required"
+        return fields
+
+    root = repo()
+    limits(root, max_required_years=3, unmet_requirements=["degree"])
+    assert full_tick(root, board, assess=judged)["blocked"] == 2
+    assert (rows(root)["1"].note, rows(root)["2"].note) == (
+        "blk:years=7+seniority=mid+unmet=degree;unmet:degree",
+        "blk:years=7+seniority=mid",
+    )
+    limits(root, max_required_years=10)  # the degree still leaves the first one out
+    relaxed, queued = collect_again(root, board)
+    assert relaxed["unblocked"] == 1 and queued == ["acme:2"]
+    full_tick(root, board, assess=judged)
+    assert set(positions(root)) == {"acme:2"}
+
+    judge(root, "acme", "1", "R", note="blk:years=7+wage=9")  # a fact from a newer engine
+    newer, queued = collect_again(root, board)
+    assert newer["unblocked"] == 0 and queued == []  # left where it is, not judged again on part of its facts
+    judge(root, "acme", "1", "R", note="blk:years=7")  # a tag written before every fact was kept
+    older, queued = collect_again(root, board)
+    assert older["unblocked"] == 1 and queued == ["acme:1"]  # it holds only the years, which are now allowed
+
+
+def test_a_listed_posting_assessed_again_and_left_out_is_counted_once(repo):
+    enrolled = "Must be currently enrolled in a PhD program and returning to school after the internship."
+    root, board = repo(), Boards(acme=[posting(1, text=enrolled)])
+    full_tick(root, board)  # listed, assessed before unmet requirements were asked for
+    limits(root, unmet_requirements=["enrollment"])
+    requeue.run(root, "assessed")  # as a person checking older assessments once does
+
+    def judged(job):
+        return dict(good_assessment(job), unmet="enrollment || Must be currently enrolled in a PhD program")
+
+    summary = full_tick(root, board, assess=judged)
+    assert summary["blocked"] == 1 and Layout(root).positions.read_text() == ""
+    assert json.loads(Layout(root).feed_meta.read_text())["counts"]["blocked"] == 1
+
+
+def test_unmet_kinds_are_kept_for_every_assessed_posting_and_counted(repo):
+    degree = "A PhD in Psychology is required for this research role."
+    board = Boards(acme=[posting(1, text=degree), posting(2, "Product Analyst", text=degree)])
+
+    def judged(job):
+        wanted = job["title"] == "UX Researcher"
+        fields = good_assessment(job, fit=80 if wanted else 20, role_match="direct" if wanted else "adjacent")
+        return dict(fields, unmet="degree || A PhD in Psychology is required")
+
+    root = repo()
+    layout = Layout(root)
+    full_tick(root, board, assess=judged)  # the second is below the bar, so it has no record
+    assert set(positions(root)) == {"acme:1"} and rows(root)["2"].status == "R"
+    assert (rows(root)["1"].note, rows(root)["2"].note) == ("unmet:degree", "unmet:degree")
+    assert json.loads(layout.feed_meta.read_text())["unmet"] == {"degree": 2}
+    assert "- Assessed postings with an unmet requirement: 2 degree." in layout.readme.read_text()
+    limits(root, direct_min=90)  # a floor takes the listed one out; its claim stays counted
+    full_tick(root, board, assess=judged)
+    assert rows(root)["1"].note == "unmet:degree" and json.loads(layout.feed_meta.read_text())["unmet"] == {"degree": 2}
+
+
+def test_a_record_assessed_before_unmet_requirements_stays_listed_and_renders(repo):
+    root, board = repo(), Boards(acme=[posting(1), posting(2, "Design Researcher")])
+    layout = Layout(root)
+    full_tick(root, board)
+    earlier = []  # as the records were written by the previous rubric: no unmet field
+    for record in positions(root).values():
+        record.pop("unmet")
+        record["judged"]["rubric"] = "assess-v1"
+        earlier.append(json.dumps(record, ensure_ascii=False) + "\n")
+    layout.positions.write_text("".join(earlier))
+    limits(root, unmet_requirements=["degree", "enrollment"], strong=90)  # a new tier rewrites their briefs
+    full_tick(root, board)
+    feed = positions(root)
+    assert set(feed) == {"acme:1", "acme:2"} and "unmet" not in feed["acme:1"]  # not checked: stays listed
+    assert feed["acme:1"]["tier"] == "good" and "Fit: 82 (good)" in (root / "jobs/acme/1.md").read_text()
+    assert "## Good matches (2)" in layout.readme.read_text()
 
 
 def test_a_floor_for_direct_matches_and_new_tier_bounds_reach_listed_postings(repo):

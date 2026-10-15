@@ -18,6 +18,7 @@ from .textutil import company_key
 
 EMPLOYMENT_KINDS = ("full_time", "part_time", "contract", "internship", "temporary")
 SENIORITY = ("intern", "junior", "mid", "senior", "staff")
+UNMET_KINDS = ("degree", "enrollment", "credential", "license")
 RULE_PACKS = ("us",)
 
 DEFAULTS: dict[str, Any] = {
@@ -29,8 +30,9 @@ DEFAULTS: dict[str, Any] = {
     "eligibility": {"needs_sponsorship": None, "rule_packs": ["us"]},
     "companies": {"prefer": [], "exclude": []},
     # Listing only, never a verdict, so in neither judging hash. direct_min: the lowest fit at which a
-    # wanted role is still listed (null: always). max_required_years and max_seniority are hard
-    # requirements: a posting stating more years, or assessed as more senior, is left out.
+    # wanted role is still listed (null: always). max_required_years, max_seniority and
+    # unmet_requirements are hard requirements: a posting stating more years, assessed as more senior,
+    # or quoted as requiring something of a listed kind that the profile does not meet, is left out.
     "thresholds": {
         "strong": 75,
         "good": 55,
@@ -38,6 +40,7 @@ DEFAULTS: dict[str, Any] = {
         "direct_min": None,
         "max_required_years": None,
         "max_seniority": None,
+        "unmet_requirements": [],
     },
     # max_usd_per_month: judging pauses for the rest of the month (UTC) once the usage log says
     # Claude Code's list-price estimate has reached it. Null means no budget.
@@ -142,6 +145,11 @@ def normalize(data: Any, places: Places | None = None) -> dict[str, Any]:
     check(
         thresholds["max_seniority"] is None or thresholds["max_seniority"] in SENIORITY,
         f"thresholds.max_seniority must be one of {SENIORITY}, or null",
+    )
+    unmet = thresholds["unmet_requirements"]
+    check(
+        isinstance(unmet, list) and all(isinstance(kind, str) and kind in UNMET_KINDS for kind in unmet),
+        f"thresholds.unmet_requirements must list values from {UNMET_KINDS}",
     )
     check(
         all(_int(out["caps"][k], 1) for k in ("max_triage", "max_assess", "max_attempts")),

@@ -11,7 +11,7 @@ import os
 import sys
 from typing import Any
 
-from . import advance, apply, audit, collect, decisions, judge, publish, registry, requeue, scaffold, tick
+from . import advance, apply, audit, collect, decisions, judge, publish, registry, requeue, scaffold, tick, timer
 from .advance import WorkError
 from .collect import ConfigError
 from .criteria import CriteriaError
@@ -22,6 +22,7 @@ from .packets import ProfileTooLong
 from .publish import PublishBlocked
 from .scaffold import ScaffoldError
 from .state import StateError, read_json
+from .timer import TimerError
 
 # Problems a person has to fix. Each is reported as JSON with exit status 2.
 HANDLED = (
@@ -34,6 +35,7 @@ HANDLED = (
     PublishBlocked,
     ScaffoldError,
     SourceError,
+    TimerError,
 )
 
 
@@ -108,6 +110,8 @@ def _status(args: argparse.Namespace) -> dict[str, Any]:
         "failing_sources": (meta.get("sources") or {}).get("failing"),
         "judging_failed": meta.get("judging_failed"),
         "usage": meta.get("usage"),
+        "schedule": scaffold.schedule(layout.root),
+        "timer": timer.summary(layout.root),
     }
 
 
@@ -190,6 +194,11 @@ def main(argv: list[str] | None = None) -> int:
         "--cadence", help="also change when the workflow runs: 1h, 4h, 8h, or UTC hours such as 6,10,14,20"
     )
     step.set_defaults(run=lambda a: scaffold.upgrade(a.repo, a.cadence))
+    step = commands.add_parser(
+        "timer", help="start the workflow from this Mac at the cron line's times (launchd); show, install or remove"
+    )
+    step.add_argument("action", nargs="?", default="show", choices=["show", "install", "remove"])
+    step.set_defaults(run=lambda a: getattr(timer, a.action)(a.repo))
     args = parser.parse_args(argv)
     try:
         result = args.run(args)

@@ -20,7 +20,7 @@ from .state import read_json, write_text
 # Career systems this version cannot read, by the hosts their public pages are on. A probe names
 # them, so that nobody keeps looking for a board that no reader exists for.
 UNSUPPORTED = (
-    (r"(^|\.)oraclecloud\.com$", "Oracle Recruiting Cloud"),
+    (r"(^|\.)oraclecloud\.com$", "Oracle Recruiting Cloud (its job APIs are only for Oracle and approved partners)"),
     (r"(^|\.)taleo\.net$", "Oracle Taleo"),
     (r"(^|\.)icims\.com$", "iCIMS"),
     (r"(^|\.)(successfactors|sapsf)\.(com|eu)$", "SAP SuccessFactors"),

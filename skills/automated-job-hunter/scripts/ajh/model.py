@@ -71,6 +71,9 @@ class Job:
     source_kind: str = "official"
     source_label: str | None = None
     apply_url: str | None = None
+    # The source has this posting's text, but it was not fetched this update (see `sources.fetch`),
+    # so nothing judges it or rewrites its brief until it is.
+    detail_skipped: bool = False
 
     def __post_init__(self) -> None:
         if not self.source or not self.source_id or self.key != f"{self.source}:{self.source_id}":

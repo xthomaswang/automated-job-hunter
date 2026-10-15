@@ -70,6 +70,8 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
         "dropped": tally["D"],
         "variants": tally["V"],
         "parked": tally["S"],
+        # new postings on detail sources, listed but not yet in the state until their text is fetched
+        "waiting_for_text": sum(info.get("waiting", 0) for info in state.sources.values()),
     }
 
 
@@ -235,7 +237,8 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     for key in sorted(touched):
         sid, jid = split_key(key)
         job = jobs.get(sid, {}).get(jid)
-        if key in records and job is not None:  # without this tick's text the brief cannot be rewritten
+        # without this update's text the brief cannot be rewritten, so the last one stays
+        if key in records and job is not None and not job.detail_skipped:
             feed.write_brief(layout.root, records[key], job.description)
     applied = {key: decision["date"] for key, decision in decided.items() if decision["decision"] == "applied"}
     for key, record in records.items():  # the person's own mark, kept apart from the assessment

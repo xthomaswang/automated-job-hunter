@@ -76,9 +76,16 @@ and new postings wait behind them. Published postings stay listed until their ne
 arrives. Group several edits into one commit rather than paying for each.
 
 Companies are `config/sources.json`. `hunter sources list` shows the boards this skill already
-knows; `hunter sources probe "Company Name"` looks for a company's public board; `hunter sources
-add <id or ats:slug:Company>` adds one. Only boards with a public, no-login API are supported.
-Never scrape LinkedIn or Indeed: their terms forbid it.
+knows; `hunter sources probe "Company Name"` looks for a company's board on Greenhouse, Ashby, Lever
+and Recruitee; `hunter sources add <id or ats:slug:Company>` adds one. Large employers mostly use
+other systems: find the company's careers page, or one posting's link, and run
+`hunter sources probe <url> Company Name`. It reads Workday sites (added as
+`workday:<host>/<site>:Company`; on a very large site, also set `categories` from the job
+categories it lists), follows a company's own careers page to the board it links to, and
+names the systems this version cannot read, such as Oracle, Taleo, iCIMS, SuccessFactors or
+Eightfold; for those, tell the user there is no board to add rather than searching further. Only
+boards with a public, no-login listing are supported. Never scrape LinkedIn or Indeed: their terms
+forbid it.
 
 ## Rules that always hold
 

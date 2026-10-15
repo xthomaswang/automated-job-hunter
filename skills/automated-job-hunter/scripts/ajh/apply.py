@@ -75,6 +75,18 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
     }
 
 
+def _unmet_found(state: State, decided: decisions.Decided) -> dict[str, int]:
+    """Assessed postings, listed or not, whose assessment quoted an unmet requirement, by kind."""
+    found: dict[str, int] = {}
+    for sid in state.source_ids():
+        for jid, row in state.rows(sid).items():
+            if row.status not in "AR" or (decided.get(f"{sid}:{jid}") or {}).get("decision") == "declined":
+                continue
+            for kind in filter(None, (tag(row, "unmet") or "").split(",")):
+                found[kind] = found.get(kind, 0) + 1
+    return dict(sorted(found.items()))
+
+
 def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     layout = Layout(root)
     check_seal(layout, seal)
@@ -92,6 +104,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     counts = {"published": 0, "below_threshold": 0, "blocked": 0, "rejected": 0, "unscored": 0, "unanswered": 0}
     events: list[dict[str, Any]] = []
     touched: set[str] = set()
+    assessed_out: set[str] = set()  # assessed this update and left out by a hard requirement
 
     def publish(key: str, assessment: dict[str, Any] | None) -> None:
         sid, jid = split_key(key)
@@ -128,6 +141,9 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
                 row.fit, row.ag, row.attempts, row.note = str(assessment["fit"]), generations["assess"], 0, "-"
                 row.tg = row.tg or generations["triage"]
                 row.dsh = f"{simhash64(text):016x}" if text else "-"  # frozen here: later edits are measured against it
+                kinds = feed.unmet_kinds(assessment)
+                if kinds:  # kept for every assessed posting, listed or not, so the claims can be counted
+                    set_tag(row, "unmet", ",".join(kinds))
                 blocked = feed.hard_limit(assessment, criteria["thresholds"])
                 if not blocked and feed.tier_of(assessment, criteria["thresholds"]):
                     row.status = "A"
@@ -138,6 +154,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
                     counts["blocked" if blocked else "below_threshold"] += 1
                     if blocked:  # remembered, so that a relaxed limit sends it back to be assessed
                         set_tag(row, "blk", blocked)
+                        assessed_out.add(key)
                 if sampled:
                     canary["sampled"] += 1
                     canary["missed"] += row.status == "A"
@@ -165,7 +182,7 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         blocked = feed.hard_limit(record, criteria["thresholds"])
         tier = feed.tier_of(record, criteria["thresholds"])
         if blocked or tier is None:
-            row.status, row.note = "R", "-"
+            row.status = "R"  # a listed posting's only tag is its unmet kinds, which stay
             if blocked:
                 set_tag(row, "blk", blocked)
         elif tier != record["tier"]:
@@ -258,10 +275,12 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
     budget = usage.budget(criteria["caps"]["max_usd_per_month"], log, as_of)
     if budget:
         used = {**(used or {}), "budget": {**budget, "paused": plan.get("budget", {}).get("reached", False)}}
+    unmet = _unmet_found(state, decided)
     meta = {
         "schema_version": feed.SCHEMA_VERSION,
         "as_of": as_of,
         "counts": _counts(state, generations["assess"], decided),
+        **({"unmet": unmet} if unmet else {}),
         "canary": canary,
         "generations": generations,
         "sources": {"total": len(state.sources), "failing": failing},
@@ -278,8 +297,10 @@ def run(root: Path | str, seal: str | None = None) -> dict[str, Any]:
         **counts,
         "open_matches": len(records),
         **{kind: sum(item["event"] == kind for item in events) for kind in order if kind != "blocked"},
-        # left out this update: assessments that broke a hard requirement, and listed postings a limit took out
-        "blocked": counts["blocked"] + sum(item["event"] == "blocked" for item in events),
+        # left out this update: assessments that broke a hard requirement, and listed postings a limit took
+        # out, each once (a listed posting assessed again and left out is both)
+        "blocked": counts["blocked"]
+        + sum(item["event"] == "blocked" and item["key"] not in assessed_out for item in events),
     }
 
 

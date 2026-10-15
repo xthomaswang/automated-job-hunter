@@ -12,15 +12,18 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from .criteria import UNMET_KINDS
 from .model import Job
-from .rules import explicit_zero_experience, numbers_in, preference_only
+from .rules import accepts_alternative, explicit_zero_experience, numbers_in, preference_only
 from .textutil import find_span, norm_ws
 
 TRIAGE_VERDICTS = ("keep", "drop", "drop_title")
 ROLE_MATCH = ("direct", "adjacent", "unrelated")
 SENIORITY = ("intern", "junior", "mid", "senior", "staff", "unknown")
 LIMITS = {"match": 4, "gap": 4, "note": 3}
+UNMET_MAX = 4
 QUOTE_MIN, QUOTE_MAX, LABEL_MAX, WHY_MAX = 5, 300, 80, 240
+_SPELLINGS = {"enrolment": "enrollment", "licence": "license"}
 
 _URL = re.compile(r"(?:https?://|www\.)\S+", re.I)
 _SECRET_SHAPED = re.compile(r"[A-Za-z0-9+/_=-]{32,}")
@@ -87,8 +90,9 @@ def _quote(source: str, quote: str) -> str | None:
 def check_assessment(fields: Mapping[str, list[str]], job: Job) -> tuple[dict[str, Any] | None, list[str]]:
     """One posting's assessment made publishable, or None with the reasons it was rejected.
 
-    Reasons are codes from `rubric.FEEDBACK`. A discarded piece (a quote not found, a years value
-    without support) is counted in `unverified` and does not by itself reject the assessment.
+    Reasons are codes from `rubric.FEEDBACK`. A discarded piece (a quote not found, a years value or
+    an unmet requirement without support) is counted in `unverified` and does not by itself reject
+    the assessment.
     """
     source = job.title + "\n" + job.description
     codes: list[str] = []
@@ -146,6 +150,23 @@ def check_assessment(fields: Mapping[str, list[str]], job: Job) -> tuple[dict[st
                 value = None
         years[name] = value
 
+    # A requirement the profile does not meet can leave the posting out of the feed, so only a
+    # mandatory one, quoted from the posting, with no alternative offered, is kept.
+    unmet: list[dict[str, str]] = []
+    for line in fields.get("unmet", [])[:UNMET_MAX]:
+        kind, separator, quote = line.partition("||")
+        kind = kind.strip().strip("`*.:").lower()
+        if not separator and kind in _NONE:  # `unmet: none`, as the years fields are written: nothing to check
+            continue
+        kind = _SPELLINGS.get(kind, kind)
+        span = _quote(source, quote) if separator else None
+        if kind not in UNMET_KINDS or span is None or preference_only(span) or accepts_alternative(span):
+            unverified += 1
+            if "unmet" not in codes:
+                codes.append("unmet")
+            continue
+        unmet.append({"kind": kind, "quote": span})
+
     if role_match in ("direct", "adjacent") and not quoted["match"] and "no_match" not in codes:
         codes.append("no_match")
     if any(code in codes for code in ("fit", "role_match", "why", "no_match")):
@@ -160,6 +181,7 @@ def check_assessment(fields: Mapping[str, list[str]], job: Job) -> tuple[dict[st
         "matches": quoted["match"],
         "gaps": quoted["gap"],
         "notes": quoted["note"],
+        "unmet": unmet,
         "unverified": unverified,
     }
     return assessment, codes

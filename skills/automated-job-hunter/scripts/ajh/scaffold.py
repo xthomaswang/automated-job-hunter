@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .state import write_text
+from .state import SCHEMA_VERSION, read_json, write_text
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 ASSETS = SCRIPTS.parent / "assets"
@@ -150,6 +150,12 @@ def init(directory: Path | str, cadence: str = "4h") -> dict[str, Any]:
     return {"root": str(root), "engine_version": __version__, "cadence": cadence, "created": [*created, WORKFLOW]}
 
 
+def _release(version: str) -> tuple[int, ...]:
+    """A version such as 0.2.0 as numbers, so that 0.10.0 sorts after 0.9.0. Unreadable is lowest."""
+    parts = version.split(".")
+    return tuple(int(part) for part in parts) if all(part.isdigit() for part in parts) else (0,)
+
+
 def upgrade(directory: Path | str, cadence: str | None = None) -> dict[str, Any]:
     """Replace a feed repo's engine and engine-owned files with this version's."""
     root = Path(directory).expanduser().resolve()
@@ -159,6 +165,18 @@ def upgrade(directory: Path | str, cadence: str | None = None) -> dict[str, Any]
     if cadence is not None:
         cron_for(cadence, 0)  # refuse a bad cadence before changing anything
     previous = version.read_text(encoding="utf-8").strip()
+    written = read_json(root / "state" / "meta.json", {})
+    if isinstance(written.get("schema_version"), int) and written["schema_version"] > SCHEMA_VERSION:
+        raise ScaffoldError(
+            f"The feed's state is schema {written['schema_version']}, written by engine "
+            f"{written.get('engine_version')}; this copy ({__version__}) reads up to schema {SCHEMA_VERSION} and would "
+            "misread it. Upgrade from a newer copy of the skill."
+        )
+    if _release(previous) > _release(__version__):
+        raise ScaffoldError(
+            f"The feed runs engine {previous}, newer than this copy ({__version__}). "
+            "Upgrade from a newer copy of the skill."
+        )
     updated = _vendor(root)
     result = {"root": str(root), "from": previous, "to": __version__, "updated": [*updated, WORKFLOW]}
     if _workflow(root, cadence):

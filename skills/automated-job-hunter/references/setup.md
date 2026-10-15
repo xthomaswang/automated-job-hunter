@@ -127,6 +127,13 @@ README counts the ones still waiting for their text. SmartRecruiters companies
 shared host (`wd1.myworkdaysite.com/recruiting/<tenant>/<site>`) work the same way; the probe
 prints their add line with the tenant.
 
+Eightfold career sites are searched and filled in the same way. They are on
+`<company>.eightfold.ai/careers`, or the same site on the company's own careers host. Probe the
+careers page or one posting's link, and add the line it prints, `eightfold:<host>/<domain>:Company`.
+The domain is the one the site's own pages name; the probe reads it from them. A search there
+lists 10 postings a request, so a search matching more than 500 postings fails the source: set
+fewer, more specific `queries` on the entry.
+
 An SAP SuccessFactors career site (built with Career Site Builder) is on the company's own domain,
 often `jobs.<company>.com`, so it cannot be found by name: probe its address or one posting's link.
 The probe knows the site by its page and prints `successfactors:<host>:Company`, or

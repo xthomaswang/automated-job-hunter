@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 from . import __version__
 
@@ -21,7 +21,11 @@ RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 MAX_WAIT = 30.0
 
 # (method, url, headers, body, timeout) -> (status, lowercased headers, body)
-Transport = Callable[[str, str, dict[str, str], Optional[bytes], float], tuple[int, dict[str, str], bytes]]
+# (status, headers, body), and optionally the URL the reply came from once redirects were followed.
+Transport = Callable[
+    [str, str, dict[str, str], Optional[bytes], float],
+    Union[tuple[int, dict[str, str], bytes], tuple[int, dict[str, str], bytes, str]],
+]
 
 
 class HttpError(Exception):
@@ -31,6 +35,8 @@ class HttpError(Exception):
 
 
 class Response:
+    """A reply. Its `url` is where it came from: after any redirects, not always the URL asked for."""
+
     def __init__(self, status: int, headers: Mapping[str, str], body: bytes, url: str) -> None:
         self.status, self.headers, self.body, self.url = status, headers, body, url
 
@@ -60,11 +66,13 @@ _OPENER = urllib.request.build_opener(_HttpsOnlyRedirects)
 
 def urllib_transport(
     method: str, url: str, headers: dict[str, str], body: bytes | None, timeout: float
-) -> tuple[int, dict[str, str], bytes]:
+) -> tuple[int, dict[str, str], bytes, str]:
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    landed = url
     try:
         with _OPENER.open(request, timeout=timeout) as reply:
             status, raw_headers, data = reply.status, reply.headers, reply.read(MAX_BODY + 1)
+            landed = getattr(reply, "url", None) or url  # where the redirects, if any, ended
     except urllib.error.HTTPError as error:
         status, raw_headers, data = error.code, error.headers, error.read(MAX_BODY + 1)
     if len(data) > MAX_BODY:
@@ -72,7 +80,7 @@ def urllib_transport(
     reply_headers = {k.lower(): v for k, v in (raw_headers.items() if raw_headers else [])}
     if reply_headers.get("content-encoding", "").lower() == "gzip":
         data = gzip.decompress(data)
-    return status, reply_headers, data
+    return status, reply_headers, data, landed
 
 
 class Client:
@@ -145,7 +153,7 @@ class Client:
             with self._lock:
                 self.requests += 1
             try:
-                status, reply_headers, data = self.transport(method, url, send, body, self.timeout)
+                status, reply_headers, data, *landed = self.transport(method, url, send, body, self.timeout)
             except (OSError, http.client.HTTPException):
                 if attempt == self.retries:
                     raise
@@ -154,7 +162,7 @@ class Client:
             if status in RETRY_STATUS and attempt < self.retries:
                 self.sleep(self._wait(attempt, reply_headers.get("retry-after")))
                 continue
-            return Response(status, reply_headers, data, url)
+            return Response(status, reply_headers, data, landed[0] if landed else url)
         raise AssertionError("unreachable")
 
     def get(self, url: str, **kwargs: Any) -> Response:

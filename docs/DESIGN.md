@@ -102,6 +102,15 @@ the listing shows, needs none. The rank is built before the read, so a posting `
 `requeue` sends back waits one more update for its text. On a very large site, `categories` (the
 site's own job categories) narrows each search, which otherwise matches any of its words.
 
+**Eightfold** career sites are a detail source of the same kind, read through the JSON their own
+pages load. A search lists 10 postings a request, with its total on every page, so a search
+matching more than 500 is refused; sites also refuse deep pages. Each request carries the domain
+the site's pages name, so an entry names host and domain, and the probe recognizes a site on a
+company's own host by the settings its pages embed. The listing gives place, remote work and date
+for stage 0. It has no employment type: that stays in the text, as for Workday, with the site's own
+posting fields. Robots.txt allows these paths; spike E11 in [spikes.md](spikes.md) records the terms
+read.
+
 **SAP SuccessFactors.** A Career Site Builder site has no API: its search pages are HTML, 25 postings
 a page with the number the search found. So the reader checks every page against that number (the
 rows a page's own count names, the same count on every page, no link to a page past it, and every

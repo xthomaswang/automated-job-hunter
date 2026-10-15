@@ -83,9 +83,11 @@ other systems: find the company's careers page, or one posting's link, and run
 `hunter sources probe <url> Company Name`. It reads Workday sites (added as
 `workday:<host>/<site>:Company`; on a very large site, also set `categories` from the job
 categories it lists), follows a company's own careers page to the board it links to, and
-names the systems this version cannot read, such as Oracle, Taleo, iCIMS, SuccessFactors on SAP's own hosts or
-Eightfold; for those, tell the user there is no board to add rather than searching further. It also
-reads SAP SuccessFactors career sites on a company's own domain, which it knows by their page (added as
+names the systems this version cannot read, such as Oracle, Taleo, iCIMS or SuccessFactors on SAP's
+own hosts; for those, tell the user there is no board to add rather than searching further. It also
+reads Eightfold career sites, on `<company>.eightfold.ai` or the company's own host (added as
+`eightfold:<host>/<domain>:Company`, with the domain the probe reads from the site), and SAP
+SuccessFactors career sites on a company's own domain, which it knows by their page (added as
 `successfactors:<host>:Company`); when it names SuccessFactors on SAP's own hosts, probe the company's
 own career site (often `jobs.<company>.com`) before giving up. Only
 boards with a public, no-login listing are supported. Never scrape LinkedIn or Indeed: their terms

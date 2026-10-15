@@ -49,3 +49,22 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - The `blk` tag in `state/` now records every fact a hard requirement checks, such as
   `blk:years=7+seniority=senior+unmet=degree`. Relaxing one requirement then sends back only the
   postings that no other requirement still leaves out. Tags written by earlier versions still work.
+
+### Workday career sites, and a probe that takes a careers URL
+
+- New source type `workday`, added as `workday:<host>/<site>:Company`. It reads the JSON the site's
+  own public page loads, through the site's search: `queries` on the entry, which default to the
+  wanted and related roles. That search matches any of the words; on a site where one search
+  matches more than 1,000 postings the source fails and says to set `categories` on the entry to
+  the site's job categories for these roles.
+- A Workday listing has no text, and each posting's text is one more request. Texts are fetched
+  only where an update needs them, postings about to be judged first, at most `max_details` (100)
+  per source per update, one request a second. A new posting joins the feed only with its text, so
+  a new Workday source fills in over a few updates, and nothing is closed for want of a text. The
+  README and `feed/meta.json` count the postings still waiting for theirs.
+- `sources probe <url> Company Name` takes a careers page or one posting's link. It reads
+  Greenhouse, Ashby, Lever, Recruitee and Workday URLs and prints the `add` line, listing a Workday
+  site's job categories with their counts; it follows a company's own careers page to the board it
+  links to; and it names the systems this version cannot read, such as Oracle Recruiting Cloud,
+  Taleo, iCIMS, SuccessFactors or Eightfold, instead of finding nothing. A name probe that finds
+  nothing says to probe a URL.

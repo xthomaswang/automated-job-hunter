@@ -111,6 +111,17 @@ for stage 0. It has no employment type: that stays in the text, as for Workday, 
 posting fields. Robots.txt allows these paths; spike E11 in [spikes.md](spikes.md) records the terms
 read.
 
+**SAP SuccessFactors.** A Career Site Builder site has no API: its search pages are HTML, 25 postings
+a page with the number the search found. So the reader checks every page against that number (the
+rows a page's own count names, the same count on every page, no link to a page past it, and every
+counted posting read), and a changed layout fails the source instead of closing postings. Each query
+is sent as a phrase, because the search matches any of the words anywhere in a posting, and there are
+no job categories to narrow it, so a search matching over 1,000 postings fails. A site whose search
+page fills itself in from a script is refused, because the script reads `/services/`, which the
+robots.txt SAP generates for every site disallows; so is SAP's older job board, whose hosts' robots.txt
+disallows everything. The text comes from the posting's own page, which must name itself as that
+posting; its `datePosted` is the day the page is read, so it is not used.
+
 **Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail
 source whose listing is the file. A row is only a pointer: it is used when its link is one posting
 on a system with a public API this engine reads (Greenhouse, Lever, Ashby, SmartRecruiters,

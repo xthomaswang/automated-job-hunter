@@ -18,14 +18,15 @@ from typing import Any, Optional
 
 from ..http import Client
 from ..model import Job, SourceError
-from . import aggregators, ats, eightfold, lists, smartrecruiters, workday
+from . import aggregators, ats, eightfold, lists, smartrecruiters, successfactors, workday
 
-KINDS = (*ats.ATS, "aggregator", *workday.KINDS, *smartrecruiters.KINDS, *lists.KINDS)
+KINDS = (*ats.ATS, "aggregator", *workday.KINDS, *smartrecruiters.KINDS, *lists.KINDS, *successfactors.KINDS)
 KINDS += eightfold.KINDS
 QUERY_SCOPED = (
     *workday.KINDS,
     *smartrecruiters.KINDS,
     *eightfold.KINDS,
+    *successfactors.KINDS,
 )  # read through their own search, by default for the wanted roles
 DETAILED = (*QUERY_SCOPED, *lists.KINDS)  # list postings without their text; see `fetch`
 
@@ -59,4 +60,6 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Rank | None = None) -
         return lists.fetch(client, source, rank)
     if kind in eightfold.KINDS:
         return eightfold.fetch(client, source, rank)
+    if kind in successfactors.KINDS:
+        return successfactors.fetch(client, source, rank)
     raise SourceError(f"Unknown source type {kind!r} for {source.get('id')!r}")

@@ -147,3 +147,19 @@ What changes for people who run a feed. Bring a feed repo up to date with
   Oracle reserves the job endpoints its career sites use for itself and approved partners. iCIMS's
   terms forbid any automated access to its career portals. So there is no board to add, and no
   other way in to look for. `docs/spikes.md` (E9, E10) quotes the documents.
+
+### Eightfold career sites
+
+- New source type `eightfold`, added as `eightfold:<host>/<domain>:Company`. It covers sites on
+  `<company>.eightfold.ai/careers` and the same app on a company's own host. `sources probe` takes
+  the careers page or one posting's link, recognizes either kind, and reads the domain the site's
+  own pages name, which its search needs.
+- A site is read through `queries`, like Workday. Every page of a search reports its total, and a
+  short read fails the source rather than closing postings. A search matching more than 500
+  postings fails and says to use more specific queries. Place, remote work and date come from the
+  listing. Texts are fetched on demand under `max_details`, one request a second.
+- `sources probe <url>` reads a company's careers page where its redirects end. When an old
+  address moves to the host a site is on now, the add line names that host, and the result shows
+  the address as `resolved`.
+- Some sites on a company's own host answer 429 (too many requests) after a few requests, even at
+  one a second. That update then skips the source and keeps its last snapshot.

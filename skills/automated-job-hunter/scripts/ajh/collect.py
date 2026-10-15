@@ -229,33 +229,58 @@ def retire(sid: str, rows: dict[str, Row], today: date) -> list[str]:
     return closed
 
 
+def kind_of(source: Mapping[str, Any]) -> str:
+    """How a source ranks when several list one opening: `official` (an employer's own board) or
+    `aggregator` (a third-party listing, which defers to an official one)."""
+    return "aggregator" if source.get("ats") == "aggregator" else "official"
+
+
 def assign_variants(state: State, seen: Mapping[str, Mapping[str, Seen]], kinds: Mapping[str, str]) -> int:
     """Mark postings that need no judgment of their own. Returns how many are variants.
 
-    An aggregator copy of an opening an employer's own board lists (same company and title) defers
-    to the official posting. Within one source, postings with the same company and title and
-    near-identical text (one opening listed per location) defer to one representative.
-    Recomputed from scratch for every source read this tick, so it never drifts.
+    - An aggregator copy of an opening an employer's own board lists (same company and title)
+      defers to the official posting.
+    - Copies of one opening on several aggregators (same company and title) defer to one of them:
+      one already judged if there is one, else the one with the lowest key. Within one aggregator,
+      a copy also needs near-identical text, as below.
+    - Within one source, postings with the same company and title and near-identical text (one
+      opening listed per location) defer to one representative.
+
+    Recomputed from scratch for every source read this tick, from what the state holds for every
+    source, so it never drifts.
     """
     for sid in seen:
         for row in state.rows(sid).values():
             if row.status == "V":
                 row.status, row.note = "P", "-"
     official: dict[str, str] = {}
+    copies: dict[str, tuple[bool, str]] = {}  # company and title -> (not judged yet, key) of the copy to defer to
     for sid in state.source_ids():
-        if kinds.get(sid) == "official":
-            for row in state.rows(sid).values():
-                if row.status not in "XVS":
-                    key = f"{sid}:{row.id}"
-                    official[row.gk] = min(key, official.get(row.gk, key))
+        for row in state.rows(sid).values():
+            if row.status in "XVS":
+                continue
+            key = f"{sid}:{row.id}"
+            if kinds.get(sid) == "official":
+                official[row.gk] = min(key, official.get(row.gk, key))
+            elif kinds.get(sid) == "aggregator":
+                rank = (row.status not in JUDGED, key)
+                copies[row.gk] = min(rank, copies.get(row.gk, rank))
     count = 0
     for sid, items in seen.items():
         rows = state.rows(sid)
         if kinds.get(sid) == "aggregator":
-            for jid in items:
+            for jid, item in items.items():
                 row = rows[jid]
-                if row.status == "P" and row.note == "-" and row.gk in official:
-                    row.status, row.note = "V", official[row.gk]
+                if row.status != "P" or row.note != "-":
+                    continue
+                lead = official.get(row.gk)
+                if lead is None and row.gk in copies and copies[row.gk][1] != f"{sid}:{jid}":
+                    first = copies[row.gk][1]
+                    other, fid = split_key(first)
+                    if other != sid or (fid in items and _near(item.simhash, items[fid].simhash)):
+                        lead = first
+                if lead is not None:
+                    row.status, row.note = "V", lead
                     count += 1
             continue
         groups: dict[str, list[str]] = {}
@@ -442,7 +467,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
 
     generations = advance_generations(state, C.profile_hashes(criteria, profile_text))
     stage0 = C.Stage0(criteria, places)
-    kinds = {s["id"]: "aggregator" if s["ats"] == "aggregator" else "official" for s in sources}
+    kinds = {s["id"]: kind_of(s) for s in sources}
 
     def due(source: Mapping[str, Any]) -> bool:
         after = state.sources.get(source["id"], {}).get("next_after")

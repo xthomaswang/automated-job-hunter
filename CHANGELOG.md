@@ -79,3 +79,20 @@ What changes for people who run a feed. Bring a feed repo up to date with
   more specific queries.
 - `sources probe "Company Name"` also finds SmartRecruiters companies, and `sources probe <url>`
   reads a SmartRecruiters posting's link.
+
+### Job lists on GitHub as sources, and each posting judged once
+
+- New source type `github-list`: a job list kept in a public GitHub repo, as a JSON file or Markdown
+  tables. A row is used only when its link is one posting on Greenhouse, Lever, Ashby,
+  SmartRecruiters or Workday. That posting's text, date and link come from the employer's system,
+  so it is listed as `official`. Rows that link to sites that re-post jobs, to systems with no
+  public API, or to employers' own pages are skipped. Add a list to `config/sources.json` by hand
+  (step 4 of `references/setup.md`); `sources test` shows what became of every row.
+- `filters` (fields of a JSON list) and `sections` (headings of a Markdown list) leave rows out in
+  code, before any text is fetched. A list fails instead of leaving out every row when its config
+  matches nothing in it (a section name, a filter value or a filter field), so a typo or a renamed
+  heading never closes the postings it had.
+- A posting is judged once, wherever it is listed: a list's posting on a board the feed watches
+  defers to the board's own, a posting two lists name is judged once, and copies of one opening on
+  several aggregators defer to one of them. An aggregator copy also defers to a list's posting.
+- A SmartRecruiters posting's date now comes from its detail when its listing gave none.

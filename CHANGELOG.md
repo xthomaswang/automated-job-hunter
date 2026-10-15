@@ -140,3 +140,10 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - Two kinds of SuccessFactors site stay unread, as their robots.txt requires: sites whose search
   loads its postings from a script, and SAP's older job board on its own hosts. The probe names
   both, and for the older board suggests probing the company's own career site.
+
+### Why Oracle Recruiting Cloud and iCIMS have no reader
+
+- `sources probe` still names these two systems as ones this version cannot read, and now says why.
+  Oracle reserves the job endpoints its career sites use for itself and approved partners. iCIMS's
+  terms forbid any automated access to its career portals. So there is no board to add, and no
+  other way in to look for. `docs/spikes.md` (E9, E10) quotes the documents.

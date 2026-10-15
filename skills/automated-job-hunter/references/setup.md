@@ -147,7 +147,7 @@ A job list someone keeps on GitHub, as a JSON file or Markdown tables, can be a 
 the user names one. Each row is only a pointer. A row whose link is one posting on Greenhouse,
 Lever, Ashby, SmartRecruiters or Workday is read from that system, with its own text and date, and
 judged like a posting from the employer's board. Rows that link anywhere else (sites that re-post
-jobs, systems such as iCIMS with no public API, an employer's own page) are skipped. Add the list
+jobs, systems this version cannot read such as iCIMS, an employer's own page) are skipped. Add the list
 to `config/sources.json` by hand:
 
 ```json

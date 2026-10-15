@@ -34,7 +34,13 @@ JSON_LIST = {
     "path": "jobs.json",
     "filters": {"region": ["US"], "seniority": ["junior", "mid"]},
 }
-README = {"id": "radar", "ats": "github-list", "repo": "someone/job-radar", "path": "README.md", "label": "Job radar"}
+README = {
+    "id": "tables",
+    "ats": "github-list",
+    "repo": "someone/open-roles",
+    "path": "README.md",
+    "label": "Open roles",
+}
 HOOLI = "https://jobs.smartrecruiters.com/Hooli/744000001-ux-researcher"
 
 
@@ -58,7 +64,7 @@ ROLES = [
     role("Hooli", "https://careers.hooli.example/jobs/1"),
     role("Initech", f"https://jobs.lever.co/initech/{LEVER_ID}?utm_source=list"),  # named twice
 ]
-RADAR = """# Job radar
+TABLES = """# Open roles
 
 ## Mid
 
@@ -66,6 +72,8 @@ RADAR = """# Job radar
 |:---|:---|:---|:---:|:---:|
 | **Hooli** 🔥 🇺🇸<br><sub>via Remotive</sub> | UX Researcher ⚠️<br><sub>req 2y</sub> | Remote<br>restrictions unspecified | [Apply](HOOLI) | 0d |
 | ↳ | Research Ops<br><sub>pref 1–3y</sub> | San Jose, CA | [Apply](https://jobs.lever.co/hooli/99999999-1111-2222-3333-444455556666) | 3d |
+
+## Senior
 
 <details><summary>Show 1 role</summary>
 
@@ -87,7 +95,7 @@ def boards():
     found = Boards(acme=[posting(1)], globex=[posting(5, published="2026-07-01T00:00:00Z")])
     found.lists = {
         "someone/job-list/main/jobs.json": json.dumps({"updated": "2026-10-13T00:00:00Z", "count": 11, "roles": ROLES}),
-        "someone/job-radar/main/README.md": RADAR,
+        "someone/open-roles/main/README.md": TABLES,
     }
     found.lever = {"initech": {LEVER_ID: lever_posting(LEVER_ID)}, "hooli": {}}
     found.ashby = {"globex": [ashby_posting(ASHBY_ID)]}
@@ -153,7 +161,7 @@ def test_a_watched_boards_posting_lives_where_a_lists_link_to_it_says():
 
 
 def test_markdown_tables_give_their_rows_and_other_tables_are_skipped():
-    facts = [found for found, _ in L._markdown_rows(README, RADAR)]
+    facts = [found for found, _ in L._markdown_rows(README, TABLES)]
     assert facts == [
         {"company": "Hooli", "title": "UX Researcher", "location": "Remote; restrictions unspecified", "link": HOOLI},
         {"company": "Hooli", "title": "Research Ops", "location": "San Jose, CA",
@@ -161,6 +169,15 @@ def test_markdown_tables_give_their_rows_and_other_tables_are_skipped():
         {"company": "Initech", "title": "UX Researcher", "location": "Austin, TX",
          "link": "https://himalayas.app/companies/initech/jobs/1"},
     ]  # fmt: skip
+
+
+def test_sections_keep_only_the_tables_under_the_headings_named(repo):
+    found = boards()
+    client = Client(found.transport, sleep=lambda s: None, retries=0)
+    listed, tally = L.read(client, {**README, "sections": ["Mid"]})
+    assert (tally["rows"], tally["filtered"], tally["skipped"]) == (3, 1, {})  # the Senior table is left out
+    assert sorted(listed) == ["lever~hooli~99999999-1111-2222-3333-444455556666", "smartrecruiters~Hooli~744000001"]
+    assert L.problems({**README, "sections": "Mid"}) == ["tables: sections must be a list of headings"]
 
 
 def test_sources_test_says_what_became_of_every_row_and_hosts_name_every_system(repo):
@@ -175,7 +192,7 @@ def test_sources_test_says_what_became_of_every_row_and_hosts_name_every_system(
         "systems": {"greenhouse": 1, "lever": 1, "ashby": 1, "smartrecruiters": 1, "workday": 1},
         "postings": 5,
     }
-    assert report["sources"]["radar"]["skipped"] == {"re-poster": 1}
+    assert report["sources"]["tables"]["skipped"] == {"re-poster": 1}
     hosts = registry.hosts(root)["hosts"]
     assert {"raw.githubusercontent.com", "boards-api.greenhouse.io", "api.lever.co", "*.myworkdayjobs.com"} <= set(
         hosts
@@ -190,9 +207,9 @@ def test_each_posting_is_judged_once_wherever_it_is_listed(repo):
     listed = rows(root, "joblist")
     assert (listed["greenhouse~acme~1"].status, listed["greenhouse~acme~1"].note) == ("V", "acme:1")
     assert all(listed[jid].status == "P" for jid in listed if jid != "greenhouse~acme~1") and len(listed) == 5
-    radar = rows(root, "radar")
+    tables = rows(root, "tables")
     hooli = "smartrecruiters~Hooli~744000001"
-    assert (radar[hooli].status, radar[hooli].note) == ("V", f"joblist:{hooli}")  # two lists, one posting
+    assert (tables[hooli].status, tables[hooli].note) == ("V", f"joblist:{hooli}")  # two lists, one posting
     assert (rows(root, "remotive")["7"].status, rows(root, "remotive")["7"].note) == (
         "V",
         f"joblist:lever~initech~{LEVER_ID}",
@@ -230,10 +247,10 @@ def test_a_lists_posting_is_the_employers_own_with_its_text_and_date_from_their_
 def test_a_board_named_in_another_case_is_the_same_board(repo):
     root = repo(sources=(JSON_LIST, README))
     found = boards()
-    found.lists["someone/job-radar/main/README.md"] = RADAR.replace("/Hooli/", "/hooli/")
+    found.lists["someone/open-roles/main/README.md"] = TABLES.replace("/Hooli/", "/hooli/")
     tick(root, found)
-    radar = rows(root, "radar")["smartrecruiters~hooli~744000001"]  # in the state, so its text was fetched
-    assert (radar.status, radar.note) == ("V", "joblist:smartrecruiters~Hooli~744000001")
+    tables = rows(root, "tables")["smartrecruiters~hooli~744000001"]  # in the state, so its text was fetched
+    assert (tables.status, tables.note) == ("V", "joblist:smartrecruiters~Hooli~744000001")
     site = {"id": "g", "ats": "workday", "company": "Globex", "host": "globex.wd5.myworkdayjobs.com", "site": 7}
     assert L.board_identity(site, "R1") is None
 

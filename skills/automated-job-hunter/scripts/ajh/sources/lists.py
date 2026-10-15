@@ -190,6 +190,9 @@ def problems(source: Mapping[str, Any]) -> list[str]:
         value = source.get(name, {})
         if not isinstance(value, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):
             found.append(f"{sid}: {name} must map names to names")
+    sections = source.get("sections", [])
+    if not isinstance(sections, list) or not all(isinstance(s, str) and s.strip() for s in sections):
+        found.append(f"{sid}: sections must be a list of headings")
     filters = source.get("filters", {})
     if not isinstance(filters, dict) or not all(
         isinstance(k, str) and isinstance(v, list) and all(isinstance(x, str) for x in v) for k, v in filters.items()
@@ -240,14 +243,17 @@ def _cells(line: str) -> list[str]:
 def _markdown_rows(source: Mapping[str, Any], text: str) -> list[tuple[dict[str, str], dict[str, Any]]]:
     """Rows of every table whose headings name a company, a role and a link; other tables are skipped.
 
-    A company cell of `↳` means the company of the row above.
+    A company cell of `↳` means the company of the row above. Each row also carries the Markdown
+    heading its table is under, which `sections` filters on.
     """
     named = source.get("columns") or {}
     wanted = {fact: (named[fact].casefold(),) if fact in named else names for fact, names in HEADINGS.items()}
-    lines, rows, at = text.splitlines(), [], 0
+    lines, rows, at, section = text.splitlines(), [], 0, ""
     while at < len(lines) - 1:
         head, rule = lines[at].strip(), lines[at + 1].strip()
         at += 1
+        if head.startswith("#"):
+            section = _plain(head.lstrip("#")).casefold()
         if not (head.startswith("|") and rule.startswith("|")):
             continue
         if not all(re.fullmatch(r":?-{3,}:?", cell) for cell in _cells(rule)):
@@ -273,7 +279,7 @@ def _markdown_rows(source: Mapping[str, Any], text: str) -> list[tuple[dict[str,
                 "location": _plain(cell["location"], joiner="; "),
                 "link": _href(cell["link"]),
             }
-            rows.append((facts, {}))
+            rows.append((facts, {"section": section}))
     return rows
 
 
@@ -325,8 +331,12 @@ def read(client: Client, source: Mapping[str, Any]) -> tuple[dict[str, tuple[Job
         raise SourceError("The list has no rows of jobs; refusing an empty snapshot")
     tally: dict[str, Any] = {"rows": len(rows), "filtered": 0, "skipped": {}, "repeated": 0, "systems": {}}
     listed: dict[str, tuple[Job, Link]] = {}
+    sections = [name.casefold() for name in source.get("sections") or []]
     for facts, raw in rows:
-        if not _kept(raw, source.get("filters") or {}):
+        under = raw.get("section") if _format(source) == "markdown" else None
+        if not _kept(raw, source.get("filters") or {}) or (
+            sections and under is not None and not under.startswith(tuple(sections))
+        ):
             tally["filtered"] += 1
             continue
         found_link = link(facts["link"])

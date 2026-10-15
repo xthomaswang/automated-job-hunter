@@ -139,7 +139,8 @@ to `config/sources.json` by hand:
   leaves the field empty is kept.
 - Markdown: every table whose headings name a company, a role and a link (`Application`, `Apply`,
   `Link`) is read; `↳` in the company column means the company of the row above. Map other
-  headings with `columns`.
+  headings with `columns`. `sections` keeps only the tables under the page headings that start with
+  one of the names, for example `["Junior", "Mid"]`.
 - `hunter sources test` shows what became of each list's rows: left out by `filters`, skipped and
   why, named twice, and how many postings each system gave.
 

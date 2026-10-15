@@ -176,7 +176,13 @@ def main(argv: list[str] | None = None) -> int:
     step.set_defaults(run=_status)
     step = commands.add_parser("sources", help="choose which job boards this feed watches")
     step.add_argument("action", choices=["list", "add", "remove", "probe", "hosts", "test"])
-    step.add_argument("items", nargs="*", help="registry ids, `ats:slug:Company` entries, or a company name to probe")
+    step.add_argument(
+        "items",
+        nargs="*",
+        help="registry ids, `ats:slug:Company`, `smartrecruiters:<company>:Company` or `workday:<host>/<site>:Company` "
+        "entries, or what to probe: "
+        "a company name, or a careers page URL followed by the company name",
+    )
     step.set_defaults(run=_sources)
     step = commands.add_parser("init", help="create a feed repo at --repo (run from the installed skill)")
     step.add_argument(

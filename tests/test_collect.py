@@ -11,14 +11,17 @@ from helpers import (
     ACME,
     CRITERIA,
     GLOBEX,
+    JOBICY,
     NOW,
     REMOTIVE,
     Boards,
     frozen_hash,
+    jobicy_posting,
     judge,
     plan,
     posting,
     prose,
+    remotive_posting,
     rows,
     tick,
     tracked,
@@ -260,6 +263,53 @@ def test_an_aggregator_copy_defers_to_the_employers_own_posting(repo):
     tick(root, boards)
     tick(root, boards)
     assert rows(root)["1"].status == "X" and rows(root, "remotive")["7"].status == "P"
+
+
+def test_copies_of_one_opening_on_several_aggregators_are_judged_once(repo):
+    root = repo(sources=(ACME, REMOTIVE, JOBICY))
+    boards = Boards(acme=[posting(1)])
+    boards.remotive = [
+        remotive_posting(7, company="Initech"),
+        remotive_posting(8, title="Research Ops", company="Initech"),
+    ]
+    boards.jobicy = [jobicy_posting(3, company="Initech, Inc."), jobicy_posting(4)]
+    tick(root, boards)
+    # with none judged yet, the lowest key represents the copies; one of the employer's own posting defers to it
+    assert (rows(root, "remotive")["7"].status, rows(root, "remotive")["7"].note) == ("V", "jobicy:3")
+    assert (rows(root, "jobicy")["4"].status, rows(root, "jobicy")["4"].note) == ("V", "acme:1")
+    assert plan(root)["queue"]["triage"] == ["acme:1", "jobicy:3", "remotive:8"]
+
+
+def test_a_copy_already_judged_represents_the_others_until_it_closes(repo):
+    root = repo(sources=(REMOTIVE, JOBICY))
+    boards = Boards()
+    boards.remotive = [remotive_posting(7, company="Initech"), remotive_posting(8, title="Research Ops")]
+    tick(root, boards)
+    judge(root, "remotive", "7", "D")
+    boards.jobicy = [jobicy_posting(3, company="Initech")]  # the same opening on a second aggregator, lower key
+    tick(root, boards)
+    assert (rows(root, "jobicy")["3"].status, rows(root, "jobicy")["3"].note) == ("V", "remotive:7")
+    assert plan(root)["queue"]["triage"] == ["remotive:8"]
+    boards.remotive = [remotive_posting(8, title="Research Ops")]  # the judged copy closes
+    tick(root, boards)
+    tick(root, boards)
+    assert rows(root, "remotive")["7"].status == "X"
+    assert (rows(root, "jobicy")["3"].status, rows(root, "jobicy")["3"].note) == ("P", "-")
+    assert plan(root)["queue"]["triage"] == ["jobicy:3", "remotive:8"]
+
+
+def test_within_one_aggregator_a_copy_also_needs_near_identical_text(repo):
+    root = repo(sources=(JOBICY,))
+    same = prose(30)
+    boards = Boards()
+    boards.jobicy = [
+        jobicy_posting(3, text=same),
+        jobicy_posting(5, text=same + " Based in Austin."),
+        jobicy_posting(6, text=prose(6)),  # same company and title, another opening
+    ]
+    tick(root, boards)
+    copies = rows(root, "jobicy")
+    assert [(copies[j].status, copies[j].note) for j in ("3", "5", "6")] == [("P", "-"), ("V", "jobicy:3"), ("P", "-")]
 
 
 def test_changed_targets_reopen_triage_drops_and_a_changed_profile_requeues_assessments(repo):

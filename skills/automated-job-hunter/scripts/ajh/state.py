@@ -23,7 +23,8 @@ from typing import Any
 
 from . import __version__
 
-SCHEMA_VERSION = 1
+# 2: a `blk` tag holds several facts (`years=7+seniority=senior`), which an engine reading 1 misreads.
+SCHEMA_VERSION = 2
 STATUSES = "PDKARUVSX"
 COLUMNS = ("id", "status", "first_seen", "gk", "tfp", "dsh", "fit", "tg", "ag", "attempts", "miss", "note")
 SOURCE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
@@ -57,7 +58,9 @@ def tag(row: Row, name: str) -> str | None:
     """A tag from a pending row's note, which holds `;`-separated `name` or `name:value` entries.
 
     Tags: `was:<status>` (a published posting being re-judged), `fb:<codes>` (why the last answer was
-    rejected), `canary` (a triage drop sent to assessment to measure what triage misses).
+    rejected), `canary` (a triage drop sent to assessment to measure what triage misses),
+    `blk:<facts>` (left out by a hard requirement; the facts it was checked on, see `feed.hard_limit`),
+    `unmet:<kinds>` (an assessed posting's unmet requirements, listed or not).
     """
     for part in row.note.split(";"):
         key, _, value = part.partition(":")
@@ -131,8 +134,13 @@ class State:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
         self.meta: dict[str, Any] = read_json(self.root / "meta.json", {})
-        if self.meta and self.meta.get("schema_version") != SCHEMA_VERSION:
-            raise StateError(f"State schema {self.meta.get('schema_version')!r} needs `hunter upgrade` first")
+        version = self.meta.get("schema_version")
+        if self.meta and not (isinstance(version, int) and 1 <= version <= SCHEMA_VERSION):
+            raise StateError(
+                f"The feed's state is schema {version!r}, written by engine {self.meta.get('engine_version')!r}; "
+                f"this engine ({__version__}) reads up to schema {SCHEMA_VERSION}. Run `hunter upgrade` from a newer "
+                "copy of the skill."
+            )
         self.sources: dict[str, dict[str, Any]] = read_json(self.root / "sources.json", {})
         self.profile: dict[str, Any] = read_json(self.root / "profile.json", {})
         self._rows: dict[str, dict[str, Row]] = {}

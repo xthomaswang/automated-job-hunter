@@ -78,12 +78,22 @@ Do not copy the résumé file into the feed repo.
     posting that states no years is never left out, and preferred years never count.
   - `thresholds.max_seniority` (`intern` to `staff`): leave out postings assessed as more senior,
     which catches leadership roles that state no years. An unknown seniority never counts.
+  - `thresholds.unmet_requirements`: any of `degree`, `enrollment`, `credential` and `license`.
+    Leave out postings whose assessment quotes a mandatory requirement of that kind the profile does
+    not meet, such as a PhD, current enrollment in a degree program, or a nursing license. A
+    requirement that is only preferred, or that equivalent experience can replace, never counts.
+    The assessment can only tell from what the profile says, so the profile must state the person's
+    degrees and fields, whether they are enrolled now (in what program, finishing when), and any
+    certifications or licenses; otherwise nothing is ever left out for it. With the list empty,
+    unmet requirements are still flagged in the README and quoted in each brief, so the user can
+    see a few before deciding which kinds should leave postings out.
   - `thresholds.direct_min`: the lowest fit at which a wanted role is still listed. Unset, a wanted
     role is always listed, however low the fit.
 
   These change only what is listed, so they judge nothing again and take effect at the next update,
   for postings already listed too. Relaxing a hard requirement sends the postings it left out back
-  to be assessed.
+  to be assessed. Unmet requirements are found only by assessments made since rubric `assess-v2`
+  (see "Changing the search" in SKILL.md for checking older ones).
 - Optional: `caps.max_usd_per_month`, a monthly budget in US dollars (unset: no budget). Before each
   update the engine adds up this month's spending from `feed/usage.jsonl`; once it has reached the
   budget, judging pauses until the first of next month, and new postings wait in the queue. Months
@@ -99,8 +109,58 @@ and companies they named, and for a company that is not listed run
 `hunter sources probe "Company Name"`. Show the user the list and let them adjust it. Twenty to
 sixty boards is a normal size.
 
+For a large employer the name probe often finds nothing, because many use Workday or a system
+this version cannot read (it does find SmartRecruiters companies by name). Find its careers page (or the link of one of its postings) and run
+`hunter sources probe <url> Company Name`; add what it reports, or tell the user the system it
+names is not supported. A Workday site is read through its own search for the wanted and related
+roles (set `queries` on the entry to search for something else). That search matches any of the
+words, so it returns many unrelated postings, which triage screens out cheaply. On a very large
+site a search can match more than 1,000 postings and the source then fails: set `categories` on
+the entry to the site's job categories for these roles, which the probe lists with their counts,
+for example `"categories": ["Research", "Design"]`. Use it only then: on a site of a few hundred
+postings, leave it off, because a role is often filed under a generic category ("Product",
+"Strategy") and triage screens the rest out cheaply. Some sites list no categories at all (the
+probe shows an empty list); there, use fewer queries. Its postings' texts take one request each,
+so a new Workday source fills in over a few updates, up to 100 postings an update; the feed's
+README counts the ones still waiting for their text. SmartRecruiters companies
+(`smartrecruiters:<company>:Company`) are searched and filled in the same way. Sites on the
+shared host (`wd1.myworkdaysite.com/recruiting/<tenant>/<site>`) work the same way; the probe
+prints their add line with the tenant.
+
 The job feeds (`remotive`, `remoteok`, `jobicy`) list remote jobs from many employers. They are
 broad and noisy; add them only if the user wants remote work.
+
+A job list someone keeps on GitHub, as a JSON file or Markdown tables, can be a source too, when
+the user names one. Each row is only a pointer. A row whose link is one posting on Greenhouse,
+Lever, Ashby, SmartRecruiters or Workday is read from that system, with its own text and date, and
+judged like a posting from the employer's board. Rows that link anywhere else (sites that re-post
+jobs, systems such as iCIMS with no public API, an employer's own page) are skipped. Add the list
+to `config/sources.json` by hand:
+
+```json
+{"id": "joblist", "ats": "github-list", "repo": "<owner>/<repo>", "path": "jobs.json", "filters": {"region": ["US"]}}
+```
+
+- `branch` is `main` unless set. The format comes from the file's ending (`.json`, `.md`), or set
+  `format` to `json` or `markdown`.
+- JSON: a list of rows, or an object holding one list (otherwise set `rows` to its key). The fields
+  read are `company`, `title`, `location` and `url`; map other names with `fields`, for example
+  `{"link": "applyUrl"}`. `filters` keeps the rows whose field has one of the values; a row that
+  leaves the field empty is kept.
+- Markdown: every table whose headings name a company, a role and a link (`Application`, `Apply`,
+  `Link`) is read; `↳` in the company column means the company of the row above. Map other
+  headings with `columns`. `sections` keeps only the tables under the page headings that contain
+  one of the names as whole words: `["Junior", "Mid"]` keeps a table under "🌱 Team Junior" and
+  leaves out one under "Midwest".
+- `hunter sources test` shows what became of each list's rows: left out by `filters` or `sections`,
+  skipped and why, named twice, and how many postings each system gave. `unmatched` lists the
+  section names and filter values nothing in the list has today. When none of the section names,
+  or none of a filter's values, matches anything, or no row has the filter's field at all, the list
+  fails with a message naming what it has, instead of leaving out every row and closing its postings.
+
+A posting a list shares with a board the feed watches, or with another list, is judged once. Each
+update fetches the text of up to 50 of a list's new postings (`max_details`), so a long list fills
+in over a few updates.
 
 ## 5. Create the feed repo
 

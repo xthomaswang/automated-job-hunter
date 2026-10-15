@@ -1,5 +1,8 @@
+import json
+
 import pytest
-from ajh.state import COLUMNS, Row, State, StateError, read_rows, rows_text
+from ajh import __version__
+from ajh.state import COLUMNS, SCHEMA_VERSION, Row, State, StateError, read_rows, rows_text
 
 
 def filled(root):
@@ -60,9 +63,19 @@ def test_a_damaged_rows_file_is_an_error_not_a_guess(tmp_path, text):
 
 
 def test_unknown_schema_and_unsafe_source_ids_are_refused(tmp_path):
-    (tmp_path / "meta.json").write_text('{"schema_version": 99}')
-    with pytest.raises(StateError, match="upgrade"):
+    (tmp_path / "meta.json").write_text('{"schema_version": 99, "engine_version": "9.0.0"}')
+    with pytest.raises(StateError, match=r"written by engine '9.0.0'.*newer copy of the skill"):
         State(tmp_path)
     with pytest.raises(StateError, match="Unsafe"):
         State(tmp_path / "fresh").rows("../escape")
     assert read_rows(tmp_path / "absent.tsv") == {}
+
+
+def test_state_written_by_an_older_engine_is_read_and_saved_in_the_current_schema(tmp_path):
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old" / "meta.json").write_text(
+        '{"schema_version": 1, "engine_version": "0.1.0", "as_of": "2026-10-12"}'
+    )
+    State(tmp_path / "old").save(tmp_path / "new", "2026-10-13")
+    saved = json.loads((tmp_path / "new" / "meta.json").read_text())
+    assert (saved["schema_version"], saved["engine_version"]) == (SCHEMA_VERSION, __version__) and SCHEMA_VERSION == 2

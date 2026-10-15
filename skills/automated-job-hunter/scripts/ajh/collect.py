@@ -23,6 +23,7 @@ from .http import Client, HttpError
 from .layout import Layout
 from .model import Job, digest
 from .rules import age_days, parse_date
+from .sources import lists as L
 from .state import SOURCE_ID, Row, State, dump_json, read_json, set_tag, tag, write_text
 from .textutil import company_key, hamming, simhash64, words_key
 
@@ -66,8 +67,10 @@ def load_sources(path: Path) -> list[dict[str, Any]]:
         if entry.get("ats") not in S.KINDS:
             problems.append(f"{sid}: unknown source type {entry.get('ats')!r}")
         company = entry.get("company")
-        if entry.get("ats") != "aggregator" and not (isinstance(company, str) and company.strip()):
+        if entry.get("ats") not in ("aggregator", *L.KINDS) and not (isinstance(company, str) and company.strip()):
             problems.append(f"{sid}: company is required")
+        if entry.get("ats") in L.KINDS:
+            problems.extend(L.problems(entry))
         if entry.get("membership_mode", "snapshot") not in ("snapshot", "rolling"):
             problems.append(f"{sid}: membership_mode must be snapshot or rolling")
         interval = entry.get("min_fetch_interval_seconds", 0)
@@ -112,6 +115,7 @@ def reconcile(
     events: dict[str, Any] = {
         "new": 0,
         "parked": 0,
+        "waiting": 0,
         "changed": [],
         "revived": [],
         "closed": [],
@@ -133,7 +137,8 @@ def reconcile(
 
     # Hold closures for one tick when the board shrank sharply or its search scope changed: a
     # half-working feed looks exactly like many postings closing at once.
-    scope = digest(source.get("queries"))[:12] if source.get("queries") else None
+    queries, narrowed = source.get("queries"), source.get("categories")
+    scope = digest({"queries": queries, "categories": narrowed} if narrowed else queries)[:12] if queries else None
     rebaselined = not first_snapshot and info.get("scope") != scope
     if scope:
         info["scope"] = scope
@@ -151,11 +156,19 @@ def reconcile(
         info.pop("shrink_seen", None)
     hold = events["held"] or rebaselined
 
-    for jid, item in seen.items():
+    for jid, item in list(seen.items()):
         row = rows.get(jid)
+        if row is None and item.job.detail_skipped:
+            # It enters with its text on a later update. Nothing knew it, so nothing closes, and until
+            # then it is in no group and no packet either.
+            events["waiting"] += 1
+            del seen[jid]
+            continue
         if row is None:
+            # A detail source's postings arrive over several updates as their text is fetched, so
+            # the backfill limit applies to each one as it arrives, not only to the first read.
             parked = (
-                first_snapshot
+                (first_snapshot or source.get("ats") in S.DETAILED)
                 and backfill_days is not None
                 and (age_days(item.job.posted_at, today) or 0) > backfill_days
             )
@@ -219,38 +232,92 @@ def retire(sid: str, rows: dict[str, Row], today: date) -> list[str]:
     return closed
 
 
-def assign_variants(state: State, seen: Mapping[str, Mapping[str, Seen]], kinds: Mapping[str, str]) -> int:
+def kind_of(source: Mapping[str, Any]) -> str:
+    """How a source ranks when several list one opening: `official` (an employer's own board), `list`
+    (a GitHub job list, whose postings are read from employers' boards the feed does not watch), or
+    `aggregator` (a third-party listing). Each defers to the ones before it."""
+    kind = source.get("ats")
+    return "aggregator" if kind == "aggregator" else "list" if kind in L.KINDS else "official"
+
+
+def assign_variants(
+    state: State, seen: Mapping[str, Mapping[str, Seen]], sources: Mapping[str, Mapping[str, Any]]
+) -> int:
     """Mark postings that need no judgment of their own. Returns how many are variants.
 
-    An aggregator copy of an opening an employer's own board lists (same company and title) defers
-    to the official posting. Within one source, postings with the same company and title and
-    near-identical text (one opening listed per location) defer to one representative.
-    Recomputed from scratch for every source read this tick, so it never drifts.
+    - A list's posting that is on a board the feed watches (the same posting, by where it lives)
+      defers to the board's own. So does one with the same company and title as a board's posting.
+    - Lists that name one posting defer to one of them: one already judged if there is one, else
+      the one with the lowest key.
+    - An aggregator copy of an opening an employer's own board lists, or a list names (same company
+      and title), defers to that posting.
+    - Copies of one opening on several aggregators (same company and title) defer to one of them,
+      chosen the same way. Within one aggregator, a copy also needs near-identical text, as below.
+    - Within one source, postings with the same company and title and near-identical text (one
+      opening listed per location) defer to one representative.
+
+    Recomputed from scratch for every source read this tick, from what the state holds for every
+    source, so it never drifts.
     """
+    kinds = {sid: kind_of(source) for sid, source in sources.items()}
     for sid in seen:
         for row in state.rows(sid).values():
             if row.status == "V":
                 row.status, row.note = "P", "-"
     official: dict[str, str] = {}
+    boards: dict[tuple[str, str, str], str] = {}  # where a watched board's posting lives -> its key
+    named: dict[tuple[str, str, str], tuple[bool, str]] = {}  # where a list's posting lives -> (not judged, key)
+    listed: dict[str, tuple[bool, str]] = {}  # company and title -> (not judged, key) of a list's posting
+    copies: dict[str, tuple[bool, str]] = {}  # company and title -> (not judged, key) of an aggregator copy
     for sid in state.source_ids():
-        if kinds.get(sid) == "official":
-            for row in state.rows(sid).values():
-                if row.status not in "XVS":
-                    key = f"{sid}:{row.id}"
-                    official[row.gk] = min(key, official.get(row.gk, key))
+        kind = kinds.get(sid)
+        for row in state.rows(sid).values():
+            if row.status in "XVS":
+                continue
+            key, rank = f"{sid}:{row.id}", (row.status not in JUDGED, f"{sid}:{row.id}")
+            if kind == "official":
+                official[row.gk] = min(key, official.get(row.gk, key))
+                where = L.board_identity(sources[sid], row.id)
+                if where:
+                    boards[where] = min(key, boards.get(where, key))
+            elif kind == "list":
+                where = L.identity(row.id)
+                if where:
+                    named[where] = min(rank, named.get(where, rank))
+                listed[row.gk] = min(rank, listed.get(row.gk, rank))
+            elif kind == "aggregator":
+                copies[row.gk] = min(rank, copies.get(row.gk, rank))
     count = 0
     for sid, items in seen.items():
-        rows = state.rows(sid)
-        if kinds.get(sid) == "aggregator":
-            for jid in items:
-                row = rows[jid]
-                if row.status == "P" and row.note == "-" and row.gk in official:
-                    row.status, row.note = "V", official[row.gk]
+        rows, kind = state.rows(sid), kinds.get(sid)
+        if kind in ("list", "aggregator"):
+            for jid, item in items.items():
+                row, own = rows[jid], f"{sid}:{jid}"
+                if row.status != "P" or row.note != "-":
+                    continue
+                lead = official.get(row.gk)
+                if kind == "list":
+                    where = L.identity(jid)
+                    lead = boards.get(where) if where else None
+                    lead = lead or official.get(row.gk)
+                    if lead is None and where in named and named[where][1] != own:
+                        lead = named[where][1]
+                else:
+                    lead = lead or (listed[row.gk][1] if row.gk in listed else None)
+                    if lead is None and row.gk in copies and copies[row.gk][1] != own:
+                        first = copies[row.gk][1]
+                        other, fid = split_key(first)
+                        if other != sid or (fid in items and _near(item.simhash, items[fid].simhash)):
+                            lead = first
+                if lead is not None:
+                    row.status, row.note = "V", lead
                     count += 1
-            continue
+            if kind == "aggregator":
+                continue
         groups: dict[str, list[str]] = {}
         for jid, item in items.items():
-            groups.setdefault(item.gk, []).append(jid)
+            if rows[jid].status != "V":
+                groups.setdefault(item.gk, []).append(jid)
         for members in groups.values():
             if len(members) < 2:
                 continue
@@ -265,10 +332,33 @@ def assign_variants(state: State, seen: Mapping[str, Mapping[str, Seen]], kinds:
     return count
 
 
+def detail_rank(rows: Mapping[str, Row], stage0: C.Stage0, generations: Mapping[str, int]) -> S.Rank:
+    """For a detail source: whose text this update needs, in the order of `sources`' ranks.
+
+    A settled posting, or one stage 0 leaves out on what the listing already shows, needs none.
+    """
+
+    def rank(job: Job) -> int | None:
+        if stage0.check(job):
+            return None
+        row = rows.get(job.source_id)
+        if row is None:
+            return S.NEW
+        if row.status in "PKX" or (row.status in "ARU" and row.ag < generations["assess"]):
+            return S.PENDING
+        if fingerprints(job)[1] != row.tfp:
+            return S.CHANGED
+        return S.LISTED if row.status in PUBLISHED else None
+
+    return rank
+
+
 def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
     """Postings left out by a hard requirement that today's thresholds no longer impose: assess again.
 
     Their assessment was not kept, so they go back to the queue rather than straight to the list.
+    The tag holds every fact the requirements look at, so one that another requirement still leaves
+    out stays where it is.
     """
     freed = []
     for sid in state.source_ids():
@@ -276,9 +366,8 @@ def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
             reason = tag(row, "blk")
             if row.status != "R" or reason is None:
                 continue
-            what, _, value = reason.partition("=")
-            stated: dict[str, Any] = {"required_years": float(value)} if what == "years" else {"seniority": value}
-            if not feed.hard_limit(stated, thresholds):
+            stated = feed.stated_by_tag(reason)
+            if stated is not None and not feed.hard_limit(stated, thresholds):
                 row.status, row.fit, row.ag, row.dsh, row.note = "K", "-", 0, "-", "-"
                 freed.append(f"{sid}:{jid}")
     return freed
@@ -334,7 +423,7 @@ def build_queue(
             if stage is None:
                 continue
             job = listed.get(jid)
-            if job is None or (stage == "assess" and not job.description):
+            if job is None or job.detail_skipped or (stage == "assess" and not job.description):
                 waiting[stage] += 1
                 continue
             posted = parse_date(job.posted_at)
@@ -404,23 +493,23 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     places = C.Places.bundled()
     criteria = C.load(layout.criteria, places)
     profile_text = layout.profile.read_text(encoding="utf-8") if layout.profile.exists() else ""
-    sources = load_sources(layout.sources)
+    sources = [S.scoped(source, criteria) for source in load_sources(layout.sources)]
     state = State(layout.state)
     client = client or Client()
 
     generations = advance_generations(state, C.profile_hashes(criteria, profile_text))
     stage0 = C.Stage0(criteria, places)
-    kinds = {s["id"]: "aggregator" if s["ats"] == "aggregator" else "official" for s in sources}
 
     def due(source: Mapping[str, Any]) -> bool:
         after = state.sources.get(source["id"], {}).get("next_after")
         return not after or now >= datetime.fromisoformat(after)
 
     to_fetch = [s for s in sources if due(s)]
+    ranks = {s["id"]: detail_rank(state.rows(s["id"]), stage0, generations) for s in to_fetch}
 
     def fetch(source: Mapping[str, Any]) -> list[Job] | Exception:
         try:
-            return S.fetch(client, source)
+            return S.fetch(client, source, ranks[source["id"]])
         except Exception as error:  # any failure keeps this source's previous snapshot in force
             return error
 
@@ -431,6 +520,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         "sources": {"fetched": 0, "gated": len(sources) - len(to_fetch), "failed": 0, "failures": {}},
         "new": 0,
         "parked": 0,
+        "waiting_for_text": 0,
         "changed": 0,
         "closed": 0,
         "revived": 0,
@@ -468,6 +558,11 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         summary["sources"]["fetched"] += 1
         for name in ("new", "parked"):
             summary[name] += events[name]
+        summary["waiting_for_text"] += events["waiting"]
+        if events["waiting"]:  # shown in the feed, so that a source filling in slowly is not a mystery
+            info["waiting"] = events["waiting"]
+        else:
+            info.pop("waiting", None)
         for name in ("changed", "revived", "closed"):
             summary[name] += len(events[name])
             plan[name] += events[name]
@@ -483,7 +578,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
             plan["closed"] += retire(sid, state.rows(sid), today)
             state.sources.pop(sid, None)
 
-    summary["variants"] = assign_variants(state, seen, kinds)
+    summary["variants"] = assign_variants(state, seen, {s["id"]: s for s in sources})
     for sid, items in seen.items():  # titles already judged unrelated whatever the duties
         for jid, item in items.items():
             row = state.rows(sid)[jid]

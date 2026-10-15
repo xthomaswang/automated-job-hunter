@@ -178,9 +178,10 @@ to `config/sources.json` by hand:
   or none of a filter's values, matches anything, or no row has the filter's field at all, the list
   fails with a message naming what it has, instead of leaving out every row and closing its postings.
 
-A posting a list shares with a board the feed watches, or with another list, is judged once. Each
-update fetches the text of up to 50 of a list's new postings (`max_details`), so a long list fills
-in over a few updates.
+A posting a list shares with a board the feed watches, or with another list, is judged once. On
+Workday this goes by requisition, whatever the site: one requisition that a list names on two
+sites of a tenant is judged once too. Each update fetches the text of up to 50 of a list's new
+postings (`max_details`), so a long list fills in over a few updates.
 
 ## 5. Create the feed repo
 

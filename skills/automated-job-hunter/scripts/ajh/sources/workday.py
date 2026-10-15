@@ -26,6 +26,7 @@ SHARED_HOST = re.compile(r"wd\d+\.myworkdaysite\.com\Z")  # wd1.myworkdaysite.co
 _TOKEN = re.compile(r"[A-Za-z0-9_-]+\Z")
 _PATH = re.compile(r"/job/[^?#\\\s]+\Z")
 _ID = re.compile(r"_([A-Za-z0-9-]+)\Z")
+_LATER = re.compile(r"(.+)-[1-9][0-9]?\Z")  # a requisition's later posting: its id and `-<n>`
 PAGE = 20  # the most a site returns at once
 MAX_PER_QUERY = 1000  # a search matching more is too broad to read every update
 DETAILS = 100  # texts fetched per source per update, unless the source sets max_details
@@ -48,6 +49,22 @@ def site(source: Mapping[str, Any]) -> tuple[str, str, str]:
         )
     base = f"https://{host}/{name}" if own else f"https://{host}/recruiting/{tenant}/{name}"
     return host, base, f"https://{host}/wday/cxs/{tenant}/{name}"
+
+
+def requisition(posting_id: str) -> str:
+    """The requisition a posting is for, from the posting's id (the one after the last `_`).
+
+    A requisition's first posting has the requisition's id. Another posting of it, on the same site
+    or another site of the tenant, has that id with `-<n>` added. The ending is dropped only where
+    it is plainly one: a number from 1 to 99 with no leading zero, after at least 5 digits. A wrong
+    merge would hide an opening, while a missed one only judges it twice. So `1234567-2` is
+    `1234567` and `JR-0012345-1` is `JR-0012345`, while `R-12` and `R-13` stay two requisitions,
+    and so do `R-2024-1` and `R-2024-2`, which may be a year and a count.
+    """
+    later = _LATER.match(posting_id)
+    if later and sum(c.isdigit() for c in later.group(1)) >= 5:
+        return later.group(1)
+    return posting_id
 
 
 def search(

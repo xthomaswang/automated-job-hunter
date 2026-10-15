@@ -9,7 +9,8 @@ own page) is skipped, as is a row the source's `filters` leave out; `sources tes
 
 A posting's id is where it lives, `<system>~<board>~<id>` (a Workday board is `<tenant>~<site>`),
 so two lists naming one posting, or a list naming a posting on a board the feed watches, are known
-to be one opening from the ids alone (see `collect.assign_variants`).
+to be one opening from the ids alone (see `collect.assign_variants`). Workday postings are compared
+by tenant and requisition (`identity`), so one requisition on two sites of a tenant is one opening.
 """
 
 from __future__ import annotations
@@ -130,12 +131,25 @@ def link(url: Any) -> Link | None:
     return None
 
 
+def _where(system: str, board: str, pid: str) -> tuple[str, str, str]:
+    """(system, board, id), compared without case. For Workday it is (workday, tenant, requisition).
+
+    A tenant numbers its requisitions across all its sites and can post one on several of them, so
+    the site is left out, and so is the ending of a requisition's later postings
+    (`workday.requisition`). The posting's own id, the state's key, still names its site.
+    """
+    board, pid = unquote(board).casefold(), pid.casefold()
+    if system == "workday":
+        return system, board.split("/")[0], workday.requisition(pid)
+    return system, board, pid
+
+
 def identity(source_id: str) -> tuple[str, str, str] | None:
-    """Where a list's posting lives, from its id: (system, board, id), compared without case."""
+    """Where a list's posting lives, from its id: (system, board, id), as `_where` compares them."""
     parts = source_id.split("~")
     if len(parts) < 3 or parts[0] not in SYSTEMS:
         return None
-    return parts[0], unquote("/".join(parts[1:-1])).casefold(), parts[-1].casefold()
+    return _where(parts[0], "/".join(parts[1:-1]), parts[-1])
 
 
 def board_identity(source: Mapping[str, Any], row_id: str) -> tuple[str, str, str] | None:
@@ -152,7 +166,7 @@ def board_identity(source: Mapping[str, Any], row_id: str) -> tuple[str, str, st
         return None
     if not isinstance(board, str) or not board:
         return None
-    return str(kind), unquote(board).casefold(), row_id.casefold()
+    return _where(str(kind), board, row_id)
 
 
 def _why(url: str) -> str:

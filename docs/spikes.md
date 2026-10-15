@@ -221,7 +221,7 @@ public endpoints by hand while writing the readers (#37). No model was involved.
   dropped for location on the listing alone, and the 40 left arrived with their text, in 23
   seconds.
 
-## E9: SAP SuccessFactors, as it answers today
+## E12: SAP SuccessFactors, as it answers today
 
 2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. 26 requests by hand
 to four public career sites and three of the older board's hosts while writing the reader (#37), at

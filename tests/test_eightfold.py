@@ -218,7 +218,7 @@ def test_stage_0_reads_the_listing_so_an_out_of_region_posting_costs_no_text(rep
     assert 500000000502 not in sites.asked("detail")
 
 
-def test_probe_finds_a_site_by_its_careers_or_posting_url_and_adds_it(tmp_path):
+def test_probe_finds_a_site_by_its_careers_or_posting_url():
     sites = Sites(position(500000000601), position(500000000602, "Analyst"), globex=[position(700000000001)])
     web = client(sites)
     expected = {"system": "Eightfold", "ats": "eightfold", "host": "acme.eightfold.ai", "domain": "acme.example",

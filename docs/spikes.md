@@ -234,7 +234,8 @@ key, no cookies kept, no script run. No model was involved.
   on its company's own host, has `User-agent: *` and `Disallow: /`, then `Allow: /careers`,
   `Allow: /api/apply` and `Allow: /api/pcsx` among others. The reader requests only
   `/api/pcsx/...`, and the probe also `/careers`. The bare host redirects to `/home`, which is not
-  allowed, so the probe never starts there.
+  allowed, so the probe asks `/careers` for a site's domain. A bare host that a user pastes is
+  fetched as given, like any other page handed to the probe.
 - The career site shows visitors no terms (its terms-of-service setting is off). Its legal links
   are the employer's privacy statement and the vendor's privacy policy.
 - The vendor's Acceptable Use Policy (revised Aug 2025) covers "Eightfold's website and Services",

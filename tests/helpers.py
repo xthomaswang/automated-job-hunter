@@ -59,6 +59,22 @@ def jobicy_posting(jid, title="UX Researcher", company="Acme", text=None):
             "jobDescription": f"<p>{text or prose(jid)}</p>", "jobGeo": "USA", "jobType": ["full-time"]}  # fmt: skip
 
 
+def lever_posting(uuid, board="initech", title="UX Researcher", location="Austin, TX", text=None, created=None):
+    """A posting as Lever's API returns it, alone or in a board."""
+    return {"id": uuid, "text": title, "hostedUrl": f"https://jobs.lever.co/{board}/{uuid}",
+            "applyUrl": f"https://jobs.lever.co/{board}/{uuid}/apply", "description": f"<p>{text or prose(uuid)}</p>",
+            "categories": {"location": location, "commitment": "Full-time", "team": "Design"}, "lists": [],
+            "additional": "", "createdAt": created or 1791590400000}  # fmt: skip
+
+
+def ashby_posting(uuid, board="globex", title="UX Researcher", text=None):
+    """A posting in an Ashby board, which has no endpoint for one posting."""
+    return {"id": uuid, "title": title, "jobUrl": f"https://jobs.ashbyhq.com/{board}/{uuid}",
+            "applyUrl": f"https://jobs.ashbyhq.com/{board}/{uuid}/application", "location": "Remote",
+            "descriptionHtml": f"<p>{text or prose(uuid)}</p>", "publishedAt": "2026-10-09T00:00:00Z",
+            "employmentType": "FullTime", "isListed": True}  # fmt: skip
+
+
 def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=None, category="Research"):
     """A posting on the fake Workday site: its listing row, and the text its detail returns."""
     where = places[0] if len(places) == 1 else f"{len(places)} Locations"
@@ -111,6 +127,7 @@ class Boards:
         self.status, self.remotive, self.jobicy, self.requests = {}, [], [], []
         self.workday, self.workday_down = {}, set()
         self.hooli, self.hooli_down = {}, set()
+        self.lists, self.lever, self.ashby = {}, {}, {}  # files by repo/branch/path; boards by name
 
     def _smartrecruiters(self, url):
         parts = urllib.parse.urlsplit(url)
@@ -173,6 +190,27 @@ class Boards:
         return asked
 
     def transport(self, method, url, headers, body, timeout):
+        if "://raw.githubusercontent.com/" in url:
+            path = urllib.parse.unquote(url.split("://raw.githubusercontent.com/", 1)[1])
+            self.requests.append(("list", path))
+            text = self.lists.get(path)
+            return (404, {}, b"404: Not Found") if text is None else (200, {}, text.encode())
+        if "://api.lever.co/v0/postings/" in url and url.count("/") == 6:
+            board, pid = url.split("/v0/postings/", 1)[1].split("/")
+            self.requests.append(("detail", pid))
+            found = self.lever.get(board, {}).get(pid)
+            return (404, {}, b"{}") if found is None else (200, {}, json.dumps(found).encode())
+        if "://api.ashbyhq.com/posting-api/job-board/" in url:
+            board = url.rsplit("/", 1)[1]
+            self.requests.append(("board", board))
+            if board not in self.ashby:
+                return 404, {}, b"{}"
+            return 200, {}, json.dumps({"jobs": self.ashby[board]}).encode()
+        single = re.search(r"://boards-api\.greenhouse\.io/v1/boards/([^/]+)/jobs/(\d+)$", url)
+        if single:
+            self.requests.append(("detail", single.group(2)))
+            found = self.jobs.get(single.group(1), {}).get(int(single.group(2)))
+            return (404, {}, b"{}") if found is None else (200, {}, json.dumps(found).encode())
         if "://api.smartrecruiters.com/v1/companies/" in url:
             return self._smartrecruiters(url)
         if ".myworkdayjobs.com/wday/cxs/" in url or ".myworkdaysite.com/wday/cxs/" in url:

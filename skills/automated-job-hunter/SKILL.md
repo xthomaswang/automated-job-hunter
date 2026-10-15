@@ -85,7 +85,9 @@ categories it lists), follows a company's own careers page to the board it links
 names the systems this version cannot read, such as Oracle, Taleo, iCIMS, SuccessFactors or
 Eightfold; for those, tell the user there is no board to add rather than searching further. Only
 boards with a public, no-login listing are supported. Never scrape LinkedIn or Indeed: their terms
-forbid it.
+forbid it. A job list kept on GitHub can be a source as well (`"ats": "github-list"`, step 4 of
+[references/setup.md](references/setup.md)): its rows that link to one posting on a supported
+system are read from that system, and the rest are skipped.
 
 ## Rules that always hold
 

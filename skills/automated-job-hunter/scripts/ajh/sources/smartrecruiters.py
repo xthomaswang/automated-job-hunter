@@ -152,7 +152,14 @@ def _detail(client: Client, url: str, job: Job, slug: str) -> Job | None:
     link = _own(data.get("postingUrl"), slug, job.source_id)
     applied = data.get("applyUrl")
     own_apply = isinstance(applied, str) and _own(applied.split("?", 1)[0], slug, job.source_id)
-    return replace(job, description=text, url=link or job.url, apply_url=applied if own_apply else None)
+    released = data.get("releasedDate")  # for a posting known only from a list, which gives no date
+    return replace(
+        job,
+        description=text,
+        url=link or job.url,
+        apply_url=applied if own_apply else None,
+        posted_at=job.posted_at or (released if isinstance(released, str) else None),
+    )
 
 
 def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int | None] | None) -> list[Job]:

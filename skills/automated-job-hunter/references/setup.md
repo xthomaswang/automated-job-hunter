@@ -130,6 +130,38 @@ prints their add line with the tenant.
 The job feeds (`remotive`, `remoteok`, `jobicy`) list remote jobs from many employers. They are
 broad and noisy; add them only if the user wants remote work.
 
+A job list someone keeps on GitHub, as a JSON file or Markdown tables, can be a source too, when
+the user names one. Each row is only a pointer. A row whose link is one posting on Greenhouse,
+Lever, Ashby, SmartRecruiters or Workday is read from that system, with its own text and date, and
+judged like a posting from the employer's board. Rows that link anywhere else (sites that re-post
+jobs, systems such as iCIMS with no public API, an employer's own page) are skipped. Add the list
+to `config/sources.json` by hand:
+
+```json
+{"id": "joblist", "ats": "github-list", "repo": "<owner>/<repo>", "path": "jobs.json", "filters": {"region": ["US"]}}
+```
+
+- `branch` is `main` unless set. The format comes from the file's ending (`.json`, `.md`), or set
+  `format` to `json` or `markdown`.
+- JSON: a list of rows, or an object holding one list (otherwise set `rows` to its key). The fields
+  read are `company`, `title`, `location` and `url`; map other names with `fields`, for example
+  `{"link": "applyUrl"}`. `filters` keeps the rows whose field has one of the values; a row that
+  leaves the field empty is kept.
+- Markdown: every table whose headings name a company, a role and a link (`Application`, `Apply`,
+  `Link`) is read; `↳` in the company column means the company of the row above. Map other
+  headings with `columns`. `sections` keeps only the tables under the page headings that contain
+  one of the names as whole words: `["Junior", "Mid"]` keeps a table under "🌱 Team Junior" and
+  leaves out one under "Midwest".
+- `hunter sources test` shows what became of each list's rows: left out by `filters` or `sections`,
+  skipped and why, named twice, and how many postings each system gave. `unmatched` lists the
+  section names and filter values nothing in the list has today. When none of the section names,
+  or none of a filter's values, matches anything, or no row has the filter's field at all, the list
+  fails with a message naming what it has, instead of leaving out every row and closing its postings.
+
+A posting a list shares with a board the feed watches, or with another list, is judged once. Each
+update fetches the text of up to 50 of a list's new postings (`max_details`), so a long list fills
+in over a few updates.
+
 ## 5. Create the feed repo
 
 Ask where it should live (a new, empty directory) and confirm before creating anything.

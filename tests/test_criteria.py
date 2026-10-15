@@ -96,6 +96,8 @@ def test_employment_labels_map_to_every_kind_they_could_mean(label, expected):
         ("London, ON", {"CA"}, True),
         ("London", {"GB"}, True),
         ("Hybrid - London, UK", {"GB"}, True),
+        ("Birmingham, United Kingdom / Belfast / Homeworker - UK", {"GB"}, True),  # a Workday record's places
+        ("Cardiff", {"GB"}, True),
         ("Singapore, 01, sg", {"SG"}, True),
         ("Guangzhou, GD, CN", {"CN"}, True),
         ("Remote (Germany)", {"DE"}, True),

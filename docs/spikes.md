@@ -221,6 +221,63 @@ public endpoints by hand while writing the readers (#37). No model was involved.
   dropped for location on the listing alone, and the 40 left arrived with their text, in 23
   seconds.
 
+## E9: SAP SuccessFactors, as it answers today
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. 26 requests by hand
+to four public career sites and three of the older board's hosts while writing the reader (#37), at
+least a second apart, with no login, key or cookie, besides reading SAP's own documentation. No model
+was involved.
+
+SAP hosts two kinds of public career site.
+
+- **The older job board**, `career<N>.successfactors.com/career?company=<id>` (also on
+  `successfactors.eu` and `sapsf.com`). The robots.txt of three such hosts in different data centers
+  is the same: `User-agent: *`, `Disallow: /`, `Disallow: /*company`, `Allow: /login`. So none of its
+  pages was read, and no reader was built for it.
+- **Career Site Builder** (Recruiting Marketing) sites, on the employer's own domain. Their robots.txt
+  disallows `/services/`, `/talentcommunity/`, `/applybutton/`, `/preapply/` and a few other paths and
+  allows the rest; it was the same on three sites. SAP's knowledge base article 2820583 says "All RMK
+  pages are designed to be publicly accessible", "it is actually not possible to totally prevent
+  search engines from scraping and indexing public content", and "As to the robots.txt, it is
+  generated at a system level per Data center. As a result, it is not possible to customize it per
+  site." The one site whose footer was checked linked only to its employer's own legal notice and
+  privacy policy. Such terms vary by employer and were not checked one by one, as for Workday in E8.
+
+What three public Career Site Builder sites answered:
+
+- A search page, `/search/?q=<query>&startrow=<n>`, comes in one of three layouts:
+  - a table: `<tr class="data-row">` rows holding the title's link and a `span.jobLocation`, the
+    count `Results <b>1 – 25</b> of <b>8992</b>`, and links to pages by `startrow`, the last included;
+  - tiles: `<li class="job-tile">` rows whose facts are `div`s with ids such as
+    `job-<id>-desktop-section-location-value` (once per screen size), the count
+    `Showing 1 to 25 of 25 Jobs`, and `data-record-returned` holding the number of tiles;
+  - filled in by a script (`j2w.searchResultsUnify`) that posts to `/services/recruiting/v1/jobs`:
+    the page itself has no rows and no count, and `/services/` is disallowed. Not read.
+- 25 postings a page on every site. The second page of a 6,733-posting search was rows 26 to 50, with
+  none from the first.
+- Search matches any of the words anywhere in a posting. A two-word query matched 6,733 of a site's
+  8,992 postings, and its second word alone 130, only 7 of the first 25 with the word in the title.
+  The two words in quotes matched 121. Hence each query is sent as a phrase.
+- A search that finds nothing shows `<div id="noresults">`, in both layouts.
+- Rows carry the title, the posting's link `/job/<city-title-region>/<id>/` (under the brand's path on
+  a brand's site, with the brand also in the page's settings), and the place; tiles also carry the job
+  category and the other places. Neither site with rows showed a date in them.
+- A posting's page carries schema.org microdata: `title`, the parts of its place, `description`, and
+  `datePosted`. On both pages read, `datePosted` was the day of reading, though one posting was in a
+  sitemap made five days before, so it is not used. Its `<link rel="canonical">` ends in the id.
+- Every page sets up SAP's scripts (`j2w.init(...)`, files under `/platform/js/j2w/`), whose settings
+  name the sign-in host (`career<N>.successfactors.com`) and the brand. The probe knows a site by them.
+- `/sitemap.xml` lists every posting's link (the same 25 ids as the search, on one small site). SAP's
+  article 2757876 says "The system updates these Sitemaps every week", and the 406 entries of another
+  site's all carried one date five days old. It has no titles or places either, so it is not the
+  listing.
+- One public site answered its search with a script-and-cookie challenge (HTTP 403), and its sitemap
+  had another system's ids and paths. It no longer runs on Career Site Builder and was not read further.
+- SAP's course on Career Site Builder describes a standard XML feed that lists all of a customer's
+  current jobs each time it is read, but its address is given privately to job boards, so it is not
+  a public listing.
+- One search page read through the engine's own client (its usual headers) answered as by hand.
+
 ## Still open
 
 | Spike | Needs |

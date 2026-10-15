@@ -117,6 +117,19 @@ README counts the ones still waiting for their text. SmartRecruiters companies
 shared host (`wd1.myworkdaysite.com/recruiting/<tenant>/<site>`) work the same way; the probe
 prints their add line with the tenant.
 
+An SAP SuccessFactors career site (built with Career Site Builder) is on the company's own domain,
+often `jobs.<company>.com`, so it cannot be found by name: probe its address or one posting's link.
+The probe knows the site by its page and prints `successfactors:<host>:Company`, or
+`successfactors:<host>/<brand>:Company` for a brand's site under its own path. It is searched and
+filled in like Workday, one request a second. Each query is searched as a phrase, because the site's
+search otherwise matches any of the words anywhere in a posting; a query with quotes of its own is
+sent as written. These sites have no job categories to narrow by, so a search matching more than
+1,000 postings fails the source: use fewer or more specific queries. The probe names the two kinds of
+SuccessFactors site that cannot be read: a site whose search page loads its postings from a script
+(from a path robots.txt disallows on every such site), and the older job board on SAP's own hosts
+(`career<N>.successfactors.com`, `sapsf.com`), whose robots.txt disallows everything. For a company
+on the older board, look for its career site on its own domain and probe that.
+
 The job feeds (`remotive`, `remoteok`, `jobicy`) list remote jobs from many employers. They are
 broad and noisy; add them only if the user wants remote work.
 

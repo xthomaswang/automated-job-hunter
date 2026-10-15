@@ -11,6 +11,7 @@ from ajh.http import Client
 from ajh.layout import Layout
 from helpers import (
     ACME,
+    JOBICY,
     NOW,
     REMOTIVE,
     Boards,
@@ -18,8 +19,10 @@ from helpers import (
     answer_triage,
     full_tick,
     good_assessment,
+    jobicy_posting,
     posting,
     prose,
+    remotive_posting,
     rows,
     tracked,
 )
@@ -497,6 +500,18 @@ def test_other_listings_of_the_same_opening_are_attached_to_its_record(repo):
     brief = (root / "jobs" / "acme" / "1.md").read_text()
     assert "## Also listed" in brief and "- New York, NY: https://" in brief and "- via Remotive: https://" in brief
     assert list(positions(root)) == ["acme:1"]
+
+
+def test_a_copy_on_another_aggregator_is_attached_to_the_copy_that_represents_it(repo):
+    root = repo(sources=(REMOTIVE, JOBICY))
+    board = Boards()
+    board.remotive = [remotive_posting(7)]
+    board.jobicy = [jobicy_posting(3, company="Acme, Inc.")]
+    full_tick(root, board)
+    assert list(positions(root)) == ["jobicy:3"]  # judged once
+    assert positions(root)["jobicy:3"]["also_on"] == [
+        {"key": "remotive:7", "label": "Remotive", "url": "https://remotive.com/remote-jobs/7"}
+    ]
 
 
 def test_the_triage_check_counts_drops_that_turned_out_to_be_matches(repo, monkeypatch):

@@ -279,9 +279,12 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   shrinks by more than 40% is held until the shrink repeats. Changing a query-scoped source's
   queries re-baselines it without closures. A failed fetch keeps the previous snapshot.
 - **Duplicates.** An aggregator copy of an opening an employer's own board lists (same company and
-  title) defers to the official posting. Within one source, postings with the same company and
-  title and near-identical text defer to one representative. Variants are recomputed every tick;
-  when a representative closes, a variant takes over and is judged.
+  title) defers to the official posting. Copies on several aggregators defer to one of them: one
+  already judged, else the one with the lowest key, so the choice never flips. Within one source,
+  postings with the same company and title and near-identical text defer to one representative;
+  that includes one aggregator, which can list an opening once per location. Variants are
+  recomputed every tick from the state of every source; when a representative closes, a variant
+  takes over and is judged.
 - **Profile changes.** Stage 0 is re-run on every tick, so a change to the hard limits costs
   nothing. Two hashes decide what else is judged again: the triage hash covers `targets` and
   `seniority`, and the assess hash covers the triage hash plus the profile text, `eligibility`,

@@ -17,6 +17,7 @@ NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 ACME = {"id": "acme", "company": "Acme", "ats": "greenhouse", "slug": "acme"}
 GLOBEX = {"id": "globex", "company": "Globex", "ats": "greenhouse", "slug": "globex"}
 REMOTIVE = {"id": "remotive", "ats": "aggregator", "provider": "remotive"}
+JOBICY = {"id": "jobicy", "ats": "aggregator", "provider": "jobicy"}
 INITECH = {
     "id": "initech",
     "company": "Initech",
@@ -46,6 +47,16 @@ def posting(jid, title="UX Researcher", location="Remote, US", text=None, publis
         "location": {"name": location},
         "first_published": published,
     }
+
+
+def remotive_posting(jid, title="UX Researcher", company="Acme", text=None):
+    return {"id": jid, "title": title, "company_name": company, "url": f"https://remotive.com/remote-jobs/{jid}",
+            "description": f"<p>{text or prose(jid)}</p>"}  # fmt: skip
+
+
+def jobicy_posting(jid, title="UX Researcher", company="Acme", text=None):
+    return {"id": jid, "jobTitle": title, "companyName": company, "url": f"https://jobicy.com/jobs/{jid}",
+            "jobDescription": f"<p>{text or prose(jid)}</p>", "jobGeo": "USA", "jobType": ["full-time"]}  # fmt: skip
 
 
 def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=None, category="Research"):
@@ -97,7 +108,7 @@ class Boards:
 
     def __init__(self, **boards):
         self.jobs = {slug: {p["id"]: p for p in postings} for slug, postings in boards.items()}
-        self.status, self.remotive, self.requests = {}, [], []
+        self.status, self.remotive, self.jobicy, self.requests = {}, [], [], []
         self.workday, self.workday_down = {}, set()
         self.hooli, self.hooli_down = {}, set()
 
@@ -169,6 +180,18 @@ class Boards:
         if "remotive.com" in url:
             self.requests.append("remotive")
             return 200, {}, json.dumps({"job-count": len(self.remotive), "jobs": self.remotive}).encode()
+        if "jobicy.com" in url:
+            self.requests.append("jobicy")
+            if "jobicy" in self.status:
+                return self.status["jobicy"], {}, b"{}"
+            page = {
+                "success": True,
+                "jobs": self.jobicy,
+                "jobCount": len(self.jobicy),
+                "hasMore": False,
+                "nextCursor": None,
+            }
+            return 200, {}, json.dumps(page).encode()
         slug = url.split("/boards/")[1].split("/")[0]
         self.requests.append(slug)
         if slug in self.status:

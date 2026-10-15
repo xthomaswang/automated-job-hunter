@@ -301,6 +301,21 @@ def test_probe_reads_a_careers_url_names_systems_it_cannot_read_and_follows_a_pa
     assert "sources probe <url>" in registry.probe("Nobody Inc", Client(lambda *a: (404, {}, b"{}"), retries=0))["next"]
 
 
+def test_probe_knows_a_board_that_an_old_careers_address_moved_to():
+    board = Boards()
+    board.workday = {jid: wd_posting(jid, title) for jid, title in (("R1", "UX Researcher"), ("R2", "Analyst"))}
+    landing = "https://initech.wd1.myworkdayjobs.com/en-US/External"
+
+    def transport(method, url, headers, body, timeout):
+        if url == "https://jobs.initech.example/":  # redirects to the board, whose page is all script
+            return 200, {}, b'<html><body><div id="root"></div></body></html>', landing
+        return board.transport(method, url, headers, body, timeout)
+
+    found = registry.probe("https://jobs.initech.example/ Initech", Client(transport, retries=0))
+    assert found["resolved"] == landing
+    assert [m["add"] for m in found["matches"]] == ["workday:initech.wd1.myworkdayjobs.com/External:Initech"]
+
+
 def test_a_workday_site_is_added_by_host_and_site(tmp_path):
     scaffold.init(tmp_path / "feed")
     root = tmp_path / "feed"

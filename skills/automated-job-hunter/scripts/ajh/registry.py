@@ -303,12 +303,10 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
 def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
     """What a careers URL is: a known system's board, or a company's own page linking to one."""
     name = company or "<Company Name>"
-    found = _system(url)
-    if found is not None:
-        systems = [found]
-    else:  # a company's own careers page: look for links to a known system on it, one request
+    found, landed, page = _system(url), url, ""
+    if found is None:  # a company's own careers page: look for links to a known system on it, one request
         try:
-            page = client.get(url).raise_for_status().text
+            reply = client.get(url).raise_for_status()
         except Exception as error:
             return {
                 "url": url,
@@ -316,10 +314,16 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
                 "unsupported": [],
                 "next": f"The page could not be read: {type(error).__name__}",
             }
+        page, landed = reply.text, reply.url  # an old address may move to the site's own host
+        found = _system(landed)
+    if found is not None:
+        systems = [found]
+    else:
         systems, seen = [], set()
         named = eightfold.page_domain(page)
         if named:  # an Eightfold career site itself, on the company's own host or eightfold.ai
-            systems.append({"system": "Eightfold", "ats": "eightfold", "host": urlsplit(url).hostname, "domain": named})
+            host = urlsplit(landed).hostname
+            systems.append({"system": "Eightfold", "ats": "eightfold", "host": host, "domain": named})
         for link in _LINK.findall(page):
             system = _system(link)
             if not system or system.get("forbidden"):  # a footer link says nothing about where postings are
@@ -330,15 +334,15 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
             if label not in seen and len(systems) < 10:
                 seen.add(label)
                 systems.append(system)
-        site = successfactors.recognize(url, page)  # the page is itself a SuccessFactors career site: its links
+        site = successfactors.recognize(landed, page)  # the page is itself a SuccessFactors career site: its links
         if site:  # to SAP's hosts are its own scripts and sign-in, not another board
             systems = [site]
     results = [_try(system, name, client) for system in systems]
-    result: dict[str, Any] = {
-        "url": url,
-        "matches": [r for r in results if r.get("supported")],
-        "unsupported": [r["system"] for r in results if r.get("supported") is False],
-    }
+    result: dict[str, Any] = {"url": url}
+    if landed != url:  # the page moved: what was read is there
+        result["resolved"] = landed
+    result["matches"] = [r for r in results if r.get("supported")]
+    result["unsupported"] = [r["system"] for r in results if r.get("supported") is False]
     if company is None and result["matches"]:
         result["next"] = "Put the company's name after the URL, or in place of <Company Name> in the add line."
     elif not results:

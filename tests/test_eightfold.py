@@ -247,6 +247,22 @@ def test_probe_finds_a_site_by_its_careers_or_posting_url():
         assert registry.probe(vendor, Client(lambda *a: (200, {}, b"<html></html>"), retries=0))["matches"] == []
 
 
+def test_probe_follows_an_old_careers_address_to_the_host_it_moved_to():
+    sites = Sites(globex=[position(700000000002)])
+    old, landing = "https://jobs.globex.example/global/en/search", f"https://{GLOBEX}/careers"
+
+    def moved(method, url, headers, body, timeout):  # the old address redirects to the site's new host
+        if url == old:
+            return (*sites.transport(method, landing, headers, body, timeout), landing)
+        return sites.transport(method, url, headers, body, timeout)
+
+    found = registry.probe(f"{old} Globex", Client(moved, retries=0))
+    assert found["resolved"] == landing
+    assert [m["add"] for m in found["matches"]] == [f"eightfold:{GLOBEX}/globex.example:Globex"]
+    assert found["matches"][0]["postings"] == 1
+    assert sites.asked("unknown") == [] and sites.asked("search") == [("", 0)]  # asked of the new host, not the old
+
+
 def test_a_site_is_added_by_host_and_domain_and_hosts_name_it(tmp_path):
     scaffold.init(tmp_path / "feed")
     root = tmp_path / "feed"

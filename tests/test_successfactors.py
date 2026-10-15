@@ -308,6 +308,21 @@ def test_stage_0_reads_the_listing_so_a_posting_elsewhere_costs_no_text(repo):
     assert site.details() == ["5001"]
 
 
+def test_the_probe_reads_a_career_site_where_an_old_address_moved_to():
+    transport, asked = web(Site(posting("6301")))
+    landing = "https://jobs.acme.example/"
+
+    def moved(method, url, headers, body, timeout):  # the company's old address redirects to its career site
+        if url == "https://www.acme.example/jobs":
+            return (*transport(method, landing, headers, body, timeout), landing)
+        return transport(method, url, headers, body, timeout)
+
+    found = registry.probe("https://www.acme.example/jobs Acme", client(moved))
+    assert found["resolved"] == landing
+    assert [m["add"] for m in found["matches"]] == ["successfactors:jobs.acme.example:Acme"]
+    assert found["matches"][0]["postings"] == 1 and "www.acme.example" not in asked
+
+
 def test_the_probe_knows_a_career_site_by_its_page_and_the_add_line_writes_it(tmp_path):
     acme = Site(posting("6001"), posting("6002", "Analyst"))
     globex = Site(posting("6101"), host="careers.globex.example", brand="labs", layout="tiles")

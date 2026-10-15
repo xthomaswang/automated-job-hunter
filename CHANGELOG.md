@@ -187,3 +187,13 @@ What changes for people who run a feed. Bring a feed repo up to date with
   `requeue --parked` leaves them parked.
 - Belfast and Cardiff are read as cities in the UK.
 - Postings judged before this version keep their verdicts.
+
+### Variants on boards that read texts on demand stay grouped
+
+- On Workday, SmartRecruiters, SuccessFactors and Eightfold boards, and on job lists, a variant of
+  another posting (same company and title, near-identical text) no longer comes apart on the next
+  update just because neither text was read again.
+  - When a text wasn't read, a comparison uses the hash frozen when that posting was assessed.
+  - Otherwise it keeps the grouping it had. No new variant is made without a comparison.
+- Variants that came apart under an earlier version are not all grouped again. One whose lead was
+  dropped at triage is triaged once on its own.

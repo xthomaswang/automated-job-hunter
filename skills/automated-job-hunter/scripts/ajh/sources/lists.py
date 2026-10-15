@@ -146,7 +146,7 @@ def board_identity(source: Mapping[str, Any], row_id: str) -> tuple[str, str, st
     elif kind in workday.KINDS:
         try:
             board = workday.site(source)[2].split("/wday/cxs/", 1)[1]
-        except SourceError:
+        except (SourceError, TypeError):  # a half-written entry: it matches nothing
             return None
     else:
         return None

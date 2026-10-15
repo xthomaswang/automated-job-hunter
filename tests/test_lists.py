@@ -227,6 +227,17 @@ def test_a_lists_posting_is_the_employers_own_with_its_text_and_date_from_their_
     assert lever_posting(LEVER_ID)["description"][3:40] in brief and "Employment: Full-time" in brief
 
 
+def test_a_board_named_in_another_case_is_the_same_board(repo):
+    root = repo(sources=(JSON_LIST, README))
+    found = boards()
+    found.lists["someone/job-radar/main/README.md"] = RADAR.replace("/Hooli/", "/hooli/")
+    tick(root, found)
+    radar = rows(root, "radar")["smartrecruiters~hooli~744000001"]  # in the state, so its text was fetched
+    assert (radar.status, radar.note) == ("V", "joblist:smartrecruiters~Hooli~744000001")
+    site = {"id": "g", "ats": "workday", "company": "Globex", "host": "globex.wd5.myworkdayjobs.com", "site": 7}
+    assert L.board_identity(site, "R1") is None
+
+
 def test_a_list_that_cannot_be_read_or_has_no_rows_fails_without_closing_anything(repo):
     client = Client(boards().transport, sleep=lambda s: None, retries=0)
     with pytest.raises(HttpError):

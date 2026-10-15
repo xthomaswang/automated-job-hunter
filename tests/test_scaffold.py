@@ -266,6 +266,9 @@ def test_probe_finds_a_companys_board_by_trying_likely_slugs():
     assert registry.probe("Nobody Inc", Client(transport, retries=0))["matches"] == []
 
 
+ICIMS = "iCIMS (its terms forbid automated reading of its career sites)"  # docs/spikes.md, E10
+
+
 def test_probe_reads_a_careers_url_names_systems_it_cannot_read_and_follows_a_page_to_its_board():
     board = Boards()
     board.workday = {jid: wd_posting(jid, title) for jid, title in (("R1", "UX Researcher"), ("R2", "Analyst"))}
@@ -285,10 +288,10 @@ def test_probe_reads_a_careers_url_names_systems_it_cannot_read_and_follows_a_pa
     assert found["matches"][0]["add"] == "workday:initech.wd1.myworkdayjobs.com/External:Initech"
     assert (found["matches"][0]["postings"], found["unsupported"]) == (2, [])
     other = registry.probe("https://careers-initech.icims.com/jobs", web)
-    assert (other["matches"], other["unsupported"]) == ([], ["iCIMS"]) and "cannot read" in other["next"]
+    assert (other["matches"], other["unsupported"]) == ([], [ICIMS]) and "cannot read" in other["next"]
     assert found["matches"][0]["categories"] == [{"name": "Research", "postings": 2}]  # the site's own job categories
     own = registry.probe("https://www.initech.example/careers", web)  # one request, then each board it links to
-    assert [m["system"] for m in own["matches"]] == ["Workday"] and own["unsupported"] == ["iCIMS"]  # not the footer
+    assert [m["system"] for m in own["matches"]] == ["Workday"] and own["unsupported"] == [ICIMS]  # not the footer
     assert own["matches"][0]["add"].endswith(":<Company Name>") and "name" in own["next"]
     assert "LinkedIn" in registry.probe("https://www.linkedin.com/jobs/view/1", web)["unsupported"][0]  # only directly
     bare = registry.probe("https://initech.wd1.myworkdayjobs.com/", web)["matches"][0]

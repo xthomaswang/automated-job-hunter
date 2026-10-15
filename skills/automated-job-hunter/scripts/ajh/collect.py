@@ -269,8 +269,9 @@ def assign_variants(
 
     - A list's posting that is on a board the feed watches (the same posting, by where it lives)
       defers to the board's own. So does one with the same company and title as a board's posting.
+      A Workday posting lives at its tenant's requisition, whatever the site (`lists.identity`).
     - Lists that name one posting defer to one of them: one already judged if there is one, else
-      the one with the lowest key.
+      the one with the lowest key. A list that names one Workday requisition on two sites does too.
     - An aggregator copy of an opening an employer's own board lists, or a list names (same company
       and title), defers to that posting.
     - Copies of one opening on several aggregators (same company and title) defer to one of them,

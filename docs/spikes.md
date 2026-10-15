@@ -221,6 +221,205 @@ public endpoints by hand while writing the readers (#37). No model was involved.
   dropped for location on the listing alone, and the 40 left arrived with their text, in 23
   seconds.
 
+## E9: Oracle Recruiting Cloud, and why there is no reader
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. Oracle's
+documents below, and two requests to tenant hosts for their robots.txt, read by hand (#37). No
+model was involved.
+
+According to the notes for #37, a career site's own page lists postings with
+`recruitingCEJobRequisitions` and probably reads each text from
+`recruitingCEJobRequisitionDetails`, under `/hcmRestApi/resources/latest/` on the tenant's host.
+Neither endpoint was called, because Oracle's own documents rule both out:
+
+- [Recruiting CE Job Requisitions](https://docs.oracle.com/en/cloud/saas/human-resources/farws/api-recruiting-ce-job-requisitions.html),
+  in the REST API for Oracle Fusion Cloud HCM (G29489-06, October 2026): "The
+  recruitingCEJobRequisitions resource includes the list of the available requisitions. Note that
+  the service endpoints in this resource category are only for Oracle internal use."
+- [Recruiting CE Job Requisition Details](https://docs.oracle.com/en/cloud/saas/human-resources/farws/api-recruiting-ce-job-requisition-details.html),
+  the category for the text: "Note that the service endpoints in this resource category are only
+  for Oracle internal use."
+- [Job Site Posted Jobs](https://docs.oracle.com/en/cloud/saas/human-resources/farws/api-job-site-posted-jobs.html),
+  the resource Oracle documents for reading posted jobs: "The recruitingJobSitePostedJobs resource
+  provides details about the publicly posted job requisitions. Note that the service endpoints in
+  this resource category can only be used by approved Oracle Cloud Marketplace partners."
+- Oracle's [Terms of Use](https://www.oracle.com/legal/terms/), section 7: "You agree not to use
+  any robot, spider, scraper or other automated means to access the Site or any Oracle accounts,
+  computer systems or networks without Oracle’s express written permission." Career sites are
+  served from Oracle's own `oraclecloud.com` hosts.
+- robots.txt settles nothing: one public tenant's host answers 404, and another's firewall answers
+  403 (`Blocked by WAF4SaaS`). The terms decide.
+
+So `sources probe` still names Oracle Recruiting Cloud as a system it cannot read, now with the
+reason, and a job list's links to it are still skipped. Whether the listing's total could be
+checked against its rows was not tested, because the answer would not change this. If Oracle
+offers a public API for posted jobs, this is worth checking again.
+
+## E10: iCIMS, and why there is no reader
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. Eight read-only
+requests by hand (#37), at least 1.2 s apart, with no login and no cookie. No model was involved,
+and no posting page was opened.
+
+iCIMS career portals are at `careers-<company>.icims.com`. iCIMS's
+[Terms of Use](https://www.icims.com/legal/terms-of-use/) ("Last modified: April 1, 2024") rule
+out reading them automatically:
+
+- They "govern your access to and use of icims.com, including any content, functionality and
+  services provided on or through the website www.icims.com or its related domains and
+  subdomains". A portal is such a subdomain.
+- "Additionally, you agree not to: [...] Use any robot, spider or other automatic device, process,
+  or means to access the Website for any purpose, including monitoring or copying any of the
+  material on the Website."
+- The only allowance is to "print or download one copy of a reasonable number of pages of the
+  Website for your own personal, non-commercial use", which is not automated access. No terms
+  written for portal visitors were found. A portal's branded page links to its employer's own
+  terms, which differ by employer; iCIMS's terms cover the host either way.
+
+robots.txt does not change this. Two public portals serve the same file: it names the portal's
+`/sitemap.xml` and disallows only the referral, login, candidate, reminder and connect paths. But
+robots.txt is a crawler directive, not a licence, as with LinkedIn and Indeed.
+
+The listing would have met #37's completeness bar: a public portal's sitemap appeared to list every
+posting (`/jobs/<id>/<slug>/job`), each with a `lastmod`. So the terms are the only reason.
+`sources probe` names iCIMS with that reason, and a job list's links to a portal are still skipped.
+Portals on a company's own domain serve the same iCIMS pages; reading them under another host name
+would be the same access.
+
+## E11: Eightfold, as it answers today
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. 26 requests by hand
+to two public tenants and the vendor's site, most of them 15 seconds or more apart, then one run of
+the reader and the probe (6 requests, one a second), while writing the reader (#37). No login, no
+key, no cookies kept, no script run. No model was involved.
+
+**Terms.**
+
+- `robots.txt` on a public tenant (`<company>.eightfold.ai`), and the same file on a public tenant
+  on its company's own host, has `User-agent: *` and `Disallow: /`, then `Allow: /careers`,
+  `Allow: /api/apply` and `Allow: /api/pcsx` among others. The reader requests only
+  `/api/pcsx/...`, and the probe also `/careers`. The bare host redirects to `/home`, which is not
+  allowed, so the probe asks `/careers` for a site's domain. A bare host that a user pastes is
+  fetched as given, like any other page handed to the probe.
+- The career site shows visitors no terms (its terms-of-service setting is off). Its legal links
+  are the employer's privacy statement and the vendor's privacy policy.
+- The vendor's Acceptable Use Policy (revised Aug 2025) covers "Eightfold's website and Services",
+  and "a visitor to Eightfold's website is deemed to be a Customer". It does not mention automated
+  reading. It forbids use "that disrupts or otherwise negatively impacts any aspect of the
+  Services" and "efforts to gain unauthorized access to non-public information". The reader reads
+  public listings, one request a second at most, on paths robots.txt allows.
+- The same policy forbids users "to reverse engineer, copy, disassemble, or decompile the Services".
+  Reading the JSON a public page loads is not that, but it is the clause to revisit if the vendor
+  says otherwise. An employer's own host may carry its own terms.
+
+**The listing.**
+
+- The career page is an app whose settings sit in a hidden `<code id="pcsx-data">` element that
+  begins `{"domain": "<company domain>"`. It loads
+  `GET /api/pcsx/search?domain=<domain>&query=<q>&location=&start=<n>`. The older
+  `GET /api/apply/v2/jobs` answered 403 `Not authorized for PCSX` on the same tenant.
+- Without `domain`, the search answers 422 ("Missing data for required field"), so an entry names
+  both the host and the domain.
+- The reply is `{"status": 200, "data": {"positions": [...], "count": n, ...}}`. A row has `id` (a
+  number), `name`, `locations` (the site's own place names), `standardizedLocations` (coded, such
+  as `Berlin, BE, DE`), `postedTs` and `creationTs` (seconds since the epoch), `department`,
+  `workLocationOption` (`onsite`, `hybrid` or `remote`), `atsJobId` and `positionUrl`
+  (`/careers/job/<id>`). It has no text and no employment type.
+- A page holds ten rows; `num=100` returned the same ten. `count` was the same on the first,
+  second and last page of a 334-posting listing (33 pages of ten and one of four), and on a page at
+  offset 500 of a 2,461-posting one.
+- A page at offset 2,450 of that listing answered 429 three times, the last after a pause of two
+  and a half minutes, while offset 500 and other searches answered in between. Hence the reader
+  refuses any search matching more than 500 postings (50 pages) rather than rely on deep pages.
+- Search is narrow: `product designer` matched 3 of 334 postings on one tenant and 15 of 2,461 on
+  the other, by relevance (an empty search sorts by date). So the reader searches for the wanted
+  roles instead of reading whole boards ten at a time.
+- Place names spell the country out, as `<city>, <region>, <country>` on one tenant and
+  `<country>, <region>, <city>` on the other. The coded form uses two-letter codes such as DE, which
+  is also a US state, so the reader uses the names.
+
+**Texts and links.**
+
+- `GET /api/pcsx/position_details?position_id=<id>&domain=<domain>&hl=en` returns the row's fields
+  plus `jobDescription` (HTML) and `publicUrl` (`https://<the site's host>/careers/job/<id>`). It
+  also returns the site's own fields, named `efcustomText…`: a time type on one tenant, and
+  employment type, work site, travel and others on the other.
+- `/careers/job/<id>` answers 200 with a canonical link to itself, so a posting's link needs no
+  detail.
+- An unknown `<company>.eightfold.ai` answers 404 `Group ID not found`.
+
+**Rate.**
+
+- No rate is documented, and no reply carried a rate header or `Retry-After`.
+- The tenant on eightfold.ai answered every request, some a second apart.
+- The tenant on its own host answered 429 to two of its eleven requests that were not deep pages:
+  one a minute after the previous request, and one a second after its careers page at the start of
+  a later session. Two searches seven seconds apart both answered.
+- The reader keeps to one request a second. A 429 is retried twice; after that the source fails
+  that update and keeps its last snapshot.
+
+**One run of the reader.** The probe found the tenant on eightfold.ai (334 postings) in one request.
+One search there listed 3 postings and fetched 2 texts, each starting with the site's time type. The
+probe of the tenant on its own host recognized the site from its page, and then its search answered
+429. Both took 6 requests and 4.5 seconds.
+
+## E12: SAP SuccessFactors, as it answers today
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. 26 requests by hand
+to four public career sites and three of the older board's hosts while writing the reader (#37), at
+least a second apart, with no login, key or cookie, besides reading SAP's own documentation. No model
+was involved.
+
+SAP hosts two kinds of public career site.
+
+- **The older job board**, `career<N>.successfactors.com/career?company=<id>` (also on
+  `successfactors.eu` and `sapsf.com`). The robots.txt of three such hosts in different data centers
+  is the same: `User-agent: *`, `Disallow: /`, `Disallow: /*company`, `Allow: /login`. So none of its
+  pages was read, and no reader was built for it.
+- **Career Site Builder** (Recruiting Marketing) sites, on the employer's own domain. Their robots.txt
+  disallows `/services/`, `/talentcommunity/`, `/applybutton/`, `/preapply/` and a few other paths and
+  allows the rest; it was the same on three sites. SAP's knowledge base article 2820583 says "All RMK
+  pages are designed to be publicly accessible", "it is actually not possible to totally prevent
+  search engines from scraping and indexing public content", and "As to the robots.txt, it is
+  generated at a system level per Data center. As a result, it is not possible to customize it per
+  site." The one site whose footer was checked linked only to its employer's own legal notice and
+  privacy policy. Such terms vary by employer and were not checked one by one, as for Workday in E8.
+
+What three public Career Site Builder sites answered:
+
+- A search page, `/search/?q=<query>&startrow=<n>`, comes in one of three layouts:
+  - a table: `<tr class="data-row">` rows holding the title's link and a `span.jobLocation`, the
+    count `Results <b>1 – 25</b> of <b>8992</b>`, and links to pages by `startrow`, the last included;
+  - tiles: `<li class="job-tile">` rows whose facts are `div`s with ids such as
+    `job-<id>-desktop-section-location-value` (once per screen size), the count
+    `Showing 1 to 25 of 25 Jobs`, and `data-record-returned` holding the number of tiles;
+  - filled in by a script (`j2w.searchResultsUnify`) that posts to `/services/recruiting/v1/jobs`:
+    the page itself has no rows and no count, and `/services/` is disallowed. Not read.
+- 25 postings a page on every site. The second page of a 6,733-posting search was rows 26 to 50, with
+  none from the first.
+- Search matches any of the words anywhere in a posting. A two-word query matched 6,733 of a site's
+  8,992 postings, and its second word alone 130, only 7 of the first 25 with the word in the title.
+  The two words in quotes matched 121. Hence each query is sent as a phrase.
+- A search that finds nothing shows `<div id="noresults">`, in both layouts.
+- Rows carry the title, the posting's link `/job/<city-title-region>/<id>/` (under the brand's path on
+  a brand's site, with the brand also in the page's settings), and the place; tiles also carry the job
+  category and the other places. Neither site with rows showed a date in them.
+- A posting's page carries schema.org microdata: `title`, the parts of its place, `description`, and
+  `datePosted`. On both pages read, `datePosted` was the day of reading, though one posting was in a
+  sitemap made five days before, so it is not used. Its `<link rel="canonical">` ends in the id.
+- Every page sets up SAP's scripts (`j2w.init(...)`, files under `/platform/js/j2w/`), whose settings
+  name the sign-in host (`career<N>.successfactors.com`) and the brand. The probe knows a site by them.
+- `/sitemap.xml` lists every posting's link (the same 25 ids as the search, on one small site). SAP's
+  article 2757876 says "The system updates these Sitemaps every week", and the 406 entries of another
+  site's all carried one date five days old. It has no titles or places either, so it is not the
+  listing.
+- One public site answered its search with a script-and-cookie challenge (HTTP 403), and its sitemap
+  had another system's ids and paths. It no longer runs on Career Site Builder and was not read further.
+- SAP's course on Career Site Builder describes a standard XML feed that lists all of a customer's
+  current jobs each time it is read, but its address is given privately to job boards, so it is not
+  a public listing.
+- One search page read through the engine's own client (its usual headers) answered as by hand.
+
 ## Still open
 
 | Spike | Needs |

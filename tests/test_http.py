@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from ajh import http as ajh_http
 from ajh.http import Client, HttpError
 
 
@@ -106,3 +107,26 @@ def test_requests_to_a_paced_host_are_spaced_and_other_hosts_are_not():
     c.get("https://slow.example.com/b")
     c.get("https://fast.example.com/c")
     assert sleeps == [0.5] and c.requests == 3
+
+
+def test_a_reply_says_where_it_came_from_after_redirects(monkeypatch):
+    moved = Client(lambda *a: (200, {}, b"{}", "https://www.acme.example/careers"))
+    assert moved.get("https://acme.example/jobs").url == "https://www.acme.example/careers"
+    same, _, _ = client([ok()])  # a transport that doesn't say: the URL asked for
+    assert same.get("https://acme.example/jobs", params={"q": "ux"}).url == "https://acme.example/jobs?q=ux"
+
+    class Reply:  # what urllib gives once it has followed a redirect
+        status, headers, url = 200, {"Content-Type": "text/html"}, "https://www.acme.example/careers"
+
+        def read(self, size):
+            return b"<html></html>"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(ajh_http._OPENER, "open", lambda request, timeout: Reply())
+    landed = ajh_http.urllib_transport("GET", "https://acme.example/jobs", {}, None, 1.0)
+    assert landed == (200, {"content-type": "text/html"}, b"<html></html>", "https://www.acme.example/careers")

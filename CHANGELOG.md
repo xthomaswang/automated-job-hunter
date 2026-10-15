@@ -127,3 +127,49 @@ What changes for people who run a feed. Bring a feed repo up to date with
   was installed.
 - This does not make GitHub start scheduled runs; it starts them instead. See "Start the workflow
   from a Mac" in `references/schedule.md`.
+
+### SAP SuccessFactors career sites
+
+- New source type `successfactors`, added as `successfactors:<host>:Company` (or
+  `<host>/<brand>` for a brand's site under its own path). It covers Career Site Builder sites on
+  a company's own domain whose search pages show how many postings they found. `sources probe`
+  recognizes such a site from its page.
+- A site is read through `queries`, each searched as a phrase. Every page is checked against the
+  count it shows, so a changed layout fails the source rather than closing postings. A search
+  matching more than 1,000 postings fails.
+- Two kinds of SuccessFactors site stay unread, as their robots.txt requires: sites whose search
+  loads its postings from a script, and SAP's older job board on its own hosts. The probe names
+  both, and for the older board suggests probing the company's own career site.
+
+### Why Oracle Recruiting Cloud and iCIMS have no reader
+
+- `sources probe` still names these two systems as ones this version cannot read, and now says why.
+  Oracle reserves the job endpoints its career sites use for itself and approved partners. iCIMS's
+  terms forbid any automated access to its career portals. So there is no board to add, and no
+  other way in to look for. `docs/spikes.md` (E9, E10) quotes the documents.
+
+### Eightfold career sites
+
+- New source type `eightfold`, added as `eightfold:<host>/<domain>:Company`. It covers sites on
+  `<company>.eightfold.ai/careers` and the same app on a company's own host. `sources probe` takes
+  the careers page or one posting's link, recognizes either kind, and reads the domain the site's
+  own pages name, which its search needs.
+- A site is read through `queries`, like Workday. Every page of a search reports its total, and a
+  short read fails the source rather than closing postings. A search matching more than 500
+  postings fails and says to use more specific queries. Place, remote work and date come from the
+  listing. Texts are fetched on demand under `max_details`, one request a second.
+- `sources probe <url>` reads a company's careers page where its redirects end. When an old
+  address moves to the host a site is on now, the add line names that host, and the result shows
+  the address as `resolved`.
+- Some sites on a company's own host answer 429 (too many requests) after a few requests, even at
+  one a second. That update then skips the source and keeps its last snapshot.
+
+### One Workday requisition that a list names on two sites is judged once
+
+- A job list can name one Workday requisition on two sites of a tenant, sometimes with the company
+  written two ways. The second posting is now a variant of the first, so it is not triaged,
+  assessed or published again. Workday postings are compared by tenant and requisition, whatever
+  the site.
+- A requisition's later postings add `-1`, `-2` and so on to its id. The comparison drops that
+  ending only when at least five digits remain, so `R-12` and `R-13` stay two requisitions.
+- Pairs that were already judged twice stay until one of them closes.

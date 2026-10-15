@@ -102,6 +102,26 @@ the listing shows, needs none. The rank is built before the read, so a posting `
 `requeue` sends back waits one more update for its text. On a very large site, `categories` (the
 site's own job categories) narrows each search, which otherwise matches any of its words.
 
+**Eightfold** career sites are a detail source of the same kind, read through the JSON their own
+pages load. A search lists 10 postings a request, with its total on every page, so a search
+matching more than 500 is refused; sites also refuse deep pages. Each request carries the domain
+the site's pages name, so an entry names host and domain, and the probe recognizes a site on a
+company's own host by the settings its pages embed. The listing gives place, remote work and date
+for stage 0. It has no employment type: that stays in the text, as for Workday, with the site's own
+posting fields. Robots.txt allows these paths; spike E11 in [spikes.md](spikes.md) records the terms
+read.
+
+**SAP SuccessFactors.** A Career Site Builder site has no API: its search pages are HTML, 25 postings
+a page with the number the search found. So the reader checks every page against that number (the
+rows a page's own count names, the same count on every page, no link to a page past it, and every
+counted posting read), and a changed layout fails the source instead of closing postings. Each query
+is sent as a phrase, because the search matches any of the words anywhere in a posting, and there are
+no job categories to narrow it, so a search matching over 1,000 postings fails. A site whose search
+page fills itself in from a script is refused, because the script reads `/services/`, which the
+robots.txt SAP generates for every site disallows; so is SAP's older job board, whose hosts' robots.txt
+disallows everything. The text comes from the posting's own page, which must name itself as that
+posting; its `datePosted` is the day the page is read, so it is not used.
+
 **Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail
 source whose listing is the file. A row is only a pointer: it is used when its link is one posting
 on a system with a public API this engine reads (Greenhouse, Lever, Ashby, SmartRecruiters,
@@ -109,8 +129,12 @@ Workday), and that posting's text, date and link come from the system, so the po
 `official`. Rows linking to re-posters, redirects, systems without such an API, or employers' own
 pages are skipped, and `sources test` counts every row by outcome. A list posting's id is where it
 lives, `<system>~<board>~<id>`, which is enough to find the same posting on a watched board or in
-another list without storing anything more. Title and place stay the list's, since they are what
-change is measured on every update; the employment type stays in the text, as for Workday.
+another list without storing anything more. Workday postings are compared by tenant and
+requisition, whatever the site, since a tenant can post one requisition on several sites; a
+requisition's later postings add `-1`, `-2` and so on to its id, which the comparison drops where
+it is plainly that ending (`workday.requisition`). The id itself still names the site. Title and
+place stay the list's, since they are what change is measured on every update; the employment type
+stays in the text, as for Workday.
 
 Where a posting is, though, is the employer's fact: a list's region or location is only a label,
 often a street address or "3 Locations" that stage 0 cannot read. So the place the employer's
@@ -301,14 +325,14 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   shrinks by more than 40% is held until the shrink repeats. Changing a query-scoped source's
   queries re-baselines it without closures. A failed fetch keeps the previous snapshot.
 - **Duplicates.** A list's posting on a board the feed watches (by where it lives, or by company and
-  title) defers to the board's own, and a posting several lists name defers to one of them. An
-  aggregator copy of an opening an employer's own board lists, or a list names (same company and
-  title), defers to that posting. Copies on several aggregators defer to one of them: one
-  already judged, else the one with the lowest key, so the choice never flips. Within one source,
-  postings with the same company and title and near-identical text defer to one representative;
-  that includes one aggregator, which can list an opening once per location. Variants are
-  recomputed every tick from the state of every source; when a representative closes, a variant
-  takes over and is judged.
+  title) defers to the board's own, and a posting several lists name, or one list names on two
+  Workday sites, defers to one of them. An aggregator copy of an opening an employer's own board
+  lists, or a list names (same company and title), defers to that posting. Copies on several
+  aggregators defer to one of them: one already judged, else the one with the lowest key, so the
+  choice never flips. Within one source, postings with the same company and title and
+  near-identical text defer to one representative; that includes one aggregator, which can list an
+  opening once per location. Variants are recomputed every tick from the state of every source;
+  when a representative closes, a variant takes over and is judged.
 - **Profile changes.** Stage 0 is re-run on every tick, so a change to the hard limits costs
   nothing. Postings parked for their own place come back when the regions take them in. Two hashes
   decide what else is judged again: the triage hash covers `targets` and `seniority`, and the

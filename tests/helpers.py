@@ -75,10 +75,13 @@ def ashby_posting(uuid, board="globex", title="UX Researcher", text=None):
             "employmentType": "FullTime", "isListed": True}  # fmt: skip
 
 
-def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=None, category="Research", site=None):
+def wd_posting(
+    jid, title="UX Researcher", places=("US, CA, San Jose",), text=None, category="Research", country=None, site=None
+):
     """A posting on the fake Workday site: its listing row, and the text its detail returns.
 
-    With `site`, only that site's search lists it, as on a tenant with several sites.
+    `country` is the country its detail names for the first place, as some sites give one. With
+    `site`, only that site's search lists it, as on a tenant with several sites.
     """
     where = places[0] if len(places) == 1 else f"{len(places)} Locations"
     slug = re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")
@@ -93,6 +96,7 @@ def wd_posting(jid, title="UX Researcher", places=("US, CA, San Jose",), text=No
         "places": list(places),
         "text": text or prose(sum(map(ord, jid))),
         "category": category,
+        "country": country,
         "site": site,
     }
 
@@ -146,7 +150,7 @@ class Boards:
             posting = self.hooli[jid]
             link = f"https://jobs.smartrecruiters.com/Hooli/{jid}-ux-researcher"
             detail = {"id": jid, "active": True, "postingUrl": link, "applyUrl": link + "?oga=true",
-                      "jobAd": {"sections": posting["sections"]}}  # fmt: skip
+                      "location": posting["row"]["location"], "jobAd": {"sections": posting["sections"]}}  # fmt: skip
             return 200, {}, json.dumps(detail).encode()
         ask = dict(urllib.parse.parse_qsl(parts.query))
         self.requests.append(("search", ask.get("q", "")))
@@ -191,6 +195,8 @@ class Boards:
             "canApply": True,
             "posted": True,
         }
+        if posting.get("country"):
+            info["country"] = {"descriptor": posting["country"], "id": f"country-{posting['country']}"}
         return 200, {}, json.dumps({"jobPostingInfo": info}).encode()
 
     def details(self):

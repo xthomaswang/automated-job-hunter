@@ -122,6 +122,8 @@ def reconcile(
     events: dict[str, Any] = {
         "new": 0,
         "parked": 0,
+        "outside_regions": 0,
+        "unparked": 0,
         "waiting": 0,
         "changed": [],
         "revived": [],
@@ -171,16 +173,24 @@ def reconcile(
             events["waiting"] += 1
             del seen[jid]
             continue
+        # The posting's own record, when this update fetched it, can put it outside the wanted regions
+        # where its listing could not say (a list's label, a street address, "3 Locations"). Stage 0
+        # sees only the listing, so the posting is parked rather than dropped, its countries kept:
+        # it is then not new on the next update, which has only the listing, and its text is not
+        # fetched again. None: no record this update.
+        away = stage0.outside(item.job.own_location) if item.job.own_location else None
         if row is None:
             # A detail source's postings arrive over several updates as their text is fetched, so
             # the backfill limit applies to each one as it arrives, not only to the first read.
-            parked = (
+            parked = not away and (
                 (first_snapshot or source.get("ats") in S.DETAILED)
                 and backfill_days is not None
                 and (age_days(item.job.posted_at, today) or 0) > backfill_days
             )
-            rows[jid] = Row(jid, "S" if parked else "P", today.isoformat(), item.gk, item.tfp)
-            events["parked" if parked else "new"] += 1
+            row = rows[jid] = Row(jid, "S" if parked or away else "P", today.isoformat(), item.gk, item.tfp)
+            if away:  # whatever its age, so that `requeue --parked` leaves it parked
+                set_tag(row, "place", ",".join(away))
+            events["outside_regions" if away else "parked" if parked else "new"] += 1
             continue
         if row.status == "X":  # back within the tombstone window: its triage verdict is still good
             row.status, row.note = row.note.split("@")[0] or "P", "-"
@@ -200,6 +210,18 @@ def reconcile(
                 if was in PUBLISHED:
                     set_tag(row, "was", was)
                 events["changed"].append(f"{sid}:{jid}")
+        # The same for a known posting not judged yet. One already judged, or published and being
+        # judged again (`was`), keeps its verdict.
+        if away is not None and row.status in "PVS" and tag(row, "was") is None:
+            placed = row.status == "S" and tag(row, "place") is not None
+            if away:
+                if not placed:
+                    events["outside_regions"] += 1
+                row.status, row.note, row.attempts = "S", "-", 0
+                set_tag(row, "place", ",".join(away))
+            elif placed:  # its own record no longer puts it outside
+                row.status, row.note = "P", "-"
+                events["unparked"] += 1
 
     for jid in [j for j in rows if j not in seen]:
         row = rows[jid]
@@ -376,6 +398,22 @@ def detail_rank(rows: Mapping[str, Row], stage0: C.Stage0, generations: Mapping[
     return rank
 
 
+def unpark(state: State, stage0: C.Stage0) -> list[str]:
+    """Postings parked for their place that today's regions take in: back to triage.
+
+    The tag holds the countries the posting's own record named, so this needs no request. As for
+    `unblock`, the text comes with a later update.
+    """
+    freed = []
+    for sid in state.source_ids():
+        for jid, row in state.rows(sid).items():
+            place = tag(row, "place")
+            if row.status == "S" and place is not None and not stage0.excludes(place.split(",")):
+                row.status, row.note = "P", "-"
+                freed.append(f"{sid}:{jid}")
+    return freed
+
+
 def unblock(state: State, thresholds: Mapping[str, Any]) -> list[str]:
     """Postings left out by a hard requirement that today's thresholds no longer impose: assess again.
 
@@ -543,6 +581,8 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         "sources": {"fetched": 0, "gated": len(sources) - len(to_fetch), "failed": 0, "failures": {}},
         "new": 0,
         "parked": 0,
+        "outside_regions": 0,  # parked: the posting's own record puts it outside the regions
+        "unparked": 0,  # parked for its place before, and now inside them
         "waiting_for_text": 0,
         "changed": 0,
         "closed": 0,
@@ -579,7 +619,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         info.pop("error", None)
         info.pop("fail_since", None)
         summary["sources"]["fetched"] += 1
-        for name in ("new", "parked"):
+        for name in ("new", "parked", "outside_regions", "unparked"):
             summary[name] += events[name]
         summary["waiting_for_text"] += events["waiting"]
         if events["waiting"]:  # shown in the feed, so that a source filling in slowly is not a mystery
@@ -601,6 +641,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
             plan["closed"] += retire(sid, state.rows(sid), today)
             state.sources.pop(sid, None)
 
+    summary["unparked"] += len(unpark(state, stage0))  # first, so that one back from parking can be a variant
     summary["variants"] = assign_variants(state, seen, {s["id"]: s for s in sources})
     for sid, items in seen.items():  # titles already judged unrelated whatever the duties
         for jid, item in items.items():

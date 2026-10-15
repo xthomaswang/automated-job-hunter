@@ -111,7 +111,7 @@
          "salt lake city", "las vegas", "indianapolis", "baltimore", "boulder", "bellevue", "redmond", "kirkland",
          "brooklyn", "jersey city", "tampa", "orlando", "kansas city", "cincinnati", "cleveland", "new orleans",
          "honolulu", "san antonio", "san mateo", "south san francisco"],
-  "GB": ["london", "edinburgh", "glasgow", "bristol", "leeds"],
+  "GB": ["london", "edinburgh", "glasgow", "bristol", "leeds", "belfast", "cardiff"],
   "IE": ["dublin", "cork"],
   "FR": ["paris", "lyon"],
   "DE": ["berlin", "munich", "münchen", "hamburg", "frankfurt", "cologne", "köln", "stuttgart"],

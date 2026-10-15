@@ -66,7 +66,7 @@ cost before committing, from this table (`hunter status` gives the counts):
 | What changes | What is judged again |
 |---|---|
 | `targets` (roles, adjacent or avoid) or `seniority` | Triage for every posting it dropped, **and** every assessment |
-| `profile.md`, `eligibility`, `locations` or `employment` | Every assessment (the hard limits also apply at once, free) |
+| `profile.md`, `eligibility`, `locations` or `employment` | Every assessment (the hard limits also apply at once, free). Widening `locations.regions` also sends the postings parked as outside them to triage; `outside_regions` in `hunter status` counts them |
 | `companies.exclude` | Nothing; that company's postings leave the feed the next time its board is read, free |
 | `thresholds`, `caps`, `companies.prefer` | Nothing. Thresholds also reach postings already listed: a higher floor or a stricter hard requirement takes them out, and relaxing a hard requirement sends the postings it left out back to be assessed |
 | `thresholds.unmet_requirements` | Nothing, but it only reaches postings assessed since rubric `assess-v2` (`judged.rubric` in `positions.jsonl`). Postings assessed earlier stay listed, unchecked. To check them, run `hunter requeue --assessed` once and tell the user the cost it prints; skip that when `profile.md` is edited in the same change, since that assesses everything again anyway. Suggest letting those assessments arrive with the list still empty: unmet requirements are then only flagged ("unmet degree" in the README, quoted in the brief), so the user can check them before setting the kinds that leave postings out |

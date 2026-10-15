@@ -173,3 +173,17 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - A requisition's later postings add `-1`, `-2` and so on to its id. The comparison drops that
   ending only when at least five digits remain, so `R-12` and `R-13` stay two requisitions.
 - Pairs that were already judged twice stay until one of them closes.
+
+### A posting's own record decides whether it is in the wanted regions
+
+- A job list's region label no longer lets a posting outside `locations.regions` through. Neither
+  does a listing that names no country, such as a street address or "3 Locations". When the
+  posting's own record (Workday, SmartRecruiters, Greenhouse, Lever or Ashby) names only countries
+  outside the regions, the posting is parked with those countries and never judged, and later
+  updates fetch nothing more for it. Widening the regions sends it to triage. An unknown place
+  still passes.
+- The same applies to a watched Workday site's postings whose listing names no country.
+- `collect` and `feed/meta.json` count these as `outside_regions`, and the README says how many.
+  `requeue --parked` leaves them parked.
+- Belfast and Cardiff are read as cities in the UK.
+- Postings judged before this version keep their verdicts.

@@ -46,6 +46,7 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
     stale = 0  # assessed under an earlier profile and queued to be assessed again; still listed meanwhile
     mine = {"applied": 0, "declined": 0}
     blocked = 0  # below the bar because of a hard requirement, rather than the fit
+    outside = 0  # parked because the posting's own record puts it outside the wanted regions
     for sid in state.source_ids():
         for jid, row in state.rows(sid).items():
             decision = decided.get(f"{sid}:{jid}")
@@ -59,6 +60,7 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
             tally[row.status] += 1
             stale += row.status in "ARU" and row.ag < assess_generation and not settled
             blocked += row.status == "R" and tag(row, "blk") is not None
+            outside += row.status == "S" and tag(row, "place") is not None
     return {
         **mine,
         "published": tally["A"] + tally["U"],
@@ -69,7 +71,8 @@ def _counts(state: State, assess_generation: int, decided: decisions.Decided) ->
         "blocked": blocked,
         "dropped": tally["D"],
         "variants": tally["V"],
-        "parked": tally["S"],
+        "parked": tally["S"] - outside,  # older than the backfill limit
+        "outside_regions": outside,
         # new postings on detail sources, listed but not yet in the state until their text is fetched
         "waiting_for_text": sum(info.get("waiting", 0) for info in state.sources.values()),
     }

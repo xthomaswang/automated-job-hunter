@@ -172,6 +172,21 @@ def _listed(source: Mapping[str, Any], base: str, row: Mapping[str, Any]) -> Job
     )
 
 
+def _own_place(info: Mapping[str, Any]) -> str:
+    """Where a posting's own record puts it: its location with its country, then its other locations.
+
+    The country belongs to the first location only, so it joins that place: a site often names a
+    location by a campus or a street, which says no country by itself. The other locations are as
+    the site names them.
+    """
+    country = info.get("country")
+    named = country.get("descriptor") if isinstance(country, dict) else None
+    first = [p.strip() for p in (info.get("location"), named) if isinstance(p, str) and p.strip()]
+    more = info.get("additionalLocations")
+    others = [p.strip() for p in more if isinstance(p, str) and p.strip()] if isinstance(more, list) else []
+    return " / ".join(dict.fromkeys([", ".join(first), *others] if first else others))
+
+
 def _detail(client: Client, root: str, job: Job, path: str) -> Job | None:
     """The posting with its text, or None when the site would not give it this time."""
     try:
@@ -186,7 +201,9 @@ def _detail(client: Client, root: str, job: Job, path: str) -> Job | None:
         return None
     # The employment type stays in the text, not in `employment_type`: stage 0 must see the same facts
     # every update, and most updates have only the listing. Otherwise a posting it drops for being
-    # part-time would look new again next time, and its text would be fetched again and again.
+    # part-time would look new again next time, and its text would be fetched again and again. The
+    # place stays the listing's for the same reason. The record's own place goes in `own_location`,
+    # and `collect` stores what it decides from it, so updates with only the listing still know.
     places = [p for p in [info.get("location"), *(info.get("additionalLocations") or [])] if isinstance(p, str) and p]
     kind = info.get("timeType")
     head = [
@@ -198,6 +215,7 @@ def _detail(client: Client, root: str, job: Job, path: str) -> Job | None:
         job,
         description="\n".join(head) + "\n\n" + text if head else text,
         posted_at=started if isinstance(started, str) else None,
+        own_location=_own_place(info),
     )
 
 

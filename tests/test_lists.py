@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from ajh import collect, registry
+from ajh import collect, registry, requeue
 from ajh.http import Client, HttpError
 from ajh.layout import Layout
 from ajh.model import SourceError
@@ -95,6 +95,34 @@ TABLES = """# Open roles
 |:---|:---|:---|:---|
 | Hooli | 2026-10-13 | 3 | |
 """.replace("HOOLI", HOOLI)
+
+
+PLACES = {"id": "places", "ats": "github-list", "repo": "someone/places", "path": "jobs.json",
+          "filters": {"region": ["US"]}}  # fmt: skip
+CAMPUS = "Springfield, Acme Campus, 1 Example Drive"
+WORKDAY = "https://globex.wd5.myworkdayjobs.com/en-US/External/job/Springfield/UX-Researcher_"
+ABROAD = "workday~globex~External~R7"
+
+
+def placed_list():
+    """A list that labels every row US, linking to Workday postings whose own records say where they are."""
+    found = Boards()
+    found.lists = {
+        "someone/places/main/jobs.json": json.dumps([
+            dict(role("Globex", WORKDAY + "R7"), location=CAMPUS),  # the record says United Kingdom
+            dict(role("Globex", WORKDAY + "R8"), location=CAMPUS),  # the record says United States
+            dict(role("Globex", WORKDAY + "R9"), location="3 Locations"),  # one of them in the US
+            dict(role("Globex", WORKDAY + "R10"), location="Springfield, Acme Campus"),  # no country anywhere
+        ])
+    }  # fmt: skip
+    found.workday = {
+        "R7": wd_posting("R7", places=(CAMPUS,), country="United Kingdom"),
+        "R8": wd_posting("R8", places=(CAMPUS,), country="United States of America"),
+        "R9": wd_posting("R9", places=("Springfield, Acme Campus", "US, CA, San Jose", "Germany, Berlin"),
+                         country="United Kingdom"),
+        "R10": wd_posting("R10", places=("Springfield, Acme Campus",)),
+    }  # fmt: skip
+    return found
 
 
 def boards():
@@ -366,3 +394,105 @@ def test_a_lists_entry_is_checked_before_anything_is_read(repo):
     assert "repo must be" in detail and "path must be" in detail and "filters must" in detail
     assert L.problems({**JSON_LIST, "path": "jobs.txt"}) == ["joblist: format must be json or markdown"]
     assert L.problems({**JSON_LIST, "path": "jobs.txt", "format": "markdown"}) == []
+
+
+def test_a_posting_the_list_labels_us_but_whose_own_record_is_abroad_is_parked_not_judged(repo):
+    root = repo(sources=(PLACES,), criteria={"locations": {"regions": ["US"]}})
+    found = placed_list()
+    summary = tick(root, found)
+    table = rows(root, "places")
+    assert (table[ABROAD].status, table[ABROAD].note) == ("S", "place:GB")  # parked, and why
+    assert (summary["outside_regions"], summary["new"], summary["dropped"]) == (1, 3, {})
+    # in the US, in the US among other places, or in no country the engine can read: judged as before
+    assert {jid: row.status for jid, row in table.items() if jid != ABROAD} == dict.fromkeys(
+        ["workday~globex~External~R8", "workday~globex~External~R9", "workday~globex~External~R10"], "P"
+    )
+    assert f"places:{ABROAD}" not in plan(root)["queue"]["triage"] and len(plan(root)["queue"]["triage"]) == 3
+
+    found.details()
+    summary = tick(root, found)  # the list alone says nothing new about it, so its record is not asked for
+    assert sorted(found.details()) == ["R10", "R8", "R9"]  # the others are waiting for triage
+    assert (rows(root, "places")[ABROAD].status, summary["outside_regions"], summary["new"]) == ("S", 0, 0)
+    assert f"places:{ABROAD}" not in plan(root)["queue"]["triage"]
+
+
+def test_widened_regions_bring_a_posting_parked_for_its_place_back_and_narrowed_ones_park_it(repo):
+    root = repo(sources=(PLACES,), criteria={"locations": {"regions": ["US"]}})
+    found = placed_list()
+    tick(root, found)
+    assert rows(root, "places")[ABROAD].status == "S"
+    repo(sources=(PLACES,), criteria={"locations": {"regions": ["US", "GB"]}})
+    found.details()
+    summary = tick(root, found)
+    assert (rows(root, "places")[ABROAD].status, rows(root, "places")[ABROAD].note) == ("P", "-")
+    assert summary["unparked"] == 1 and "R7" not in found.details()  # from the stored countries alone
+    assert f"places:{ABROAD}" not in plan(root)["queue"]["triage"]  # its text comes with the next update
+    tick(root, found)
+    assert f"places:{ABROAD}" in plan(root)["queue"]["triage"]
+
+    repo(sources=(PLACES,), criteria={"locations": {"regions": ["US"]}})
+    summary = tick(root, found)  # still waiting for triage, and its record says it is outside again
+    assert (rows(root, "places")[ABROAD].status, rows(root, "places")[ABROAD].note) == ("S", "place:GB")
+    assert summary["outside_regions"] == 1 and f"places:{ABROAD}" not in plan(root)["queue"]["triage"]
+
+
+def test_a_parked_posting_whose_own_record_moves_into_the_regions_comes_back(repo):
+    root = repo(sources=(PLACES,), criteria={"locations": {"regions": ["US"]}})
+    found = placed_list()
+    tick(root, found)
+    found.workday["R7"]["country"] = "United States of America"  # the employer moved it
+    tick(root, found)
+    assert rows(root, "places")[ABROAD].status == "S"  # nothing in the list changed, so nothing asked
+    listed = json.loads(found.lists["someone/places/main/jobs.json"])
+    listed[0]["location"] = "Springfield"  # the list's row changed, so the record is read again
+    found.lists["someone/places/main/jobs.json"] = json.dumps(listed)
+    summary = tick(root, found)
+    assert (rows(root, "places")[ABROAD].status, rows(root, "places")[ABROAD].note) == ("P", "-")
+    assert summary["unparked"] == 1 and f"places:{ABROAD}" in plan(root)["queue"]["triage"]
+
+
+def test_each_system_a_list_leads_to_gives_the_place_that_decides(repo):
+    root = repo(sources=(JSON_LIST,), criteria={"locations": {"regions": ["US"]}})
+    found = boards()
+    found.jobs["globex"][5]["location"] = {"name": "Berlin, Germany"}
+    found.lever["initech"][LEVER_ID] = lever_posting(LEVER_ID, location="London, United Kingdom")
+    found.ashby["globex"][0]["location"] = "Toronto, Canada"
+    found.hooli["744000002"] = sr_posting("744000002", full="Lisbon, , Portugal")
+    found.lists["someone/job-list/main/jobs.json"] = json.dumps(
+        [role("Globex", "https://job-boards.greenhouse.io/globex/jobs/5"),
+         role("Initech", f"https://jobs.lever.co/initech/{LEVER_ID}"),
+         role("Globex", f"https://jobs.ashbyhq.com/globex/{ASHBY_ID}"),
+         role("Hooli", HOOLI),  # San Jose, CA, United States
+         role("Hooli", "https://jobs.smartrecruiters.com/Hooli/744000002-ux-researcher")]
+    )  # fmt: skip
+    tick(root, found)
+    assert {jid: (row.status, row.note) for jid, row in rows(root, "joblist").items()} == {
+        "greenhouse~globex~5": ("S", "place:DE"),
+        f"lever~initech~{LEVER_ID}": ("S", "place:GB"),
+        f"ashby~globex~{ASHBY_ID}": ("S", "place:CA"),
+        "smartrecruiters~Hooli~744000001": ("P", "-"),
+        "smartrecruiters~Hooli~744000002": ("S", "place:PT"),
+    }
+
+
+def test_postings_parked_for_their_place_are_counted_apart_and_left_parked_by_requeue(repo):
+    root = repo(sources=(PLACES,), criteria={"locations": {"regions": ["US"]}, "backfill": {"days": 30}})
+    found = placed_list()
+    listed = json.loads(found.lists["someone/places/main/jobs.json"])
+    found.lists["someone/places/main/jobs.json"] = json.dumps(
+        [*listed, role("Initech", f"https://jobs.lever.co/initech/{LEVER_ID}")]
+    )
+    found.lever = {"initech": {LEVER_ID: lever_posting(LEVER_ID, created=1767225600000)}}  # first posted 2026-01-01
+    full_tick(root, found)
+    assert (rows(root, "places")[ABROAD].status, rows(root, "places")[f"lever~initech~{LEVER_ID}"].status) == ("S", "S")
+    counts = json.loads(Layout(root).feed_meta.read_text())["counts"]
+    assert (counts["parked"], counts["outside_regions"], counts["published"]) == (1, 1, 3)
+    readme = Layout(root).readme.read_text()
+    assert "- Parked as older than the backfill limit: 1." in readme
+    assert (
+        "- Parked as outside `locations.regions` by the employer's own record, which the listing did not show: 1."
+        in readme
+    )
+    assert requeue.run(root, "parked")["requeued"] == 1  # only the one parked for its age
+    table = rows(root, "places")
+    assert (table[f"lever~initech~{LEVER_ID}"].status, table[ABROAD].status) == ("P", "S")

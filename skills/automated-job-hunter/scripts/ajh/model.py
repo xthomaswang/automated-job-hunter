@@ -74,6 +74,10 @@ class Job:
     # The source has this posting's text, but it was not fetched this update (see `sources.fetch`),
     # so nothing judges it or rewrites its brief until it is.
     detail_skipped: bool = False
+    # Where the posting's own record puts it, when this update fetched that record. `location` stays
+    # the listing's (a list's own label, or a Workday listing's "3 Locations"), which change is measured
+    # on; `collect` parks a posting this puts outside the wanted regions (see `collect.reconcile`).
+    own_location: str = ""
 
     def __post_init__(self) -> None:
         if not self.source or not self.source_id or self.key != f"{self.source}:{self.source_id}":

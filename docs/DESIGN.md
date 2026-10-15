@@ -136,12 +136,24 @@ it is plainly that ending (`workday.requisition`). The id itself still names the
 place stay the list's, since they are what change is measured on every update; the employment type
 stays in the text, as for Workday.
 
+Where a posting is, though, is the employer's fact: a list's region or location is only a label,
+often a street address or "3 Locations" that stage 0 cannot read. So the place the employer's
+system gives comes with the text, and a posting it puts outside the wanted regions is parked, with
+its countries in a `place` tag, instead of being judged. Stage 0 cannot drop it: most updates have
+only the list, so a dropped posting would look new again each time and its text be fetched again.
+Parked, it is remembered, and its text is fetched again only when its row in the list changes;
+then the record decides afresh. Widening the regions brings it back from the stored countries
+alone, and `requeue --parked` leaves it parked. The same holds for a Workday site's own postings
+listed as "2 Locations", or under a campus name, whose record names the countries. A posting not
+judged yet is checked whenever its record is fetched; one already judged or published keeps its
+verdict.
+
 A posting whose text was not fetched comes back with `detail_skipped`. If it is new, `collect` keeps
 it out of the state until an update brings its text (nothing knew it, so nothing closes) and counts
 it as waiting for its text in `feed/meta.json` and the README. A known one is not judged, and its
 brief is not rewritten, until an update fetches its text. Title and place come from the listing on
 every update, so the change fingerprint compares like with like; the detail's extra places and its
-employment type go into the text.
+employment type go into the text, and its own place decides parking, as above.
 
 **Measured cost.** At API list prices (Haiku 5.5 $0.10/$0.50 and Sonnet 5.5 $2/$10 per million
 input/output tokens, price table dated 2026-10-06), triage costs about $0.14 per 1,000 postings and
@@ -322,11 +334,11 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   opening once per location. Variants are recomputed every tick from the state of every source;
   when a representative closes, a variant takes over and is judged.
 - **Profile changes.** Stage 0 is re-run on every tick, so a change to the hard limits costs
-  nothing. Two hashes decide what else is judged again: the triage hash covers `targets` and
-  `seniority`, and the assess hash covers the triage hash plus the profile text, `eligibility`,
-  `locations` and `employment`. A target or seniority change therefore re-asks triage for every
-  dropped posting and every assessment; a profile-text or preference change re-asks every
-  assessment. Excluded companies are a stage-0 filter, so excluding one costs nothing. Thresholds,
+  nothing. Postings parked for their own place come back when the regions take them in. Two hashes
+  decide what else is judged again: the triage hash covers `targets` and `seniority`, and the
+  assess hash covers the triage hash plus the profile text, `eligibility`, `locations` and
+  `employment`. A target or seniority change therefore re-asks triage for every dropped posting and
+  every assessment; a profile-text or preference change re-asks every assessment. Excluded companies are a stage-0 filter, so excluding one costs nothing. Thresholds,
   caps and preferred companies invalidate nothing. Stale verdicts stay published until refreshed.
 - **Churn.** The only volatile datum is a day-granular `as_of`, so a quiet day produces at most one
   heartbeat commit.

@@ -139,6 +139,29 @@ def test_searches_default_to_the_wanted_roles_and_stage_0_saves_the_text_request
     assert rows(root, "initech")["R1"].miss == 1  # new categories are a new search too
 
 
+def test_a_posting_whose_own_record_puts_every_place_outside_the_regions_is_parked(repo):
+    board = site(
+        wd_posting("R1", places=("Germany, Berlin", "France, Paris")),  # listed as "2 Locations"
+        wd_posting("R2", places=("Springfield Campus",), country="United Kingdom"),  # a campus, no country
+        wd_posting("R3", places=("Germany, Berlin", "US, CA, San Jose")),
+        wd_posting("R4", places=("Springfield Campus",)),  # nowhere the engine can read
+    )
+    root = repo(sources=(INITECH,), criteria={"locations": {"regions": ["US"]}})
+    summary = tick(root, board)
+    assert {jid: (row.status, row.note) for jid, row in rows(root, "initech").items()} == {
+        "R1": ("S", "place:DE,FR"),
+        "R2": ("S", "place:GB"),
+        "R3": ("P", "-"),
+        "R4": ("P", "-"),
+    }
+    assert summary["outside_regions"] == 2 and plan(root)["queue"]["triage"] == ["initech:R3", "initech:R4"]
+    board.details()
+    tick(root, board)
+    assert board.details() == ["R4", "R3"]  # the parked ones need no text
+    info = {"location": "Springfield Campus", "country": {"descriptor": "United Kingdom"}, "additionalLocations": "x"}
+    assert workday._own_place(info) == "Springfield Campus, United Kingdom"  # a malformed list of others is ignored
+
+
 def test_categories_narrow_a_broad_search_and_a_shared_host_builds_its_own_links():
     board = site(
         wd_posting("R1"),

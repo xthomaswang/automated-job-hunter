@@ -336,8 +336,22 @@ class Stage0:
                 kinds = kinds | {"internship"}
             if kinds and not kinds & self.employment:
                 return "employment"
-        if self.allowed:
-            countries, complete = self.places.resolve(job.location)
-            if complete and countries and not countries & self.allowed:
-                return "location"
+        if self.outside(job.location):
+            return "location"
         return None
+
+    def excludes(self, countries: Iterable[str]) -> bool:
+        """Whether there are countries here and the wanted regions leave out every one. With no regions
+        set, none are left out."""
+        found = set(countries)
+        return bool(self.allowed) and bool(found) and not found & self.allowed
+
+    def outside(self, location: str | None) -> list[str]:
+        """The countries a place names, when it certainly puts a posting outside the wanted regions.
+
+        Empty when it does not: inside them, no regions set, or any of its places unreadable.
+        """
+        if not self.allowed:
+            return []
+        countries, complete = self.places.resolve(location)
+        return sorted(countries) if complete and self.excludes(countries) else []

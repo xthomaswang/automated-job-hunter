@@ -84,6 +84,23 @@ def test_preference_only_quotes_cannot_support_mandatory_years():
 @pytest.mark.parametrize(
     "text,expected",
     [
+        ("Bachelor's degree or equivalent practical experience.", True),
+        ("A degree in Psychology, or an equivalent combination of education and experience.", True),
+        ("Equivalent work experience will be considered.", True),
+        ("In lieu of a degree, four years of research experience.", True),
+        ("Master's degree or 3 years of related experience.", True),
+        ("PhD in HCI, Psychology or a related field is required.", False),  # widens the field, not the degree
+        ("Bachelor's degree and 3 years of relevant experience.", False),
+        ("Must be currently enrolled in a PhD program.", False),
+    ],
+)
+def test_a_requirement_that_offers_an_alternative_is_not_a_hard_one(text, expected):
+    assert R.accepts_alternative(text) is expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
         ("We do not offer visa sponsorship for this role.", (True, False)),
         ("Please note that visa sponsorship is not available for this position.", (True, False)),
         ("We are unable to sponsor visas at this time.", (True, False)),

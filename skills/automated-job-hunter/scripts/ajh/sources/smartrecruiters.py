@@ -153,12 +153,15 @@ def _detail(client: Client, url: str, job: Job, slug: str) -> Job | None:
     applied = data.get("applyUrl")
     own_apply = isinstance(applied, str) and _own(applied.split("?", 1)[0], slug, job.source_id)
     released = data.get("releasedDate")  # for a posting known only from a list, which gives no date
+    where = data.get("location")  # for one known only from a list, whose place is the list's label
+    placed = isinstance(where, dict) and any(where.get(k) for k in ("fullLocation", "city", "region", "country"))
     return replace(
         job,
         description=text,
         url=link or job.url,
         apply_url=applied if own_apply else None,
         posted_at=job.posted_at or (released if isinstance(released, str) else None),
+        own_location=_place(where) if placed else "",
     )
 
 

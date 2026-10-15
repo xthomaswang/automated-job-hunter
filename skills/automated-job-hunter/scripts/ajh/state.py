@@ -8,7 +8,8 @@ Row status:
   A  assessed and published  R  assessed, below the publishing threshold
   U  published unscored after repeated invalid verdicts
   V  variant of another posting (`note` holds its key), never judged on its own
-  S  parked: older than the backfill window when its source was first read
+  S  parked: older than the backfill window when its source was first read, or (with a `place` tag)
+     put outside the wanted regions by the posting's own record, which the listing did not show
   X  tombstone: gone from its source (`note` holds "<previous status>@<day closed>")
 """
 
@@ -60,7 +61,8 @@ def tag(row: Row, name: str) -> str | None:
     Tags: `was:<status>` (a published posting being re-judged), `fb:<codes>` (why the last answer was
     rejected), `canary` (a triage drop sent to assessment to measure what triage misses),
     `blk:<facts>` (left out by a hard requirement; the facts it was checked on, see `feed.hard_limit`),
-    `unmet:<kinds>` (an assessed posting's unmet requirements, listed or not).
+    `unmet:<kinds>` (an assessed posting's unmet requirements, listed or not), `place:<countries>`
+    (parked: the countries the posting's own record names, none of them wanted; see `collect.unpark`).
     """
     for part in row.note.split(";"):
         key, _, value = part.partition(":")

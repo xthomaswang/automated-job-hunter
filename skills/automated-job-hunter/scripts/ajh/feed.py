@@ -407,6 +407,11 @@ def readme_text(meta: Mapping[str, Any], records: Mapping[str, Mapping[str, Any]
     ]
     if counts["parked"]:
         lines.append(f"- Parked as older than the backfill limit: {counts['parked']}.")
+    if counts.get("outside_regions"):
+        lines.append(
+            "- Parked as outside `locations.regions` by the employer's own record, which the listing did not "
+            f"show: {counts['outside_regions']}. They come back if the regions are widened to take them in."
+        )
     if counts.get("waiting_for_text"):
         lines.append(
             f"- New postings on career sites waiting for their text: {counts['waiting_for_text']}. They join over the "

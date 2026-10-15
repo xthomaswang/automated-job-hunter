@@ -1,10 +1,11 @@
 """Ask for postings to be judged again: the parked ones, or every assessed one.
 
-Parked postings (older than `backfill.days` when their board was first read) go to triage.
-Assessed postings get a stale assessment generation, the same state a profile edit leaves them in:
-the next updates assess them again, at most `caps.max_assess` at a time, and a listed posting stays
-listed meanwhile. A posting the person declined, or applied to and already judged, is left alone.
-The change is to `state/`: commit it, and the next update picks it up.
+Parked postings (older than `backfill.days` when their board was first read) go to triage. Ones
+parked because their own record puts them outside the wanted regions stay parked: they come back
+when the regions take them in. Assessed postings get a stale assessment generation, the same state
+a profile edit leaves them in: the next updates assess them again, at most `caps.max_assess` at a
+time, and a listed posting stays listed meanwhile. A posting the person declined, or applied to and
+already judged, is left alone. The change is to `state/`: commit it, and the next update picks it up.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from typing import Any
 
 from . import decisions
 from .layout import Layout
-from .state import State, read_json
+from .state import State, read_json, tag
 
 # Claude Code's list-price estimates measured in docs/spikes.md, for the summary only.
 COST_PER = {"triage": 0.00014, "assess": 0.02}
@@ -30,7 +31,7 @@ def run(root: Path | str, what: str) -> dict[str, Any]:
         for jid, row in rows.items():
             if decisions.never_judge(decided.get(f"{sid}:{jid}"), row):
                 continue
-            if what == "parked" and row.status == "S":
+            if what == "parked" and row.status == "S" and tag(row, "place") is None:
                 row.status = "P"
                 count += 1
             elif what == "assessed" and row.status in "ARU" and row.ag:

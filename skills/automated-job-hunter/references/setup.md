@@ -147,6 +147,10 @@ to `config/sources.json` by hand:
   read are `company`, `title`, `location` and `url`; map other names with `fields`, for example
   `{"link": "applyUrl"}`. `filters` keeps the rows whose field has one of the values; a row that
   leaves the field empty is kept.
+- A list's region or location is only a label. Whether a posting is in `locations.regions` is
+  decided by the place the employer's own system gives. A posting the list labels US whose own
+  record names another country is parked, not judged; the README counts it, and it comes back if
+  the regions are widened to take it in.
 - Markdown: every table whose headings name a company, a role and a link (`Application`, `Apply`,
   `Link`) is read; `↳` in the company column means the company of the row above. Map other
   headings with `columns`. `sections` keeps only the tables under the page headings that contain

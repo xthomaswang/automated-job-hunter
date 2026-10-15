@@ -3,9 +3,11 @@
 A list is one file in a public repo: JSON rows, or Markdown tables. A row names a company, a role
 and a link. Only a row whose link is one posting on a system this engine reads through a public
 API is used (Greenhouse, Lever, Ashby, SmartRecruiters, Workday): its text, date and link then come
-from that system, never from the list, so each posting is the employer's own. A row linking
-anywhere else (a site that re-posts jobs, a redirect, a system with no public API, an employer's
-own page) is skipped, as is a row the source's `filters` leave out; `sources test` counts them.
+from that system, never from the list, so each posting is the employer's own. So does the place
+that decides whether it is in the wanted regions: a list's region or location is only a label. A
+row linking anywhere else (a site that re-posts jobs, a redirect, a system with no public API, an
+employer's own page) is skipped, as is a row the source's `filters` leave out; `sources test`
+counts them.
 
 A posting's id is where it lives, `<system>~<board>~<id>` (a Workday board is `<tenant>~<site>`),
 so two lists naming one posting, or a list naming a posting on a board the feed watches, are known
@@ -408,7 +410,9 @@ def read(client: Client, source: Mapping[str, Any]) -> tuple[dict[str, tuple[Job
 def _detail(client: Client, job: Job, found: Link, boards: dict[str, Any]) -> Job | None:
     """The posting with its text from the employer's own system, or None when it would not give it.
 
-    Its title and place stay the list's: they are what change is measured on, every update.
+    Its title and place stay the list's: they are what change is measured on, every update. The
+    place the employer's system gives comes as `own_location`: the list's is only a label, so that
+    one decides whether the posting is in the wanted regions (see `collect.reconcile`).
     """
     try:
         if found.system == "workday":
@@ -452,7 +456,7 @@ def _detail(client: Client, job: Job, found: Link, boards: dict[str, Any]) -> Jo
     kind = facts.get("employment_type")
     if isinstance(kind, str) and kind and kind != "unknown":
         text = f"Employment: {kind}\n\n{text}"
-    url, applied = facts.get("url"), facts.get("apply_url")
+    url, applied, place = facts.get("url"), facts.get("apply_url"), facts.get("location")
     return replace(
         job,
         description=text,
@@ -460,6 +464,7 @@ def _detail(client: Client, job: Job, found: Link, boards: dict[str, Any]) -> Jo
         url=url if public_https(url) else job.url,
         apply_url=applied if public_https(applied) else None,
         department=str(facts.get("department") or ""),
+        own_location=place if isinstance(place, str) and place != "unknown" else "",
     )
 
 

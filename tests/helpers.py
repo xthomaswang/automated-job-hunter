@@ -250,7 +250,10 @@ def good_assessment(job, fit=82, role_match="direct"):
 
 
 def answer_assess(root, assess_for=good_assessment):
-    """Write assessment result files. `assess_for` returns the fields for a posting, or None to skip it."""
+    """Write assessment result files. `assess_for` returns the fields for a posting, or None to skip it.
+
+    A field whose value is a list is written as one line per item, as repeated lines are.
+    """
     layout = Layout(root)
     for packet, entry in json.loads(layout.packet_index.read_text()).items():
         if entry["stage"] != "assess":
@@ -260,7 +263,9 @@ def answer_assess(root, assess_for=good_assessment):
             source, jid = key.split(":")
             fields = assess_for(json.loads((layout.snapshot / f"{source}.json").read_text())[jid])
             if fields is not None:
-                lines += [f"## {local}", *(f"{name}: {value}" for name, value in fields.items())]
+                lines.append(f"## {local}")
+                for name, value in fields.items():
+                    lines += [f"{name}: {item}" for item in (value if isinstance(value, list) else [value])]
         layout.results.mkdir(parents=True, exist_ok=True)
         (layout.results / f"{packet}.txt").write_text("\n".join([*lines, f"end {len(entry['items'])}"]) + "\n")
 

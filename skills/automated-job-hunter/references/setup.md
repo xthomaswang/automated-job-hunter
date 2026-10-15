@@ -78,12 +78,22 @@ Do not copy the résumé file into the feed repo.
     posting that states no years is never left out, and preferred years never count.
   - `thresholds.max_seniority` (`intern` to `staff`): leave out postings assessed as more senior,
     which catches leadership roles that state no years. An unknown seniority never counts.
+  - `thresholds.unmet_requirements`: any of `degree`, `enrollment`, `credential` and `license`.
+    Leave out postings whose assessment quotes a mandatory requirement of that kind the profile does
+    not meet, such as a PhD, current enrollment in a degree program, or a nursing license. A
+    requirement that is only preferred, or that equivalent experience can replace, never counts.
+    The assessment can only tell from what the profile says, so the profile must state the person's
+    degrees and fields, whether they are enrolled now (in what program, finishing when), and any
+    certifications or licenses; otherwise nothing is ever left out for it. With the list empty,
+    unmet requirements are still flagged in the README and quoted in each brief, so the user can
+    see a few before deciding which kinds should leave postings out.
   - `thresholds.direct_min`: the lowest fit at which a wanted role is still listed. Unset, a wanted
     role is always listed, however low the fit.
 
   These change only what is listed, so they judge nothing again and take effect at the next update,
   for postings already listed too. Relaxing a hard requirement sends the postings it left out back
-  to be assessed.
+  to be assessed. Unmet requirements are found only by assessments made since rubric `assess-v2`
+  (see "Changing the search" in SKILL.md for checking older ones).
 - Optional: `caps.max_usd_per_month`, a monthly budget in US dollars (unset: no budget). Before each
   update the engine adds up this month's spending from `feed/usage.jsonl`; once it has reached the
   budget, judging pauses until the first of next month, and new postings wait in the queue. Months

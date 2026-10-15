@@ -1,5 +1,6 @@
 import pytest
 from ajh.model import Job
+from ajh.rubric import FEEDBACK
 from ajh.verdicts import check_assessment, clean_text, read_assess, read_triage
 
 TRIAGE = {"stage": "triage", "nonce": "9f2c", "items": {"T0001": "acme:1", "T0002": "acme:2", "T0003": "acme:3"}}
@@ -154,6 +155,57 @@ def test_supported_zero_and_preferred_years_are_kept():
         fields(preferred_years="5 years", preferred_years_quote="ideally 5 years in B2B"), job()
     )
     assert preferred["preferred_years"] == 5.0 and preferred["required_years"] == 3.0 and codes == []
+
+
+STUDENT_POSTING = POSTING + (
+    "\n- Must be currently enrolled in a PhD program in Psychology or a related field."
+    "\n- A Master's degree in Statistics is preferred."
+    "\n- Bachelor's degree or equivalent practical experience."
+    "\n- Active state nursing license required."
+)
+
+
+def test_an_unmet_requirement_is_kept_only_when_mandatory_quoted_and_without_an_alternative():
+    assert check_assessment(fields(), job())[0]["unmet"] == []  # none stated: checked, nothing found
+    written_out = check_assessment(fields(unmet=["none", "None."]), job())  # as `preferred_years: none` is written
+    assert (written_out[0]["unmet"], written_out[0]["unverified"], written_out[1]) == ([], 0, [])
+    assessment, codes = check_assessment(
+        fields(
+            unmet=[
+                "enrollment || Must be currently enrolled in a PhD program",
+                "Licence || Active state nursing license required",  # any case, either spelling
+                "degree || A Master's degree in Statistics is preferred",  # only preferred
+                "degree || Bachelor's degree or equivalent practical experience",  # an alternative is offered
+            ]
+        ),
+        job(STUDENT_POSTING),
+    )
+    assert assessment["unmet"] == [
+        {
+            "kind": "enrollment",
+            "quote": "Must be currently enrolled in a PhD program in Psychology or a related field.",
+        },
+        {"kind": "license", "quote": "Active state nursing license required."},
+    ]
+    assert assessment["unverified"] == 2 and codes == ["unmet"] and "unmet" in FEEDBACK
+
+
+def test_an_unmet_line_without_a_known_kind_or_a_real_quote_is_dropped_and_rejects_nothing():
+    assessment, codes = check_assessment(
+        fields(
+            unmet=[
+                "visa || We do not offer visa sponsorship for this role.",  # work authorization is a note
+                "degree || A PhD from a top university",  # not in the posting
+                "enrollment Must be currently enrolled in a PhD program",  # no separator
+            ]
+        ),
+        job(STUDENT_POSTING),
+    )
+    assert assessment["unmet"] == [] and assessment["unverified"] == 3 and codes == ["unmet"]
+    capped = check_assessment(
+        fields(unmet=["license || Active state nursing license required"] * 6), job(STUDENT_POSTING)
+    )
+    assert len(capped[0]["unmet"]) == 4
 
 
 def test_free_text_is_sanitized_and_extra_lines_are_ignored():

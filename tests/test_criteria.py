@@ -193,14 +193,21 @@ def test_a_monthly_budget_is_optional_and_judges_nothing_again():
 
 def test_listing_limits_are_validated_and_judge_nothing_again():
     out = C.normalize(MINIMAL, PLACES)["thresholds"]
-    assert (out["direct_min"], out["max_required_years"], out["max_seniority"]) == (None, None, None)
-    good = {"direct_min": 30, "max_required_years": 3, "max_seniority": "mid"}
+    assert (out["direct_min"], out["max_required_years"], out["max_seniority"], out["unmet_requirements"]) == (
+        None,
+        None,
+        None,
+        [],
+    )
+    good = {"direct_min": 30, "max_required_years": 3, "max_seniority": "mid", "unmet_requirements": ["degree"]}
     assert C.normalize(dict(MINIMAL, thresholds=good), PLACES)["thresholds"]["max_seniority"] == "mid"
     for bad, problem in (
         ({"direct_min": 101}, "direct_min"),
         ({"max_required_years": -1}, "max_required_years"),
         ({"max_required_years": 2.5}, "max_required_years"),
         ({"max_seniority": "lead"}, "max_seniority"),
+        ({"unmet_requirements": ["degree", "visa"]}, "unmet_requirements"),
+        ({"unmet_requirements": "degree"}, "unmet_requirements"),
     ):
         with pytest.raises(C.CriteriaError, match=problem):
             C.normalize(dict(MINIMAL, thresholds=bad), PLACES)

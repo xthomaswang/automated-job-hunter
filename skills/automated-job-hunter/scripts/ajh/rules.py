@@ -87,6 +87,22 @@ def preference_only(quote: str) -> bool:
     return bool(_PREFERENCE.search(quote)) and not _MANDATORY.search(quote)
 
 
+_ALTERNATIVE = re.compile(
+    r"\bor\s+(?:an?\s+|the\s+)?equivalent\b|\bequivalent\s+(?:\w+\s+){0,2}?experience\b|\bin\s+lieu\s+of\b"
+    r"|\bor\s+(?:\w+\s+){0,4}?(?:related|relevant|comparable)\s+(?:\w+\s+){0,2}?experience\b",
+    re.I,
+)
+
+
+def accepts_alternative(quote: str) -> bool:
+    """True when a quoted requirement offers another way to meet it, such as equivalent experience.
+
+    Such a requirement is not a hard one, because the model cannot be checked on whether the person
+    has the alternative. Erring this way only ever lists a posting the person can rule out themselves.
+    """
+    return bool(_ALTERNATIVE.search(quote))
+
+
 _US = r"(?-i:U\.?\s?S\.?)|United\s+States"
 _NO_SPONSORSHIP = [
     re.compile(pattern, re.I)

@@ -87,12 +87,37 @@ were first published more than 45 days earlier and were still open. To cap the f
 set `backfill.days`: postings with a known date older than that are then parked when a source is
 first read, meaning recorded in state but not judged or published. The README counts them and
 `hunter requeue --parked` judges them later. A posting with no date is never parked, and after a
-source's first snapshot every newly listed posting is judged whatever date it carries.
+source's first snapshot every newly listed posting is judged whatever date it carries, except on a
+detail source, whose postings arrive over several updates and are each held to the limit as they
+arrive.
 
-**Lazy details.** Workday and SmartRecruiters need one request per posting for the description (one
-old source alone took 937). The engine fetches a detail only for ids not yet in state, for ids
-queued for assessment this tick, and for known ids whose listing fields changed, under a per-tick
-request budget.
+**Lazy details.** Workday and SmartRecruiters list postings without their text and need one
+request per posting for it; one old source alone took 937. So such a source is read through its own
+search (`queries`, by default the wanted and related roles), and `collect` gives the adapter a rank
+function built from state. The adapter fetches text, at most `max_details` (100) per source per
+update and one request a second, in this order: postings about to be judged, new ones, ones whose
+listing changed, and listed ones (for their briefs); within each, the newest requisition first, so
+postings whose text keeps failing sink to the end. A settled posting, or one stage 0 drops on what
+the listing shows, needs none. The rank is built before the read, so a posting `unblock` or
+`requeue` sends back waits one more update for its text. On a very large site, `categories` (the
+site's own job categories) narrows each search, which otherwise matches any of its words.
+
+**Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail
+source whose listing is the file. A row is only a pointer: it is used when its link is one posting
+on a system with a public API this engine reads (Greenhouse, Lever, Ashby, SmartRecruiters,
+Workday), and that posting's text, date and link come from the system, so the posting is
+`official`. Rows linking to re-posters, redirects, systems without such an API, or employers' own
+pages are skipped, and `sources test` counts every row by outcome. A list posting's id is where it
+lives, `<system>~<board>~<id>`, which is enough to find the same posting on a watched board or in
+another list without storing anything more. Title and place stay the list's, since they are what
+change is measured on every update; the employment type stays in the text, as for Workday.
+
+A posting whose text was not fetched comes back with `detail_skipped`. If it is new, `collect` keeps
+it out of the state until an update brings its text (nothing knew it, so nothing closes) and counts
+it as waiting for its text in `feed/meta.json` and the README. A known one is not judged, and its
+brief is not rewritten, until an update fetches its text. Title and place come from the listing on
+every update, so the change fingerprint compares like with like; the detail's extra places and its
+employment type go into the text.
 
 **Measured cost.** At API list prices (Haiku 5.5 $0.10/$0.50 and Sonnet 5.5 $2/$10 per million
 input/output tokens, price table dated 2026-10-06), triage costs about $0.14 per 1,000 postings and
@@ -263,10 +288,15 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   with the record). Rolling feeds (Remote OK, Jobicy) expire by age, never by absence. A source that
   shrinks by more than 40% is held until the shrink repeats. Changing a query-scoped source's
   queries re-baselines it without closures. A failed fetch keeps the previous snapshot.
-- **Duplicates.** An aggregator copy of an opening an employer's own board lists (same company and
-  title) defers to the official posting. Within one source, postings with the same company and
-  title and near-identical text defer to one representative. Variants are recomputed every tick;
-  when a representative closes, a variant takes over and is judged.
+- **Duplicates.** A list's posting on a board the feed watches (by where it lives, or by company and
+  title) defers to the board's own, and a posting several lists name defers to one of them. An
+  aggregator copy of an opening an employer's own board lists, or a list names (same company and
+  title), defers to that posting. Copies on several aggregators defer to one of them: one
+  already judged, else the one with the lowest key, so the choice never flips. Within one source,
+  postings with the same company and title and near-identical text defer to one representative;
+  that includes one aggregator, which can list an opening once per location. Variants are
+  recomputed every tick from the state of every source; when a representative closes, a variant
+  takes over and is judged.
 - **Profile changes.** Stage 0 is re-run on every tick, so a change to the hard limits costs
   nothing. Two hashes decide what else is judged again: the triage hash covers `targets` and
   `seniority`, and the assess hash covers the triage hash plus the profile text, `eligibility`,

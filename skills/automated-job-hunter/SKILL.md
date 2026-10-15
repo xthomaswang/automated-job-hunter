@@ -68,6 +68,7 @@ cost before committing, from this table (`hunter status` gives the counts):
 | `profile.md`, `eligibility`, `locations` or `employment` | Every assessment (the hard limits also apply at once, free) |
 | `companies.exclude` | Nothing; that company's postings leave the feed the next time its board is read, free |
 | `thresholds`, `caps`, `companies.prefer` | Nothing. Thresholds also reach postings already listed: a higher floor or a stricter hard requirement takes them out, and relaxing a hard requirement sends the postings it left out back to be assessed |
+| `thresholds.unmet_requirements` | Nothing, but it only reaches postings assessed since rubric `assess-v2` (`judged.rubric` in `positions.jsonl`). Postings assessed earlier stay listed, unchecked. To check them, run `hunter requeue --assessed` once and tell the user the cost it prints; skip that when `profile.md` is edited in the same change, since that assesses everything again anyway. Suggest letting those assessments arrive with the list still empty: unmet requirements are then only flagged ("unmet degree" in the README, quoted in the brief), so the user can check them before setting the kinds that leave postings out |
 
 Triage costs about $0.14 per 1,000 postings and assessment about $0.02 per posting, at API prices.
 Assessments are redone at most `caps.max_assess` per update, so a few hundred take several updates,
@@ -75,9 +76,18 @@ and new postings wait behind them. Published postings stay listed until their ne
 arrives. Group several edits into one commit rather than paying for each.
 
 Companies are `config/sources.json`. `hunter sources list` shows the boards this skill already
-knows; `hunter sources probe "Company Name"` looks for a company's public board; `hunter sources
-add <id or ats:slug:Company>` adds one. Only boards with a public, no-login API are supported.
-Never scrape LinkedIn or Indeed: their terms forbid it.
+knows; `hunter sources probe "Company Name"` looks for a company's board on Greenhouse, Ashby, Lever,
+Recruitee and SmartRecruiters; `hunter sources add <id or ats:slug:Company>` adds one. Large employers mostly use
+other systems: find the company's careers page, or one posting's link, and run
+`hunter sources probe <url> Company Name`. It reads Workday sites (added as
+`workday:<host>/<site>:Company`; on a very large site, also set `categories` from the job
+categories it lists), follows a company's own careers page to the board it links to, and
+names the systems this version cannot read, such as Oracle, Taleo, iCIMS, SuccessFactors or
+Eightfold; for those, tell the user there is no board to add rather than searching further. Only
+boards with a public, no-login listing are supported. Never scrape LinkedIn or Indeed: their terms
+forbid it. A job list kept on GitHub can be a source as well (`"ats": "github-list"`, step 4 of
+[references/setup.md](references/setup.md)): its rows that link to one posting on a supported
+system are read from that system, and the rest are skipped.
 
 ## Rules that always hold
 

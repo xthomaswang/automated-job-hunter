@@ -323,7 +323,7 @@ def _kept(raw: Mapping[str, Any], filters: Mapping[str, list[str]]) -> bool:
 
 
 def _under(heading: str, names: list[str]) -> bool:
-    """Whether a heading contains one of the names as whole words: `Mid` is in "UXR Mid", not "Midwest"."""
+    """Whether a heading contains one of the names as whole words: `Mid` is in "Team Mid", not "Midwest"."""
     return any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", heading) for name in names)
 
 

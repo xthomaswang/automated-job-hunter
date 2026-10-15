@@ -99,6 +99,13 @@ def _near(a: int | None, b: int | None) -> bool:
     return a is not None and b is not None and hamming(a, b) <= NEAR
 
 
+def _simhash(item: Seen, row: Row) -> int | None:
+    """A posting's text as a simhash: this update's, else the one frozen when it was assessed."""
+    if item.simhash is not None:
+        return item.simhash
+    return None if row.dsh == "-" else int(row.dsh, 16)
+
+
 def reconcile(
     source: Mapping[str, Any],
     jobs: list[Job],
@@ -185,6 +192,8 @@ def reconcile(
         if row.tfp != item.tfp or rewritten:
             was = row.status
             row.gk, row.tfp = item.gk, item.tfp
+            if was == "V":  # it was grouped on its old listing, so `assign_variants` compares it afresh
+                row.status, row.note = "P", "-"
             if was in JUDGED:  # judge it again as if new; a published record is refreshed, not dropped
                 row.status, row.dsh, row.fit, row.tg, row.ag, row.attempts = "P", "-", "-", 0, 0, 0
                 row.note = "-"
@@ -255,15 +264,22 @@ def assign_variants(
     - Copies of one opening on several aggregators (same company and title) defer to one of them,
       chosen the same way. Within one aggregator, a copy also needs near-identical text, as below.
     - Within one source, postings with the same company and title and near-identical text (one
-      opening listed per location) defer to one representative.
+      opening listed per location) defer to one representative: the first one judged, else the
+      first one pending. A detail source reads few texts per update. Where a text was not read,
+      the hash frozen when that posting was assessed stands in for it. Where a text is still
+      unknown, a variant of the same representative stays one, and no posting becomes a new one.
 
-    Recomputed from scratch for every source read this tick, from what the state holds for every
-    source, so it never drifts.
+    Recomputed for every source read this tick, from what the state holds for every source, so it
+    never drifts. Only a variant whose texts cannot be compared now carries over, and only while
+    its representative still leads the group and its own listing is unchanged (`reconcile`
+    releases a variant whose listing changed).
     """
     kinds = {sid: kind_of(source) for sid, source in sources.items()}
+    had: dict[str, str] = {}  # the posting each variant deferred to when this call began, by the variant's key
     for sid in seen:
         for row in state.rows(sid).values():
             if row.status == "V":
+                had[f"{sid}:{row.id}"] = row.note
                 row.status, row.note = "P", "-"
     official: dict[str, str] = {}
     boards: dict[tuple[str, str, str], str] = {}  # where a watched board's posting lives -> its key
@@ -327,8 +343,14 @@ def assign_variants(
             pending = [m for m in members if rows[m].status == "P"]
             lead = (judged or pending or [None])[0]
             for jid in pending:
-                if jid != lead and rows[jid].note == "-" and _near(items[jid].simhash, items[lead].simhash):
-                    rows[jid].status, rows[jid].note = "V", f"{sid}:{lead}"
+                if jid == lead or rows[jid].note != "-":
+                    continue
+                key = f"{sid}:{lead}"
+                mine, theirs = _simhash(items[jid], rows[jid]), _simhash(items[lead], rows[lead])
+                # a text this update did not read cannot be compared: a variant stays one, but none is made
+                alike = had.get(f"{sid}:{jid}") == key if mine is None or theirs is None else _near(mine, theirs)
+                if alike:
+                    rows[jid].status, rows[jid].note = "V", key
                     count += 1
     return count
 

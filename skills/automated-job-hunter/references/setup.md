@@ -134,6 +134,19 @@ The domain is the one the site's own pages name; the probe reads it from them. A
 lists 10 postings a request, so a search matching more than 500 postings fails the source: set
 fewer, more specific `queries` on the entry.
 
+An SAP SuccessFactors career site (built with Career Site Builder) is on the company's own domain,
+often `jobs.<company>.com`, so it cannot be found by name: probe its address or one posting's link.
+The probe knows the site by its page and prints `successfactors:<host>:Company`, or
+`successfactors:<host>/<brand>:Company` for a brand's site under its own path. It is searched and
+filled in like Workday, one request a second. Each query is searched as a phrase, because the site's
+search otherwise matches any of the words anywhere in a posting; a query with quotes of its own is
+sent as written. These sites have no job categories to narrow by, so a search matching more than
+1,000 postings fails the source: use fewer or more specific queries. The probe names the two kinds of
+SuccessFactors site that cannot be read: a site whose search page loads its postings from a script
+(from a path robots.txt disallows on every such site), and the older job board on SAP's own hosts
+(`career<N>.successfactors.com`, `sapsf.com`), whose robots.txt disallows everything. For a company
+on the older board, look for its career site on its own domain and probe that.
+
 The job feeds (`remotive`, `remoteok`, `jobicy`) list remote jobs from many employers. They are
 broad and noisy; add them only if the user wants remote work.
 
@@ -141,7 +154,7 @@ A job list someone keeps on GitHub, as a JSON file or Markdown tables, can be a 
 the user names one. Each row is only a pointer. A row whose link is one posting on Greenhouse,
 Lever, Ashby, SmartRecruiters or Workday is read from that system, with its own text and date, and
 judged like a posting from the employer's board. Rows that link anywhere else (sites that re-post
-jobs, systems such as iCIMS with no public API, an employer's own page) are skipped. Add the list
+jobs, systems this version cannot read such as iCIMS, an employer's own page) are skipped. Add the list
 to `config/sources.json` by hand:
 
 ```json

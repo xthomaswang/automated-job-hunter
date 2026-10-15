@@ -111,3 +111,19 @@ What changes for people who run a feed. Bring a feed repo up to date with
   the same repo started none in six. "If scheduled runs never start" in
   `references/schedule.md` says what to check, and how to start the runs from elsewhere, for
   example with a timer that runs `gh workflow run`.
+
+### A timer on a Mac can start the workflow when GitHub does not
+
+- New command `timer`. `scripts/hunter.py --repo <feed repo> timer install` sets up a launchd agent
+  on this Mac. It runs `gh workflow run job-hunter.yml` for the feed at the times of its cron line,
+  converted to the Mac's clock. The runs happen on GitHub as before; only the start comes from the
+  Mac, and it needs no new secret. While the Mac sleeps nothing starts; when it wakes, launchd
+  starts the workflow once if a time went by. A failed start is tried again for about five minutes.
+- `install` first checks that `gh`, run the way launchd will run it, can see the workflow and that
+  the workflow is enabled. `timer` alone shows the times on the Mac's clock and how the last start
+  went, and `timer remove` takes the timer away and keeps its log.
+- `status` has a `timer` entry on a Mac where the feed has a timer. It carries a `warning` when the
+  last start failed, when launchd has not loaded the timer, or when the cron line changed after it
+  was installed.
+- This does not make GitHub start scheduled runs; it starts them instead. See "Start the workflow
+  from a Mac" in `references/schedule.md`.

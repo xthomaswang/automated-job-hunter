@@ -255,6 +255,37 @@ reason, and a job list's links to it are still skipped. Whether the listing's to
 checked against its rows was not tested, because the answer would not change this. If Oracle
 offers a public API for posted jobs, this is worth checking again.
 
+## E10: iCIMS, and why there is no reader
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. Eight read-only
+requests by hand (#37), at least 1.2 s apart, with no login and no cookie. No model was involved,
+and no posting page was opened.
+
+iCIMS career portals are at `careers-<company>.icims.com`. iCIMS's
+[Terms of Use](https://www.icims.com/legal/terms-of-use/) ("Last modified: April 1, 2024") rule
+out reading them automatically:
+
+- They "govern your access to and use of icims.com, including any content, functionality and
+  services provided on or through the website www.icims.com or its related domains and
+  subdomains". A portal is such a subdomain.
+- "Additionally, you agree not to: [...] Use any robot, spider or other automatic device, process,
+  or means to access the Website for any purpose, including monitoring or copying any of the
+  material on the Website."
+- The only allowance is to "print or download one copy of a reasonable number of pages of the
+  Website for your own personal, non-commercial use", which is not automated access. No terms
+  written for portal visitors were found. A portal's branded page links to its employer's own
+  terms, which differ by employer; iCIMS's terms cover the host either way.
+
+robots.txt does not change this. Two public portals serve the same file: it names the portal's
+`/sitemap.xml` and disallows only the referral, login, candidate, reminder and connect paths. But
+robots.txt is a crawler directive, not a licence, as with LinkedIn and Indeed.
+
+The listing would have met #37's completeness bar: a public portal's sitemap appeared to list every
+posting (`/jobs/<id>/<slug>/job`), each with a `lastmod`. So the terms are the only reason.
+`sources probe` names iCIMS with that reason, and a job list's links to a portal are still skipped.
+Portals on a company's own domain serve the same iCIMS pages; reading them under another host name
+would be the same access.
+
 ## Still open
 
 | Spike | Needs |

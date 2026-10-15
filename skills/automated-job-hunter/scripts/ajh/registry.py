@@ -22,7 +22,7 @@ from .state import read_json, write_text
 UNSUPPORTED = (
     (r"(^|\.)oraclecloud\.com$", "Oracle Recruiting Cloud (its job APIs are only for Oracle and approved partners)"),
     (r"(^|\.)taleo\.net$", "Oracle Taleo"),
-    (r"(^|\.)icims\.com$", "iCIMS"),
+    (r"(^|\.)icims\.com$", "iCIMS (its terms forbid automated reading of its career sites)"),
     (r"(^|\.)(successfactors|sapsf)\.(com|eu)$", "SAP SuccessFactors"),
     (r"(^|\.)eightfold\.ai$", "Eightfold"),
     (r"(^|\.)avature\.net$", "Avature"),

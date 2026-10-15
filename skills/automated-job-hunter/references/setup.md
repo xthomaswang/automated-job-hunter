@@ -175,6 +175,22 @@ python3 .hunter/engine/hunter.py sources add <id> <id> ...
 `--cadence` is `1h`, `4h` or `8h`, or for set times the UTC hours as a list such as `6,10,14,20`
 (see "When it runs" in [schedule.md](schedule.md)).
 
+Read what `init` printed before the first commit. A `warnings` entry about the email means git has
+no identity on this machine. `init` sets `user.useConfigOnly` in the feed repo's own git config, so
+git refuses to commit there rather than make up an address from the machine's name. No GitHub
+account has such an address, so those commits would belong to nobody, including the one that sets
+the schedule (see "Who GitHub ties the schedule to" in [schedule.md](schedule.md)). Set the user's
+GitHub identity in the feed repo only:
+
+```sh
+git config user.name "<their name or GitHub login>"
+git config user.email "<an address on their GitHub account>"
+```
+
+If `gh` is logged in, their noreply address keeps their own email out of the history:
+`gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"'`. Otherwise ask which address their
+GitHub account uses.
+
 Write `profile/profile.md` and `profile/criteria.json` there, then check and commit:
 
 ```sh

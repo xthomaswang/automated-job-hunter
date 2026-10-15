@@ -99,7 +99,12 @@ def _workflow(root: Path, cadence: str | None) -> bool:
         # An arbitrary minute keeps many feed repos from all starting on the hour, when GitHub is
         # busiest. Set times of day stay early in their hour, close to the time that was asked for.
         cadence = cadence or "4h"
-        minute = random.randint(3, 57 if cadence in CADENCES else 20)
+        low, high = 3, 57 if cadence in CADENCES else 20
+        minute = random.randint(low, high)
+        if existing and cron_for(cadence, minute) == existing.group(1):
+            # Always a new cron line. GitHub ties a schedule to the user who last changed the cron line
+            # (see `schedule`), so `upgrade --cadence` must give the user a change to commit.
+            minute = low + (minute - low + 1) % (high - low + 1)
         cron = cron_for(cadence, minute)
     template = (ASSETS / "template" / "job-hunter.yml").read_text(encoding="utf-8")
     after = template.replace("__CRON__", cron).replace("__CLAUDE_CODE_VERSION__", claude_code_version())
@@ -128,6 +133,88 @@ def claude_code_version() -> str:
     return (ASSETS / "claude-code-version").read_text(encoding="utf-8").strip()
 
 
+def commit_email(root: Path) -> str | None:
+    """The email git puts on commits made in `root`, or None when none is configured."""
+    try:
+        found = subprocess.run(["git", "-C", str(root), "config", "user.email"], capture_output=True, text=True)
+    except OSError:
+        return None
+    return found.stdout.strip() or None
+
+
+def _identity(root: Path) -> list[str]:
+    """Keep git from making up who commits in a feed repo, and say so when nobody is set.
+
+    With no email configured, git invents one from the machine's name (`user@laptop.local`). No GitHub
+    account has it, so the feed's commits belong to nobody, including the one GitHub ties the
+    schedule to (see `schedule`). `user.useConfigOnly` makes git refuse such a commit instead.
+    `publish` passes its own identity when none is set, so it is unaffected.
+    """
+    if (root / ".git").exists():
+        subprocess.run(["git", "-C", str(root), "config", "--local", "user.useConfigOnly", "true"], capture_output=True)
+    if commit_email(root):
+        return []
+    return [
+        "git has no email for commits in this repo, so it now refuses to commit rather than make one up from the "
+        "machine's name, which no GitHub account has. Before committing, set the user's GitHub identity in this "
+        "repo only: `git config user.name <name>` and `git config user.email "
+        "<an address on their GitHub account>`; with gh logged in, their noreply address is "
+        "`gh api user --jq '\"\\(.id)+\\(.login)@users.noreply.github.com\"'`."
+    ]
+
+
+def _made_up(email: str) -> bool:
+    """An address git invented from a machine's name, which no GitHub account can have."""
+    domain = email.rpartition("@")[2].lower()
+    return "." not in domain or domain.endswith(".local") or "(none)" in domain
+
+
+MADE_UP = "made up by git from a machine's name"
+
+
+def _shown(email: str) -> str:
+    """An address as `status` prints it. A made-up one holds the machine's user and host names, which
+    nobody chose to show and `status` output can end up in a bug report, so it is only described."""
+    return MADE_UP if _made_up(email) else email
+
+
+def schedule(root: Path) -> dict[str, Any] | None:
+    """The workflow's cron line and the commit that last changed it.
+
+    GitHub sends notifications for scheduled workflows to "the user who last modified the cron syntax
+    in the workflow file", and when a commit that changes the cron line reactivates a disabled
+    schedule, its user becomes the actor of the runs. Addresses no account can have are flagged; for
+    any other, GitHub's own answer is `gh api repos/<owner>/<repo>/commits/<sha> --jq .author.login`,
+    where null means no account. None of this tells whether GitHub starts the scheduled runs.
+    """
+    path = root / WORKFLOW
+    if not path.exists():
+        return None
+    found = re.search(r'cron: "([^"]+)"', path.read_text(encoding="utf-8"))
+    result: dict[str, Any] = {"cron": found.group(1) if found else None, "changed_in": None}
+    try:
+        log = subprocess.run(
+            ["git", "-C", str(root), "log", "-1", "-G", 'cron: "', "--format=%H%x00%ae%x00%ce", "--", WORKFLOW],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return result
+    fields = log.stdout.strip().split("\0")
+    if log.returncode or len(fields) != 3:
+        return result  # not committed yet
+    sha, author, committer = fields
+    result.update(changed_in=sha, author=_shown(author), committer=_shown(committer))
+    if _made_up(author) or _made_up(committer):
+        result["warning"] = (
+            f"The schedule was last changed in commit {sha[:12]} under an address git made up from a machine's "
+            "name. No GitHub account has it, and GitHub's documentation does not say who then gets the schedule's "
+            "notifications. Set the user's GitHub identity in this repo, then write the cron line anew with "
+            "`upgrade --cadence` and their cadence, commit and push."
+        )
+    return result
+
+
 def init(directory: Path | str, cadence: str = "4h") -> dict[str, Any]:
     """Create a feed repo. Refuses a directory that already holds something else."""
     root = Path(directory).expanduser().resolve()
@@ -147,7 +234,14 @@ def init(directory: Path | str, cadence: str = "4h") -> dict[str, Any]:
     if not (root / "config" / "sources.json").exists():
         write_text(root / "config" / "sources.json", "[]\n")
         created.append("config/sources.json")
-    return {"root": str(root), "engine_version": __version__, "cadence": cadence, "created": [*created, WORKFLOW]}
+    warnings = _identity(root)
+    return {
+        "root": str(root),
+        "engine_version": __version__,
+        "cadence": cadence,
+        "created": [*created, WORKFLOW],
+        **({"warnings": warnings} if warnings else {}),
+    }
 
 
 def _release(version: str) -> tuple[int, ...]:
@@ -185,6 +279,12 @@ def upgrade(directory: Path | str, cadence: str | None = None) -> dict[str, Any]
             f"{WORKFLOW} was rewritten from this version's template; only its schedule was kept. "
             "Review `git diff` before committing."
         )
+    warnings = _identity(root)
+    owner = schedule(root) if cadence is None else None  # a new cron line gets its owner when it is committed
+    if owner and owner.get("warning"):
+        warnings.append(owner["warning"])
+    if warnings:
+        result["warnings"] = warnings
     return result
 
 

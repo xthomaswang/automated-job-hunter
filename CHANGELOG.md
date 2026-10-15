@@ -96,3 +96,18 @@ What changes for people who run a feed. Bring a feed repo up to date with
   defers to the board's own, a posting two lists name is judged once, and copies of one opening on
   several aggregators defer to one of them. An aggregator copy also defers to a list's posting.
 - A SmartRecruiters posting's date now comes from its detail when its listing gave none.
+
+### Feed repos commit under the user's identity, and `status` shows the schedule
+
+- `init` and `upgrade` now tell git, in the feed repo only, not to make up an identity from the
+  machine's name, which no GitHub account has. A commit without one fails with "no email was given
+  and auto-detection is disabled", and both commands print how to set the user's GitHub identity.
+  GitHub sends notifications for scheduled workflows to the user who last changed the cron line.
+- `status` has a `schedule` entry: the cron line, the commit that last changed it and its
+  addresses, with a `warning` when an address is one git made up. `upgrade --cadence` always writes
+  a new cron line, so the user can commit one under their own account.
+- None of this makes GitHub start scheduled runs. In issue #41, a private feed repo's schedule
+  started two runs in about two days, neither at one of its times, and a new, minimal schedule in
+  the same repo started none in six. "If scheduled runs never start" in
+  `references/schedule.md` says what to check, and how to start the runs from elsewhere, for
+  example with a timer that runs `gh workflow run`.

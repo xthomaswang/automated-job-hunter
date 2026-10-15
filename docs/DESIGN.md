@@ -376,6 +376,18 @@ jobs:
   when a person edits the profile or config. That is intended.
 - Source failures exit 0; only auth or audit failures fail the run.
 - The workflow token cannot edit workflow files, so `upgrade` runs locally.
+- GitHub ties a schedule to the user who last changed its cron line: notifications for scheduled
+  workflows go to that user, and a commit that changes the cron line and reactivates a disabled
+  schedule makes its user the actor of the runs. On an unconfigured machine git makes up an address
+  from the machine's name, which no account has. `init` and `upgrade` therefore set
+  `user.useConfigOnly` in the feed repo, so git refuses such a commit; `status` names the commit
+  behind the schedule (describing a made-up address rather than printing the machine's user and
+  host names); and `upgrade --cadence` always writes a new cron line, so the user has a change to
+  commit. `publish` passes its own identity and is unaffected.
+- GitHub's scheduler can fail to start a repo's scheduled runs while pushes and dispatches still
+  work (issue #41: a private repo where even a new, minimal schedule never ran, and nothing tried in
+  the feed repo helped). The fallback is to start runs from elsewhere with `workflow_dispatch`, as
+  `references/schedule.md` describes.
 - Constraints to state in the docs: GitHub cron is best-effort and can be delayed; hourly cadence on
   a private repo can approach the free Actions-minutes quota, which is why 4 h is the default.
 

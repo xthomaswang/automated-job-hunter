@@ -18,6 +18,7 @@ from typing import Any
 from ..http import Client, HttpError
 from ..model import Job, SourceError
 from ..textutil import html_to_text
+from . import lazy
 
 KINDS = ("workday",)
 HOST = re.compile(r"([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com\Z")  # <tenant>.wd5.myworkdayjobs.com/<site>
@@ -198,21 +199,4 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int |
             job = _listed(source, base, row)
             listed.setdefault(job.source_id, (job, row["externalPath"]))
 
-    ranks = {jid: rank(job) for jid, (job, _) in listed.items()} if rank else {}
-    # Within a rank, the newest requisition first, so that postings whose text keeps failing sink to
-    # the end instead of using the budget every update.
-    wanted = sorted(sorted(((r, jid) for jid, r in ranks.items() if r is not None), reverse=True), key=lambda w: w[0])
-    budget = source.get("max_details", DETAILS)
-    detailed: dict[str, Job] = {}
-    for _, jid in wanted[: budget if isinstance(budget, int) and budget >= 0 else DETAILS]:
-        job, path = listed[jid]
-        found = _detail(client, root, job, path)
-        if found is not None:
-            detailed[jid] = found
-    jobs = []
-    for jid, (job, _) in listed.items():
-        if jid in detailed:
-            jobs.append(detailed[jid])
-        else:
-            jobs.append(replace(job, detail_skipped=True))
-    return jobs
+    return lazy.complete(listed, rank, lazy.budget(source, DETAILS), lambda job, path: _detail(client, root, job, path))

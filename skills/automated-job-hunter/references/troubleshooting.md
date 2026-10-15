@@ -16,6 +16,7 @@ wrong" section of `.hunter/RUNBOOK.md`, which explains each error the engine rep
 | `engine.intact` is false in `status` | Files under `.hunter/engine/` were edited | Run `upgrade` from this skill's copy to restore them |
 | A source fails every time | The company moved its job board, or the board changed | `sources test`, then `sources probe "Company"` and replace the entry |
 | A Workday source fails with "set `categories`" | One of its searches matches more than 1,000 postings; the site's search matches any of the words, so rewording does not help | `sources probe <the site's url>` lists its job categories; set `categories` on the entry to the ones for these roles, or use fewer queries |
+| A SmartRecruiters source fails with "more specific queries" | One of its searches matches more than 2,000 postings | Set `queries` on the entry to fewer, more specific role titles |
 | A Workday source fails with "no job category" | A name in its `categories` is not one of the site's | `sources probe <the site's url>` lists the names it has |
 | A large employer's board cannot be found | It uses Workday or a system this version cannot read | `sources probe <careers page url> Company Name`; it adds Workday sites and names the systems it cannot read |
 | No postings are judged, and the README says judging is paused | The monthly budget (`caps.max_usd_per_month`) is reached | It resumes on the first of next month (UTC); to resume sooner, raise or remove the budget |

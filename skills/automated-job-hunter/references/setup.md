@@ -109,8 +109,8 @@ and companies they named, and for a company that is not listed run
 `hunter sources probe "Company Name"`. Show the user the list and let them adjust it. Twenty to
 sixty boards is a normal size.
 
-For a large employer the name probe usually finds nothing, because most use Workday or a system
-this version cannot read. Find its careers page (or the link of one of its postings) and run
+For a large employer the name probe often finds nothing, because many use Workday or a system
+this version cannot read (it does find SmartRecruiters companies by name). Find its careers page (or the link of one of its postings) and run
 `hunter sources probe <url> Company Name`; add what it reports, or tell the user the system it
 names is not supported. A Workday site is read through its own search for the wanted and related
 roles (set `queries` on the entry to search for something else). That search matches any of the
@@ -122,7 +122,8 @@ postings, leave it off, because a role is often filed under a generic category (
 "Strategy") and triage screens the rest out cheaply. Some sites list no categories at all (the
 probe shows an empty list); there, use fewer queries. Its postings' texts take one request each,
 so a new Workday source fills in over a few updates, up to 100 postings an update; the feed's
-README counts the ones still waiting for their text. Sites on the
+README counts the ones still waiting for their text. SmartRecruiters companies
+(`smartrecruiters:<company>:Company`) are searched and filled in the same way. Sites on the
 shared host (`wd1.myworkdaysite.com/recruiting/<tenant>/<site>`) work the same way; the probe
 prints their add line with the tenant.
 

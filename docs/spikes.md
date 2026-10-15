@@ -215,6 +215,11 @@ public endpoints by hand while writing the readers (#37). No model was involved.
   here too.
 - `https://jobs.smartrecruiters.com/<company>/<id>` answers 200, so a posting's link does not need
   its detail.
+- Company ids are case-insensitive: the lowercase id answers like the canonical one, and each row
+  carries the canonical spelling in `company.identifier`.
+- A live `collect` with one role query on one large company listed 280 postings. 240 were
+  dropped for location on the listing alone, and the 40 left arrived with their text, in 23
+  seconds.
 
 ## Still open
 

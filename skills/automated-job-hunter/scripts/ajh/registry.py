@@ -13,7 +13,7 @@ from . import sources as S
 from .http import Client
 from .layout import Layout
 from .model import SourceError
-from .sources import ats, workday
+from .sources import ats, smartrecruiters, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
 
@@ -28,7 +28,6 @@ UNSUPPORTED = (
     (r"(^|\.)avature\.net$", "Avature"),
     (r"(^|\.)phenompeople\.com$", "Phenom"),
     (r"(^|\.)brassring\.com$", "Kenexa BrassRing"),
-    (r"(^|\.)smartrecruiters\.com$", "SmartRecruiters"),
     (r"(^|\.)jobvite\.com$", "Jobvite"),
     (r"(^|\.)workable\.com$", "Workable"),
     (r"(^|\.)bamboohr\.com$", "BambooHR"),
@@ -79,6 +78,15 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
                 "ats": kind,
                 "slug": slug,
             }
+        elif len(parts) == 3 and parts[0] in smartrecruiters.KINDS:
+            _, slug, company = parts
+            entry = {
+                "id": re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-"),
+                "company": company,
+                "ats": "smartrecruiters",
+                "slug": slug,
+            }
+            smartrecruiters.root(entry)  # refuses an identifier that is not a plain token
         elif len(parts) == 3 and parts[0] in workday.KINDS:
             _, target, company = parts
             pieces = target.split("/")  # host/site, or host/tenant/site on a shared host
@@ -148,10 +156,15 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
                     "add": f"{kind}:{slug}:{company}",
                 }
             )
+    for slug in slug_candidates(company):  # an unknown company answers with no postings, not an error
+        found = _try({"system": "SmartRecruiters", "ats": "smartrecruiters", "slug": slug}, company, client)
+        if found.get("postings"):
+            matches.append({k: found[k] for k in ("ats", "slug", "postings", "sample", "add")})
     result: dict[str, Any] = {"company": company, "tried": slug_candidates(company), "matches": matches}
     if not matches:
         result["next"] = (
-            "None of Greenhouse, Ashby, Lever or Recruitee has a board under these names. Large employers "
+            "None of Greenhouse, Ashby, Lever, Recruitee or SmartRecruiters has a board under these names. "
+            "Large employers "
             "mostly use other systems: find the company's careers page, or the link of one of its postings, "
             "and run `sources probe <url> <Company Name>`. It reads Workday sites and names the systems this "
             "version cannot read."
@@ -175,6 +188,8 @@ def _system(url: str) -> dict[str, Any] | None:
         kind, slug = "lever", path[0] if path else None
     elif re.fullmatch(r"[a-z0-9-]+\.recruitee\.com", host):
         kind, slug = "recruitee", host.split(".")[0]
+    elif host in ("jobs.smartrecruiters.com", "careers.smartrecruiters.com"):
+        kind, slug = "smartrecruiters", path[0] if path else None
     elif workday.HOST.match(host):
         name = next((segment for segment in path if not _LOCALE.match(segment)), None)
         return {"system": "Workday", "ats": "workday", "host": host, "site": name}
@@ -192,7 +207,7 @@ def _system(url: str) -> dict[str, Any] | None:
             if re.search(pattern, host):
                 return {"system": system, "supported": False}
         return None
-    return {"system": kind.capitalize(), "ats": kind, "slug": slug}
+    return {"system": {"smartrecruiters": "SmartRecruiters"}.get(kind, kind.capitalize()), "ats": kind, "slug": slug}
 
 
 def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
@@ -219,6 +234,15 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             listed = [{"name": name, "postings": n} for _, (_, _, n, name) in ranked[:15]]
             return {**{k: v for k, v in found.items() if v is not None}, "supported": True, "postings": count,
                     "sample": sample[:3], "add": add, "categories": listed}  # fmt: skip
+        elif found["ats"] == "smartrecruiters":
+            data = smartrecruiters.search(client, smartrecruiters.root({"slug": found["slug"]}), "", limit=3)
+            if not data["totalFound"]:
+                return {**found, "supported": True, "error": "No public postings under this company identifier"}
+            rows = data["content"]
+            slug = ((rows[0].get("company") or {}).get("identifier") if rows else None) or found["slug"]
+            count, sample = data["totalFound"], [row.get("name") for row in rows]
+            add = f"smartrecruiters:{slug}:{company}"
+            return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add}
         else:
             jobs = ats.fetch_board(
                 client, {"id": "probe", "company": company, "ats": found["ats"], "slug": found["slug"]}
@@ -284,6 +308,8 @@ def hosts(root: Path | str) -> dict[str, Any]:
             found.add(urlsplit(ats.feed_url(source)).hostname)
         elif source["ats"] in workday.KINDS:
             found.add(source["host"])
+        elif source["ats"] in smartrecruiters.KINDS:
+            found.add(smartrecruiters.HOST)
         elif source.get("provider") in PROVIDERS:
             found.add(urlsplit(PROVIDERS[source["provider"]][2]).hostname)
     return {"hosts": sorted(found)}

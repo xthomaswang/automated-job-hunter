@@ -68,3 +68,14 @@ What changes for people who run a feed. Bring a feed repo up to date with
   links to; and it names the systems this version cannot read, such as Oracle Recruiting Cloud,
   Taleo, iCIMS, SuccessFactors or Eightfold, instead of finding nothing. A name probe that finds
   nothing says to probe a URL.
+
+### SmartRecruiters companies
+
+- New source type `smartrecruiters`, added as `smartrecruiters:<company id>:Company`. It reads the
+  public Posting API through `queries`, as a Workday source does. A listing gives each posting's
+  place, employment type and date, so the hard limits can leave a posting out before its text is
+  fetched. Texts are fetched in the same order and under the same `max_details` budget as Workday's,
+  up to 8 requests a second. A search that matches more than 2,000 postings fails and says to use
+  more specific queries.
+- `sources probe "Company Name"` also finds SmartRecruiters companies, and `sources probe <url>`
+  reads a SmartRecruiters posting's link.

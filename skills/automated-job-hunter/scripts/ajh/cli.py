@@ -175,7 +175,8 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument(
         "items",
         nargs="*",
-        help="registry ids, `ats:slug:Company` or `workday:<host>/<site>:Company` entries, or what to probe: "
+        help="registry ids, `ats:slug:Company`, `smartrecruiters:<company>:Company` or `workday:<host>/<site>:Company` "
+        "entries, or what to probe: "
         "a company name, or a careers page URL followed by the company name",
     )
     step.set_defaults(run=_sources)

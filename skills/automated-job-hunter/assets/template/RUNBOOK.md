@@ -63,7 +63,8 @@ on what changed:
 - `targets` (roles, adjacent or avoid) or `seniority`: triage for every posting it had dropped, and
   every assessment.
 - `profile.md`, `eligibility`, `locations` or `employment`: every assessment. The hard limits in
-  `locations` and `employment` also apply at once, at no cost.
+  `locations` and `employment` also apply at once, at no cost. Widening `locations.regions` also
+  sends the postings parked as outside them to triage (`outside_regions` in `hunter status`).
 - `companies.exclude`: nothing is judged again; that company's postings leave the feed the next time its
   board is read, at no cost.
 - `thresholds`, `caps` or `companies.prefer`: nothing.

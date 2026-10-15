@@ -127,3 +127,16 @@ What changes for people who run a feed. Bring a feed repo up to date with
   was installed.
 - This does not make GitHub start scheduled runs; it starts them instead. See "Start the workflow
   from a Mac" in `references/schedule.md`.
+
+### SAP SuccessFactors career sites
+
+- New source type `successfactors`, added as `successfactors:<host>:Company` (or
+  `<host>/<brand>` for a brand's site under its own path). It covers Career Site Builder sites on
+  a company's own domain whose search pages show how many postings they found. `sources probe`
+  recognizes such a site from its page.
+- A site is read through `queries`, each searched as a phrase. Every page is checked against the
+  count it shows, so a changed layout fails the source rather than closing postings. A search
+  matching more than 1,000 postings fails.
+- Two kinds of SuccessFactors site stay unread, as their robots.txt requires: sites whose search
+  loads its postings from a script, and SAP's older job board on its own hosts. The probe names
+  both, and for the older board suggests probing the company's own career site.

@@ -313,7 +313,7 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   `.hunter/work/state-next/`, and `apply` adopts it.
 - **Fingerprint.** `gk` hashes company and title (postings that may be the same opening). `tfp`
   hashes the normalized title, company and location. `dsh` is a 64-bit
-  simhash of the description, frozen when the job is judged. A job is re-judged only when `tfp`
+  simhash of the description, frozen when the job is assessed. A job is re-judged only when `tfp`
   changes or the simhash distance exceeds 12. Measured across five old snapshots (spike E5): 99.9%
   of 8,425 cosmetic edits stay at 12 or below, and real rewrites land at 26–32.
 - **Published records are state.** A source that was skipped or failed this tick has no descriptions
@@ -331,8 +331,11 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   aggregators defer to one of them: one already judged, else the one with the lowest key, so the
   choice never flips. Within one source, postings with the same company and title and
   near-identical text defer to one representative; that includes one aggregator, which can list an
-  opening once per location. Variants are recomputed every tick from the state of every source;
-  when a representative closes, a variant takes over and is judged.
+  opening once per location. A detail source reads few texts per update, so where a text was not
+  read, the `dsh` of an assessed posting stands in for it. Where a text is still unknown, a variant
+  keeps its representative while that posting still leads the group and the variant's listing is
+  unchanged; no new variant is made without comparing texts. Variants are recomputed every tick
+  from the state of every source; when a representative closes, a variant takes over and is judged.
 - **Profile changes.** Stage 0 is re-run on every tick, so a change to the hard limits costs
   nothing. Postings parked for their own place come back when the regions take them in. Two hashes
   decide what else is judged again: the triage hash covers `targets` and `seniority`, and the

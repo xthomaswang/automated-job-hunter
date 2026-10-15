@@ -43,7 +43,7 @@ class Row:
     first_seen: str  # day this posting first passed stage 0
     gk: str  # hash of company and title: postings that may be the same opening
     tfp: str  # hash of title, company and location
-    dsh: str = "-"  # simhash of the description, frozen when the posting was judged
+    dsh: str = "-"  # simhash of the description, frozen when the posting was assessed
     fit: str = "-"
     tg: int = 0  # triage generation of the current verdict; 0 means none
     ag: int = 0  # assess generation of the current verdict; 0 means none

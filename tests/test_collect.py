@@ -7,10 +7,12 @@ from ajh import collect
 from ajh.cli import main
 from ajh.layout import Layout
 from ajh.state import read_rows
+from ajh.textutil import simhash64
 from helpers import (
     ACME,
     CRITERIA,
     GLOBEX,
+    INITECH,
     JOBICY,
     NOW,
     REMOTIVE,
@@ -25,6 +27,7 @@ from helpers import (
     rows,
     tick,
     tracked,
+    wd_posting,
 )
 
 
@@ -234,6 +237,90 @@ def test_one_opening_listed_per_location_is_judged_once(repo):
     tick(root, boards)
     tick(root, boards)
     assert rows(root)["1"].status == "X" and (rows(root)["2"].status, rows(root)["2"].note) == ("P", "-")
+
+
+def workday(*postings):
+    """The fake Workday site, a detail source: it lists postings, and reads a text only when asked."""
+    board = Boards()
+    board.workday = {p["row"]["bulletFields"][0]: p for p in postings}
+    return board
+
+
+def test_a_variant_on_a_detail_source_keeps_its_judged_lead_while_neither_text_is_read(repo):
+    root, same = repo(sources=(INITECH,)), prose(50)
+    board = workday(
+        wd_posting("R1", text=same),
+        wd_posting("R2", places=("US, TX, Austin",), text=same),  # the same opening, listed in another place
+        wd_posting("R3", places=("US, NY, New York",), text=prose(51)),  # same title, another opening
+    )
+    tick(root, board)
+    assert (rows(root, "initech")["R2"].status, rows(root, "initech")["R2"].note) == ("V", "initech:R1")
+    board.details()
+    judge(root, "initech", "R1", "D")  # a triage verdict stores no text hash
+    summary = tick(root, board)
+    table = rows(root, "initech")
+    assert board.details() == ["R3"]  # only the posting still waiting for triage has its text read
+    assert summary["variants"] == 1 and (table["R2"].status, table["R2"].note) == ("V", "initech:R1")
+    assert (table["R3"].status, table["R3"].note) == ("P", "-")  # nothing to compare with makes no variant
+    assert plan(root)["queue"]["triage"] == ["initech:R3"] and summary["deferred"]["triage"] == 0
+    before = tracked(root)
+    tick(root, board)
+    assert tracked(root) == before  # an unchanged site leaves the state byte-identical
+    board.workday["R2"]["row"]["locationsText"] = "US, TX, Dallas"  # its listing changed, so it is judged again
+    tick(root, board)
+    assert (rows(root, "initech")["R2"].status, rows(root, "initech")["R2"].note) == ("P", "-")
+    assert plan(root)["queue"]["triage"] == ["initech:R2", "initech:R3"] and plan(root)["changed"] == []
+
+
+def test_a_variant_on_a_detail_source_stays_with_a_lead_still_waiting_for_triage(repo):
+    root, same = repo(sources=(INITECH,)), prose(50)
+    board = workday(wd_posting("R1", text=same), wd_posting("R2", places=("US, TX, Austin",), text=same))
+    tick(root, board)
+    board.details()
+    summary = tick(root, board)  # the lead's text is read again, the variant's is not
+    assert board.details() == ["R1"]
+    assert (rows(root, "initech")["R2"].status, rows(root, "initech")["R2"].note) == ("V", "initech:R1")
+    assert plan(root)["queue"]["triage"] == ["initech:R1"] and summary["deferred"]["triage"] == 0
+
+
+def test_an_assessed_leads_frozen_text_hash_stands_in_for_its_text(repo):
+    root, same = repo(sources=(INITECH,)), prose(50)
+    board = workday(wd_posting("R1", text=same), wd_posting("R2", places=("US, TX, Austin",), text=same))
+    tick(root, board)
+    text = json.loads((Layout(root).snapshot / "initech.json").read_text())["R1"]["description"]
+    judge(root, "initech", "R1", "R", fit="40", dsh=f"{simhash64(text):016x}")  # below the bar: its text is not read
+    board.workday["R4"] = wd_posting("R4", places=("US, WA, Seattle",), text=same)  # a new copy
+    board.workday["R5"] = wd_posting("R5", places=("US, IL, Chicago",), text=prose(52))  # another opening
+    board.details()
+    summary = tick(root, board)
+    table = rows(root, "initech")
+    assert board.details() == ["R5", "R4"]
+    assert [(table[j].status, table[j].note) for j in ("R2", "R4", "R5")] == [
+        ("V", "initech:R1"),
+        ("V", "initech:R1"),
+        ("P", "-"),
+    ]
+    assert summary["variants"] == 2 and plan(root)["queue"]["triage"] == ["initech:R5"]
+
+
+def test_when_a_lead_on_a_detail_source_closes_its_variants_are_released_and_one_takes_over(repo):
+    root, same = repo(sources=(INITECH,)), prose(50)
+    board = workday(
+        wd_posting("R1", text=same),
+        wd_posting("R2", places=("US, TX, Austin",), text=same),
+        wd_posting("R3", places=("US, NY, New York",), text=same),
+    )
+    tick(root, board)
+    judge(root, "initech", "R1", "D")
+    tick(root, board)
+    assert [rows(root, "initech")[j].note for j in ("R2", "R3")] == ["initech:R1", "initech:R1"]
+    del board.workday["R1"]
+    tick(root, board)  # missing, so it leads nothing: its variants are released and wait for their text
+    tick(root, board)  # closed; the released postings' text is read and they are grouped again
+    table = rows(root, "initech")
+    assert table["R1"].status == "X" and (table["R2"].status, table["R2"].note) == ("P", "-")
+    assert (table["R3"].status, table["R3"].note) == ("V", "initech:R2")
+    assert plan(root)["queue"]["triage"] == ["initech:R2"]
 
 
 def test_an_aggregator_copy_defers_to_the_employers_own_posting(repo):

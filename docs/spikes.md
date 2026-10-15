@@ -221,6 +221,83 @@ public endpoints by hand while writing the readers (#37). No model was involved.
   dropped for location on the listing alone, and the 40 left arrived with their text, in 23
   seconds.
 
+## E11: Eightfold, as it answers today
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. 26 requests by hand
+to two public tenants and the vendor's site, most of them 15 seconds or more apart, then one run of
+the reader and the probe (6 requests, one a second), while writing the reader (#37). No login, no
+key, no cookies kept, no script run. No model was involved.
+
+**Terms.**
+
+- `robots.txt` on a public tenant (`<company>.eightfold.ai`), and the same file on a public tenant
+  on its company's own host, has `User-agent: *` and `Disallow: /`, then `Allow: /careers`,
+  `Allow: /api/apply` and `Allow: /api/pcsx` among others. The reader requests only
+  `/api/pcsx/...`, and the probe also `/careers`. The bare host redirects to `/home`, which is not
+  allowed, so the probe asks `/careers` for a site's domain. A bare host that a user pastes is
+  fetched as given, like any other page handed to the probe.
+- The career site shows visitors no terms (its terms-of-service setting is off). Its legal links
+  are the employer's privacy statement and the vendor's privacy policy.
+- The vendor's Acceptable Use Policy (revised Aug 2025) covers "Eightfold's website and Services",
+  and "a visitor to Eightfold's website is deemed to be a Customer". It does not mention automated
+  reading. It forbids use "that disrupts or otherwise negatively impacts any aspect of the
+  Services" and "efforts to gain unauthorized access to non-public information". The reader reads
+  public listings, one request a second at most, on paths robots.txt allows.
+- The same policy forbids users "to reverse engineer, copy, disassemble, or decompile the Services".
+  Reading the JSON a public page loads is not that, but it is the clause to revisit if the vendor
+  says otherwise. An employer's own host may carry its own terms.
+
+**The listing.**
+
+- The career page is an app whose settings sit in a hidden `<code id="pcsx-data">` element that
+  begins `{"domain": "<company domain>"`. It loads
+  `GET /api/pcsx/search?domain=<domain>&query=<q>&location=&start=<n>`. The older
+  `GET /api/apply/v2/jobs` answered 403 `Not authorized for PCSX` on the same tenant.
+- Without `domain`, the search answers 422 ("Missing data for required field"), so an entry names
+  both the host and the domain.
+- The reply is `{"status": 200, "data": {"positions": [...], "count": n, ...}}`. A row has `id` (a
+  number), `name`, `locations` (the site's own place names), `standardizedLocations` (coded, such
+  as `Berlin, BE, DE`), `postedTs` and `creationTs` (seconds since the epoch), `department`,
+  `workLocationOption` (`onsite`, `hybrid` or `remote`), `atsJobId` and `positionUrl`
+  (`/careers/job/<id>`). It has no text and no employment type.
+- A page holds ten rows; `num=100` returned the same ten. `count` was the same on the first,
+  second and last page of a 334-posting listing (33 pages of ten and one of four), and on a page at
+  offset 500 of a 2,461-posting one.
+- A page at offset 2,450 of that listing answered 429 three times, the last after a pause of two
+  and a half minutes, while offset 500 and other searches answered in between. Hence the reader
+  refuses any search matching more than 500 postings (50 pages) rather than rely on deep pages.
+- Search is narrow: `product designer` matched 3 of 334 postings on one tenant and 15 of 2,461 on
+  the other, by relevance (an empty search sorts by date). So the reader searches for the wanted
+  roles instead of reading whole boards ten at a time.
+- Place names spell the country out, as `<city>, <region>, <country>` on one tenant and
+  `<country>, <region>, <city>` on the other. The coded form uses two-letter codes such as DE, which
+  is also a US state, so the reader uses the names.
+
+**Texts and links.**
+
+- `GET /api/pcsx/position_details?position_id=<id>&domain=<domain>&hl=en` returns the row's fields
+  plus `jobDescription` (HTML) and `publicUrl` (`https://<the site's host>/careers/job/<id>`). It
+  also returns the site's own fields, named `efcustomText…`: a time type on one tenant, and
+  employment type, work site, travel and others on the other.
+- `/careers/job/<id>` answers 200 with a canonical link to itself, so a posting's link needs no
+  detail.
+- An unknown `<company>.eightfold.ai` answers 404 `Group ID not found`.
+
+**Rate.**
+
+- No rate is documented, and no reply carried a rate header or `Retry-After`.
+- The tenant on eightfold.ai answered every request, some a second apart.
+- The tenant on its own host answered 429 to two of its eleven requests that were not deep pages:
+  one a minute after the previous request, and one a second after its careers page at the start of
+  a later session. Two searches seven seconds apart both answered.
+- The reader keeps to one request a second. A 429 is retried twice; after that the source fails
+  that update and keeps its last snapshot.
+
+**One run of the reader.** The probe found the tenant on eightfold.ai (334 postings) in one request.
+One search there listed 3 postings and fetched 2 texts, each starting with the site's time type. The
+probe of the tenant on its own host recognized the site from its page, and then its search answered
+429. Both took 6 requests and 4.5 seconds.
+
 ## Still open
 
 | Spike | Needs |

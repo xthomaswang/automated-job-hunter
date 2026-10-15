@@ -102,6 +102,15 @@ the listing shows, needs none. The rank is built before the read, so a posting `
 `requeue` sends back waits one more update for its text. On a very large site, `categories` (the
 site's own job categories) narrows each search, which otherwise matches any of its words.
 
+**Eightfold** career sites are a detail source of the same kind, read through the JSON their own
+pages load. A search lists 10 postings a request, with its total on every page, so a search
+matching more than 500 is refused; sites also refuse deep pages. Each request carries the domain
+the site's pages name, so an entry names host and domain, and the probe recognizes a site on a
+company's own host by the settings its pages embed. The listing gives place, remote work and date
+for stage 0. It has no employment type: that stays in the text, as for Workday, with the site's own
+posting fields. Robots.txt allows these paths; spike E11 in [spikes.md](spikes.md) records the terms
+read.
+
 **Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail
 source whose listing is the file. A row is only a pointer: it is used when its link is one posting
 on a system with a public API this engine reads (Greenhouse, Lever, Ashby, SmartRecruiters,

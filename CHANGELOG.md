@@ -163,3 +163,13 @@ What changes for people who run a feed. Bring a feed repo up to date with
   the address as `resolved`.
 - Some sites on a company's own host answer 429 (too many requests) after a few requests, even at
   one a second. That update then skips the source and keeps its last snapshot.
+
+### One Workday requisition that a list names on two sites is judged once
+
+- A job list can name one Workday requisition on two sites of a tenant, sometimes with the company
+  written two ways. The second posting is now a variant of the first, so it is not triaged,
+  assessed or published again. Workday postings are compared by tenant and requisition, whatever
+  the site.
+- A requisition's later postings add `-1`, `-2` and so on to its id. The comparison drops that
+  ending only when at least five digits remain, so `R-12` and `R-13` stay two requisitions.
+- Pairs that were already judged twice stay until one of them closes.

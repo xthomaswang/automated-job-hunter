@@ -23,6 +23,7 @@ from .http import Client, HttpError
 from .layout import Layout
 from .model import Job, digest
 from .rules import age_days, parse_date
+from .sources import lists as L
 from .state import SOURCE_ID, Row, State, dump_json, read_json, set_tag, tag, write_text
 from .textutil import company_key, hamming, simhash64, words_key
 
@@ -66,8 +67,10 @@ def load_sources(path: Path) -> list[dict[str, Any]]:
         if entry.get("ats") not in S.KINDS:
             problems.append(f"{sid}: unknown source type {entry.get('ats')!r}")
         company = entry.get("company")
-        if entry.get("ats") != "aggregator" and not (isinstance(company, str) and company.strip()):
+        if entry.get("ats") not in ("aggregator", *L.KINDS) and not (isinstance(company, str) and company.strip()):
             problems.append(f"{sid}: company is required")
+        if entry.get("ats") in L.KINDS:
+            problems.extend(L.problems(entry))
         if entry.get("membership_mode", "snapshot") not in ("snapshot", "rolling"):
             problems.append(f"{sid}: membership_mode must be snapshot or rolling")
         interval = entry.get("min_fetch_interval_seconds", 0)
@@ -230,62 +233,91 @@ def retire(sid: str, rows: dict[str, Row], today: date) -> list[str]:
 
 
 def kind_of(source: Mapping[str, Any]) -> str:
-    """How a source ranks when several list one opening: `official` (an employer's own board) or
-    `aggregator` (a third-party listing, which defers to an official one)."""
-    return "aggregator" if source.get("ats") == "aggregator" else "official"
+    """How a source ranks when several list one opening: `official` (an employer's own board), `list`
+    (a GitHub job list, whose postings are read from employers' boards the feed does not watch), or
+    `aggregator` (a third-party listing). Each defers to the ones before it."""
+    kind = source.get("ats")
+    return "aggregator" if kind == "aggregator" else "list" if kind in L.KINDS else "official"
 
 
-def assign_variants(state: State, seen: Mapping[str, Mapping[str, Seen]], kinds: Mapping[str, str]) -> int:
+def assign_variants(
+    state: State, seen: Mapping[str, Mapping[str, Seen]], sources: Mapping[str, Mapping[str, Any]]
+) -> int:
     """Mark postings that need no judgment of their own. Returns how many are variants.
 
-    - An aggregator copy of an opening an employer's own board lists (same company and title)
-      defers to the official posting.
-    - Copies of one opening on several aggregators (same company and title) defer to one of them:
-      one already judged if there is one, else the one with the lowest key. Within one aggregator,
-      a copy also needs near-identical text, as below.
+    - A list's posting that is on a board the feed watches (the same posting, by where it lives)
+      defers to the board's own. So does one with the same company and title as a board's posting.
+    - Lists that name one posting defer to one of them: one already judged if there is one, else
+      the one with the lowest key.
+    - An aggregator copy of an opening an employer's own board lists, or a list names (same company
+      and title), defers to that posting.
+    - Copies of one opening on several aggregators (same company and title) defer to one of them,
+      chosen the same way. Within one aggregator, a copy also needs near-identical text, as below.
     - Within one source, postings with the same company and title and near-identical text (one
       opening listed per location) defer to one representative.
 
     Recomputed from scratch for every source read this tick, from what the state holds for every
     source, so it never drifts.
     """
+    kinds = {sid: kind_of(source) for sid, source in sources.items()}
     for sid in seen:
         for row in state.rows(sid).values():
             if row.status == "V":
                 row.status, row.note = "P", "-"
     official: dict[str, str] = {}
-    copies: dict[str, tuple[bool, str]] = {}  # company and title -> (not judged yet, key) of the copy to defer to
+    boards: dict[tuple[str, str, str], str] = {}  # where a watched board's posting lives -> its key
+    named: dict[tuple[str, str, str], tuple[bool, str]] = {}  # where a list's posting lives -> (not judged, key)
+    listed: dict[str, tuple[bool, str]] = {}  # company and title -> (not judged, key) of a list's posting
+    copies: dict[str, tuple[bool, str]] = {}  # company and title -> (not judged, key) of an aggregator copy
     for sid in state.source_ids():
+        kind = kinds.get(sid)
         for row in state.rows(sid).values():
             if row.status in "XVS":
                 continue
-            key = f"{sid}:{row.id}"
-            if kinds.get(sid) == "official":
+            key, rank = f"{sid}:{row.id}", (row.status not in JUDGED, f"{sid}:{row.id}")
+            if kind == "official":
                 official[row.gk] = min(key, official.get(row.gk, key))
-            elif kinds.get(sid) == "aggregator":
-                rank = (row.status not in JUDGED, key)
+                where = L.board_identity(sources[sid], row.id)
+                if where:
+                    boards[where] = min(key, boards.get(where, key))
+            elif kind == "list":
+                where = L.identity(row.id)
+                if where:
+                    named[where] = min(rank, named.get(where, rank))
+                listed[row.gk] = min(rank, listed.get(row.gk, rank))
+            elif kind == "aggregator":
                 copies[row.gk] = min(rank, copies.get(row.gk, rank))
     count = 0
     for sid, items in seen.items():
-        rows = state.rows(sid)
-        if kinds.get(sid) == "aggregator":
+        rows, kind = state.rows(sid), kinds.get(sid)
+        if kind in ("list", "aggregator"):
             for jid, item in items.items():
-                row = rows[jid]
+                row, own = rows[jid], f"{sid}:{jid}"
                 if row.status != "P" or row.note != "-":
                     continue
                 lead = official.get(row.gk)
-                if lead is None and row.gk in copies and copies[row.gk][1] != f"{sid}:{jid}":
-                    first = copies[row.gk][1]
-                    other, fid = split_key(first)
-                    if other != sid or (fid in items and _near(item.simhash, items[fid].simhash)):
-                        lead = first
+                if kind == "list":
+                    where = L.identity(jid)
+                    lead = boards.get(where) if where else None
+                    lead = lead or official.get(row.gk)
+                    if lead is None and where in named and named[where][1] != own:
+                        lead = named[where][1]
+                else:
+                    lead = lead or (listed[row.gk][1] if row.gk in listed else None)
+                    if lead is None and row.gk in copies and copies[row.gk][1] != own:
+                        first = copies[row.gk][1]
+                        other, fid = split_key(first)
+                        if other != sid or (fid in items and _near(item.simhash, items[fid].simhash)):
+                            lead = first
                 if lead is not None:
                     row.status, row.note = "V", lead
                     count += 1
-            continue
+            if kind == "aggregator":
+                continue
         groups: dict[str, list[str]] = {}
         for jid, item in items.items():
-            groups.setdefault(item.gk, []).append(jid)
+            if rows[jid].status != "V":
+                groups.setdefault(item.gk, []).append(jid)
         for members in groups.values():
             if len(members) < 2:
                 continue
@@ -466,7 +498,6 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
 
     generations = advance_generations(state, C.profile_hashes(criteria, profile_text))
     stage0 = C.Stage0(criteria, places)
-    kinds = {s["id"]: kind_of(s) for s in sources}
 
     def due(source: Mapping[str, Any]) -> bool:
         after = state.sources.get(source["id"], {}).get("next_after")
@@ -546,7 +577,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
             plan["closed"] += retire(sid, state.rows(sid), today)
             state.sources.pop(sid, None)
 
-    summary["variants"] = assign_variants(state, seen, kinds)
+    summary["variants"] = assign_variants(state, seen, {s["id"]: s for s in sources})
     for sid, items in seen.items():  # titles already judged unrelated whatever the duties
         for jid, item in items.items():
             row = state.rows(sid)[jid]

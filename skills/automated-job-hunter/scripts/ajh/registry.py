@@ -13,7 +13,7 @@ from . import sources as S
 from .http import Client
 from .layout import Layout
 from .model import SourceError
-from .sources import ats, smartrecruiters, workday
+from .sources import ats, lists, smartrecruiters, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
 
@@ -310,6 +310,8 @@ def hosts(root: Path | str) -> dict[str, Any]:
             found.add(source["host"])
         elif source["ats"] in smartrecruiters.KINDS:
             found.add(smartrecruiters.HOST)
+        elif source["ats"] in lists.KINDS:
+            found.update(lists.HOSTS)  # a list can lead to any board on the systems it reads
         elif source.get("provider") in PROVIDERS:
             found.add(urlsplit(PROVIDERS[source["provider"]][2]).hostname)
     return {"hosts": sorted(found)}
@@ -327,7 +329,10 @@ def test(root: Path | str, client: Client | None = None) -> dict[str, Any]:
     for source in read_json(layout.sources, []):
         try:
             searched = S.scoped(source, criteria) if criteria else source
-            report[source["id"]] = {"postings": len(S.fetch(client, searched))}
+            if source.get("ats") in lists.KINDS:  # what became of each row, as no update reports it
+                report[source["id"]] = lists.read(client, source)[1]
+            else:
+                report[source["id"]] = {"postings": len(S.fetch(client, searched))}
         except Exception as error:
             report[source["id"]] = {"error": f"{type(error).__name__}: {str(error)[:160]}"}
     failing = sorted(sid for sid, result in report.items() if "error" in result)

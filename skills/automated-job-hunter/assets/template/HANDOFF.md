@@ -27,7 +27,7 @@ which and when.
 | `key` | Stable identity, `<source>:<id>`. Use it to remember what you have already handled. |
 | `company`, `title`, `location`, `employment`, `posted`, `first_seen` | Facts from the job board. `posted` is the board's date and may be null; `first_seen` is the day this feed first saw the posting. |
 | `url`, `apply_url` | Links from the job board, never rewritten. `apply_url` may be null. |
-| `source_kind` | `official` (the employer's own board) or `aggregator` (a third-party listing; find the employer's own posting before applying) |
+| `source_kind` | `official` (the employer's own board, including a posting a job list pointed to, read from the employer's board) or `aggregator` (a third-party listing; find the employer's own posting before applying) |
 | `status` | `scored`, or `unscored` when the posting could not be assessed and only its facts are known |
 | `fit` | 0 to 100, how well the posting fits the profile. Null when unscored. |
 | `tier` | `strong`, `good`, `stretch` or `unscored`. A posting whose work is a wanted role is listed even when the fit is low, as a `stretch`, unless `thresholds` in `profile/criteria.json` sets a floor for it (`direct_min`) or a hard requirement it breaks (`max_required_years`, `max_seniority`). |

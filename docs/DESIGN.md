@@ -102,6 +102,16 @@ the listing shows, needs none. The rank is built before the read, so a posting `
 `requeue` sends back waits one more update for its text. On a very large site, `categories` (the
 site's own job categories) narrows each search, which otherwise matches any of its words.
 
+**Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail
+source whose listing is the file. A row is only a pointer: it is used when its link is one posting
+on a system with a public API this engine reads (Greenhouse, Lever, Ashby, SmartRecruiters,
+Workday), and that posting's text, date and link come from the system, so the posting is
+`official`. Rows linking to re-posters, redirects, systems without such an API, or employers' own
+pages are skipped, and `sources test` counts every row by outcome. A list posting's id is where it
+lives, `<system>~<board>~<id>`, which is enough to find the same posting on a watched board or in
+another list without storing anything more. Title and place stay the list's, since they are what
+change is measured on every update; the employment type stays in the text, as for Workday.
+
 A posting whose text was not fetched comes back with `detail_skipped`. If it is new, `collect` keeps
 it out of the state until an update brings its text (nothing knew it, so nothing closes) and counts
 it as waiting for its text in `feed/meta.json` and the README. A known one is not judged, and its
@@ -278,8 +288,10 @@ Scheduled runs start from a fresh clone, so state is committed text: compact, so
   with the record). Rolling feeds (Remote OK, Jobicy) expire by age, never by absence. A source that
   shrinks by more than 40% is held until the shrink repeats. Changing a query-scoped source's
   queries re-baselines it without closures. A failed fetch keeps the previous snapshot.
-- **Duplicates.** An aggregator copy of an opening an employer's own board lists (same company and
-  title) defers to the official posting. Copies on several aggregators defer to one of them: one
+- **Duplicates.** A list's posting on a board the feed watches (by where it lives, or by company and
+  title) defers to the board's own, and a posting several lists name defers to one of them. An
+  aggregator copy of an opening an employer's own board lists, or a list names (same company and
+  title), defers to that posting. Copies on several aggregators defer to one of them: one
   already judged, else the one with the lowest key, so the choice never flips. Within one source,
   postings with the same company and title and near-identical text defer to one representative;
   that includes one aggregator, which can list an opening once per location. Variants are

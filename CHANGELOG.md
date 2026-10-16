@@ -364,3 +364,14 @@ What changes for people who run a feed. Bring a feed repo up to date with
   refusal. It now says that the site name is probably wrong, or the site is not public, and to open
   one of the company's postings and probe its URL, which carries the right tenant and site (#76).
 - Every other error is shown as before, including a 422 from another system.
+
+### A probe that finds a Phenom career site points to a posting's Apply link
+
+- Several large companies' career sites are a Phenom front end: a posting's Apply button leads to
+  the system that holds it, often a Workday site this version reads. `sources probe <url>` named
+  Phenom as a system it cannot read and said there was no board to add. When it finds no board it
+  reads and names Phenom, or Avature, which some companies use the same way, it now says to open
+  one posting and probe its Apply link, which can lead to a system it reads, such as Workday (#78).
+- Where the page also links a system the probe reads, that board is reported as before. For the
+  other systems it cannot read, such as iCIMS or Oracle Recruiting Cloud, which hold the postings
+  themselves, it still says that there is no board to add.

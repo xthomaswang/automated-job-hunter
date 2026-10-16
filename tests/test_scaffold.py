@@ -332,6 +332,42 @@ def test_probe_reads_a_careers_url_names_systems_it_cannot_read_and_follows_a_pa
     assert "sources probe <url>" in registry.probe("Nobody Inc", Client(lambda *a: (404, {}, b"{}"), retries=0))["next"]
 
 
+PHENOM = '<script src="https://cdn.phenompeople.com/CareerConnectResources/pp/ACME/en_us/desktop/js/main.js"></script>'
+
+
+def test_probe_points_to_a_postings_apply_link_when_it_finds_only_a_front_end():
+    board = Boards()
+    board.workday = {"R1": wd_posting("R1")}
+    workday = '<a href="https://globex.wd1.myworkdayjobs.com/en-US/External">Search all jobs</a>'
+    pages = {
+        "https://careers.acme.example/": PHENOM,  # a Phenom site, whose Apply buttons lead to another system
+        "https://careers.globex.example/": PHENOM + workday,
+        "https://careers.initech.example/": '<a href="https://careers-initech.icims.com/jobs/intro">Jobs</a>',
+    }
+
+    def transport(method, url, headers, body, timeout):
+        if url in pages:
+            return 200, {}, pages[url].encode()
+        return board.transport(method, url, headers, body, timeout)
+
+    web = Client(transport, retries=0)
+    hint = (
+        "may be only a front end for another system: open one posting and probe its Apply link, which can lead to "
+        "a system this version reads, such as Workday."
+    )
+    front = registry.probe("https://careers.acme.example/ Acme", web)
+    assert (front["matches"], front["unsupported"]) == ([], ["Phenom"])
+    assert front["next"] == f"This company uses Phenom, which this version cannot read. Phenom {hint}"
+    both = registry.probe("https://careers.globex.example/ Globex", web)  # the page links the system behind it too
+    assert [m["add"] for m in both["matches"]] == ["workday:globex.wd1.myworkdayjobs.com/External:Globex"]
+    assert both["unsupported"] == ["Phenom"] and "next" not in both
+    own = registry.probe("https://careers.initech.example/ Initech", web)  # a system that holds the postings itself
+    assert own["next"] == f"This company uses {ICIMS}, which this version cannot read. There is no board to add."
+    direct = registry.probe("https://acme.avature.net/careers Acme", web)
+    assert direct["next"] == f"This company uses Avature, which this version cannot read. Avature {hint}"
+    assert set(registry.FRONT_ENDS) <= {system for _, system in registry.UNSUPPORTED}  # named as the probe names them
+
+
 def test_probe_knows_a_board_that_an_old_careers_address_moved_to():
     board = Boards()
     board.workday = {jid: wd_posting(jid, title) for jid, title in (("R1", "UX Researcher"), ("R2", "Analyst"))}

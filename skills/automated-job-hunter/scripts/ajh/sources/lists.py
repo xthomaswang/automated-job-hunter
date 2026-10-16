@@ -457,7 +457,7 @@ def _detail(client: Client, job: Job, found: Link, boards: dict[str, Any]) -> Jo
             else:
                 api = f"https://{host}/v0/postings/{found.board}/{found.id}"
             data = client.get(api).raise_for_status().json()
-            facts = (ats._greenhouse if found.system == "greenhouse" else ats._lever)(data)
+            facts = ats._greenhouse(data, found.board) if found.system == "greenhouse" else ats._lever(data)
             if str(facts["source_id"]).lower() != found.id:
                 return None
     except (HttpError, OSError, ValueError, KeyError, TypeError, AttributeError):

@@ -13,7 +13,7 @@ from ajh import feed, publish, registry, scaffold, tick
 from ajh.cli import main
 from ajh.http import Client
 from ajh.model import Job, SourceError
-from helpers import Boards, answer_assess, answer_triage, posting, wd_posting
+from helpers import Boards, answer_assess, answer_triage, ashby_posting, posting, wd_posting
 
 SKILL = Path(scaffold.SCRIPTS).parent
 REPO = SKILL.parent.parent
@@ -265,6 +265,36 @@ def test_probe_finds_a_companys_board_by_trying_likely_slugs():
     assert result["matches"] == [{"ats": "lever", "slug": "acme-rocket", "postings": 1, "sample": ["Propulsion Engineer"],
                                   "add": "lever:acme-rocket:Acme Rocket Co."}]  # fmt: skip
     assert registry.probe("Nobody Inc", Client(transport, retries=0))["matches"] == []
+
+
+def test_an_ashby_board_whose_name_has_a_space_or_a_dot_is_added_and_its_host_named(repo):
+    root = repo(sources=())
+    assert main(["--repo", str(root), "sources", "add", "ashby:Acme AI:Acme", "ashby:acme.com:Acme"]) == 0
+    assert json.loads((root / "config/sources.json").read_text()) == [
+        {"id": "acme-ai", "company": "Acme", "ats": "ashby", "slug": "Acme AI"},
+        {"id": "acme-com", "company": "Acme", "ats": "ashby", "slug": "acme.com"},
+    ]
+    assert registry.add(root, ["ashby:Acme%20AI:Acme"])["added"] == []  # the name as its link writes it: the same board
+    assert registry.hosts(root) == {"hosts": ["api.ashbyhq.com"]}
+    for bad in ("ashby:Acme/AI:Acme", "ashby:..:Acme", "ashby:Acme%2FAI:Acme", "greenhouse:Acme AI:Acme",
+                "lever:acme.com:Acme"):  # fmt: skip
+        with pytest.raises(SourceError):
+            registry.add(root, [bad])
+
+
+def test_probe_reads_an_ashby_board_whose_name_has_a_space_or_a_dot_from_its_link():
+    uuid = "1a2b3c4d-5555-6666-7777-888899990000"
+    board = Boards()
+    board.ashby = {"Acme%20AI": [ashby_posting(uuid, board="Acme%20AI")],  # asked for by its percent-encoded name
+                   "acme.com": [ashby_posting(uuid, board="acme.com", title="Data Analyst")]}  # fmt: skip
+    web = Client(board.transport, retries=0)
+    assert registry.probe("https://jobs.ashbyhq.com/Acme%20AI Acme", web)["matches"] == [
+        {"system": "Ashby", "ats": "ashby", "slug": "Acme AI", "supported": True, "postings": 1,
+         "sample": ["UX Researcher"], "add": "ashby:Acme AI:Acme"}
+    ]  # fmt: skip
+    dotted = registry.probe(f"https://jobs.ashbyhq.com/acme.com/{uuid} Acme", web)["matches"]  # one posting's link
+    assert [(m["add"], m["postings"], m["sample"]) for m in dotted] == [("ashby:acme.com:Acme", 1, ["Data Analyst"])]
+    assert board.requests == [("board", "Acme%20AI"), ("board", "acme.com")]
 
 
 ICIMS = "iCIMS (its terms forbid automated reading of its career sites)"  # docs/spikes.md, E10

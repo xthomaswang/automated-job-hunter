@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import criteria as C
 from . import sources as S
@@ -76,6 +76,8 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
         parts = item.split(":", 2)
         if len(parts) == 3 and parts[0] in ats.ATS:
             kind, slug, company = parts
+            if kind == "ashby":  # the name, or the name as the board's link writes it: `Acme%20AI` is `Acme AI`
+                slug = unquote(slug)
             entry = {
                 "id": re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-"),
                 "company": company,
@@ -140,7 +142,7 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
         else:
             unknown.append(item)
             continue
-        ats.feed_url(entry) if entry["ats"] in ats.ATS else None  # rejects a slug that is not a plain token
+        ats.feed_url(entry) if entry["ats"] in ats.ATS else None  # rejects a name its board's system does not allow
         if entry["id"] not in current:
             added.append(entry["id"])
         current[entry["id"]] = entry
@@ -216,8 +218,8 @@ def _system(url: str) -> dict[str, Any] | None:
         kind = "greenhouse"
         slug = (parse_qs(parts.query).get("for") or [None])[0] if path[:2] == ["embed", "job_board"] else None
         slug = slug or (path[0] if path and path[0] != "embed" else None)
-    elif host == "jobs.ashbyhq.com":
-        kind, slug = "ashby", path[0] if path else None
+    elif host == "jobs.ashbyhq.com":  # a name with spaces is percent-encoded in the link
+        kind, slug = "ashby", unquote(path[0]) if path else None
     elif host == "jobs.lever.co":
         kind, slug = "lever", path[0] if path else None
     elif re.fullmatch(r"[a-z0-9-]+\.recruitee\.com", host):

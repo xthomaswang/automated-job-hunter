@@ -333,6 +333,30 @@ What changes for people who run a feed. Bring a feed repo up to date with
   (Regina, Saskatoon, St. John's, Charlottetown, Whitehorse, Iqaluit and a few more), so "Regina, SK"
   reads as Canada even without "CA" or "Canada" beside it.
 
+### A Greenhouse board whose postings have no https link is read whole
+
+- A Greenhouse posting whose link in the board's API (`absolute_url`) is missing or not https is now
+  linked to its page on Greenhouse itself, `https://job-boards.greenhouse.io/<board>/jobs/<id>`, the
+  form a list's link to it already takes. Such a posting failed its whole board, since one
+  incomplete posting aborts the snapshot: `Job … has no public https URL` (#74). A posting whose
+  link is https keeps it, and one missing its id or title still fails the board, as before.
+- A list's link to a Greenhouse posting that has no link of its own now brings the posting's text.
+  It used to wait for it on every update.
+
+### Ashby boards whose names have spaces or dots can be added
+
+- An Ashby board's name can have spaces and dots, as in `Acme AI` or `acme.com`, and such boards are
+  public. `sources add` and `sources probe` refused them as invalid board slugs (#73). Now
+  `sources add "ashby:Acme AI:Acme"` adds one, and so does the name as the board's link writes it,
+  `Acme%20AI`. `sources probe https://jobs.ashbyhq.com/Acme%20AI Acme` reads the board and prints
+  that add line, and `sources hosts` names Ashby's API host for it. The board is read like any
+  other, with its name percent-encoded in the address of Ashby's API.
+- A list's link to a posting on such a board already kept the name percent-encoded in the posting's
+  id, as in `ashby~Acme%20AI~<id>`. Now that such a board can be watched, a list naming one of its
+  postings defers to the board's own, as for any other board.
+- Greenhouse, Lever and Recruitee board names are still letters, digits, `-` and `_`, as their
+  addresses need.
+
 ### A Workday site's HTTP 422 says that the site name is probably wrong
 
 - A Workday site's jobs API answers HTTP 422 when the site name in the address is wrong, or the site

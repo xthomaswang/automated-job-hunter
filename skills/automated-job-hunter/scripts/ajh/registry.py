@@ -13,7 +13,7 @@ from . import sources as S
 from .http import Client
 from .layout import Layout
 from .model import SourceError
-from .sources import ats, eightfold, lists, smartrecruiters, successfactors, workday
+from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
 
@@ -122,6 +122,14 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
             other = current.get(entry["id"])
             if other and (other.get("host"), other.get("brand")) != (entry["host"], entry.get("brand")):  # another site
                 entry["id"] = re.sub(r"[^a-z0-9]+", "-", f"{host}-{brand}".lower()).strip("-")
+        elif len(parts) == 3 and parts[0] in radancy.KINDS:
+            _, host, company = parts
+            entry = {"id": "", "company": company, "ats": "radancy", "host": host.lower()}
+            radancy.site(entry)  # refuses anything but a plain host name
+            entry["id"] = successfactors.source_id(entry["host"])  # the first label of the host naming the employer
+            other, same = current.get(entry["id"]), ("ats", "host")
+            if other and [other.get(k) for k in same] != [entry[k] for k in same]:  # another board has the name
+                entry["id"] += "-radancy"
         elif item in known:
             entry = dict(known[item])
         else:
@@ -289,6 +297,14 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             sample = [" ".join(row.get("title", "").split()) for row in data.rows[:3]]
             add = f"successfactors:{'/'.join(p for p in (found['host'], found.get('brand')) if p)}:{company}"
             return {**facts, "supported": True, "postings": data.total, "sample": sample, "add": add}
+        elif found["ats"] == "radancy":
+            host = radancy.site(found)
+            client.space(host, radancy.DELAY)
+            client.sleep(radancy.DELAY)  # the site's own page was read from this host a moment ago
+            postings = radancy.listing(client, host)  # robots.txt first, then the sitemap: no posting page
+            sample = [posting.title for posting in postings[:3]]
+            return {**found, "supported": True, "postings": len(postings), "sample": sample,
+                    "add": f"radancy:{host}:{company}"}  # fmt: skip
         else:
             jobs = ats.fetch_board(
                 client, {"id": "probe", "company": company, "ats": found["ats"], "slug": found["slug"]}
@@ -337,6 +353,9 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
         site = successfactors.recognize(landed, page)  # the page is itself a SuccessFactors career site: its links
         if site:  # to SAP's hosts are its own scripts and sign-in, not another board
             systems = [site]
+        site = radancy.recognize(landed, page)  # the page is itself a TalentBrew career site: its links to other
+        if site:  # systems are where its postings are applied for, which its own sitemap already lists
+            systems = [site]
     results = [_try(system, name, client) for system in systems]
     result: dict[str, Any] = {"url": url}
     if landed != url:  # the page moved: what was read is there
@@ -373,6 +392,8 @@ def hosts(root: Path | str) -> dict[str, Any]:
             found.add(eightfold.site(source)[0])
         elif source["ats"] in successfactors.KINDS:
             found.add(source["host"])
+        elif source["ats"] in radancy.KINDS:
+            found.add(radancy.site(source))
         elif source["ats"] in lists.KINDS:
             found.update(lists.HOSTS)  # a list can lead to any board on the systems it reads
         elif source.get("provider") in PROVIDERS:

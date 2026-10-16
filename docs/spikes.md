@@ -420,6 +420,79 @@ What three public Career Site Builder sites answered:
   a public listing.
 - One search page read through the engine's own client (its usual headers) answered as by hand.
 
+## E13: Radancy TalentBrew career sites
+
+2026-10-15, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code 2.1.299. Written with the reader
+(#37) from the vendor's structure as the notes for #37 describe it, with no request to a real site. The
+examples below are synthetic, like the fixtures in `tests/fixtures/radancy/` that every test reads
+offline. No model was involved.
+
+TODO(main): live check. One public TalentBrew site: its robots.txt as served (the paths it disallows,
+any Allow, wildcard or Crawl-delay line, and whether it names `/sitemap.xml`); the sitemap's size,
+whether it is an index, and its entries by kind; a posting page's JSON-LD fields and `data-job-id`;
+what a closed posting's address answers; and one run of the reader and the probe (requests, time).
+
+A TalentBrew career site is on the employer's own host, such as `careers.acme.com`. Its paths may
+start with a language segment (`/en/`) or not. Every page loads the vendor's assets from
+`tbcdn.talentbrew.com` and `cdn.radancy.eu`, which is how the probe knows a site by its page: a link
+in a posting's shape alone proves nothing.
+
+**robots.txt** disallows the search, category, location and employment pages, such as
+`/search-jobs`, `/en/search-jobs`, `/location/`, `/category/`, `/employment/` and `/job_location/`, and
+names `Sitemap: https://careers.acme.com/sitemap.xml`. So the reader never reads those pages. Each
+update reads robots.txt first and refuses the site if it disallows the sitemap or any posting.
+The engine reads the rules itself (`ajh/robots.py`), as RFC 9309 says: the groups naming its product
+token (`automated-job-hunter`), or else every group for `*`, merged; the longest matching pattern
+wins, Allow on a tie; `*` matches any run of characters and a final `$` the end; an empty Disallow
+matches nothing. `urllib.robotparser` answers differently by Python version. On 3.9.6 here it
+applies the first matching rule and reads `*` and `$` as plain characters, so `Allow: /` followed by
+`Disallow: /en/job/` allows the postings, which the RFC disallows. It also rewrites a rule's path
+through urlparse and urlunparse, so `Disallow: /?` (the root with a query string) blocks `/about`
+and every other page there, while the 3.13.15 here reads both files as the RFC does.
+
+**The sitemap** is a sitemaps.org 0.9 `<urlset>` (an index of them, `<sitemapindex>`, is read too,
+only its sitemaps on the site's own host). A posting's `<loc>` is
+`https://<host>[/<lang>]/job/<city-slug>/<title-slug>/<org id>/<job id>`, such as
+`https://careers.acme.com/en/job/springfield/retail-store-associate/1234/55500011122`.
+
+- Slugs are lowercase and hyphenated; non-ASCII ones are percent-encoded UTF-8, so a Chinese title
+  reads `%E9%94%80%E5%94%AE%E4%BB%A3%E8%A1%A8` (销售代表).
+- Every `<lastmod>` is the time the sitemap was made, the same for every entry, so it says nothing
+  about a posting's age and is not read.
+- The same sitemap lists the home page and the category, location, employment and business pages,
+  such as `/en/category/retail-jobs/1234/8899/1`. They are skipped and never fetched.
+- A closed posting drops out of the sitemap, so its absence closes it, as on other boards.
+- The job id is the posting's id; the org id is the site's and is not part of it.
+
+**A posting's page** embeds one `<script type="application/ld+json">` holding a schema.org
+`JobPosting`: `title`, `datePosted` (`2026-10-01`), `employmentType` (`"Full-time"`, `"Part-time"`),
+`identifier` (`{"@type": "PropertyValue", "name": "Job ID", "value": "100200"}`, the employer's
+requisition number, which is not the link's job id), `hiringOrganization.name`, `jobLocation` (a list
+of `Place`s whose `address` has `addressLocality`, `addressRegion` and `addressCountry`, a name or a
+code such as `USA`, besides street and postcode), and `description` (HTML, often 10 to 15 KB). Its
+HTML also carries `data-org-id="1234"` and `data-job-id="55500011122"`.
+
+What the reader makes of it:
+
+- The listing gives only slugs, so a posting's title and place come from them, the same on every
+  update: the change fingerprint never depends on whether its text was read. The place is the city
+  (`springfield` is "Springfield"). The page's title (real capitals and punctuation) replaces the
+  slug's only when their words are the same; "Assistant Manager, Store Operations" under the slug
+  `assistant-store-manager` keeps "Assistant Store Manager".
+- A bare city name is read through the bundled table of cities, so stage 0 reads `london` as the
+  United Kingdom on the link alone. A posting in a US town named like a city in that table (Dublin,
+  Ohio; Vancouver, Washington) would be left out the same way when `locations.regions` is set.
+- The page's address goes to the posting's own place ("Springfield, IL, USA"), which parks a posting
+  outside the wanted regions; it and the employment type are also the first lines of the text.
+- The employment type is not the posting's `employment_type`: the sitemap has none, so stage 0 would
+  drop a part-time posting only on the updates that read its text, and on the others it would look
+  new and have its text fetched again, every update.
+- A page counts as this posting's only when the address it landed on ends in the posting's id, an
+  element carries that id, and it has a JobPosting with a description. Otherwise it is skipped this
+  update, like any failed text.
+- More than one posting link in twenty that is not in the shape above (one stray link always may)
+  fails the source, as does a sitemap that cannot be read or a sitemap of an index that fails.
+
 ## Still open
 
 | Spike | Needs |

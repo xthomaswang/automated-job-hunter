@@ -147,6 +147,15 @@ SuccessFactors site that cannot be read: a site whose search page loads its post
 (`career<N>.successfactors.com`, `sapsf.com`), whose robots.txt disallows everything. For a company
 on the older board, look for its career site on its own domain and probe that.
 
+A Radancy TalentBrew career site is also on the company's own host, often `careers.<company>.com`:
+probe its address or one posting's link. The probe knows the site by its page and prints
+`radancy:<host>:Company`. Such a site is not searched. Each update reads its sitemap, which lists
+every posting, so `queries` and `categories` do not apply, and the hard limits read each posting's
+city and title from its link. Texts are fetched as for Workday, up to 100 an update (`max_details`),
+one request a second, so a site with thousands of postings fills in over many updates. Each update
+first reads the site's robots.txt; if it disallows the sitemap or the postings, the source fails and
+nothing is read.
+
 The job feeds (`remotive`, `remoteok`, `jobicy`) list remote jobs from many employers. They are
 broad and noisy; add them only if the user wants remote work.
 

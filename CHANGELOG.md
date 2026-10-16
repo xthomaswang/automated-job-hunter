@@ -221,3 +221,20 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - `readers/` counts as hand-written, like `profile/` and `config/`: `hunter audit` refuses a
   reader holding a credential, and a run that finishes after a push to `readers/` lands on top of
   it instead of stopping as `stale_base`.
+
+### Radancy TalentBrew career sites
+
+- New source type `radancy`, added as `radancy:<host>:Company`. It covers TalentBrew career sites on
+  a company's own host. `sources probe` recognizes such a site from its careers page or one
+  posting's page.
+- The site's sitemap is the listing, read whole every update, so `queries` do not apply. A
+  posting's title and city come from its link. Its text, date and own address come from its page,
+  fetched on demand under `max_details` (100), one request a second. A posting whose own address is
+  outside `locations.regions` is parked, and its employment type is written at the top of its text.
+- Each update first reads the site's robots.txt and fails the source if it disallows the sitemap
+  or the postings. A sitemap that cannot be read, one sitemap of an index that fails, or more than
+  one posting link in twenty in a shape the reader does not know also fails the source, which keeps
+  its last snapshot.
+- The engine reads robots.txt itself, as RFC 9309 says, so a file gives the same answer on every
+  Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
+  the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.

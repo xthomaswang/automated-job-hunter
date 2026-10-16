@@ -89,7 +89,8 @@ reads Eightfold career sites, on `<company>.eightfold.ai` or the company's own h
 `eightfold:<host>/<domain>:Company`, with the domain the probe reads from the site), and SAP
 SuccessFactors career sites on a company's own domain, which it knows by their page (added as
 `successfactors:<host>:Company`); when it names SuccessFactors on SAP's own hosts, probe the company's
-own career site (often `jobs.<company>.com`) before giving up. Only
+own career site (often `jobs.<company>.com`) before giving up. It knows Radancy TalentBrew career
+sites on a company's own host by their page too (added as `radancy:<host>:Company`). Only
 boards with a public, no-login listing are supported. Never scrape LinkedIn or Indeed: their terms
 forbid it. A job list kept on GitHub can be a source as well (`"ats": "github-list"`, step 4 of
 [references/setup.md](references/setup.md)): its rows that link to one posting on a supported

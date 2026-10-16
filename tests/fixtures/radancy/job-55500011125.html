@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!-- Synthetic: a TalentBrew posting page at two places, with two employment types. Its JSON-LD title
+     has the slug's words with their own capitals, and its description has raw line breaks inside the
+     JSON string, which browsers accept. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UX Researcher in Capital City | Acme Careers</title>
+<link rel="stylesheet" href="https://tbcdn.talentbrew.com/company/1234/v2_0/css/site.css">
+<script src="https://cdn.radancy.eu/company/1234/v2_0/js/site.js"></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "JobPosting",
+  "title": "UX Researcher",
+  "datePosted": "2026-10-12",
+  "employmentType": ["Full-time", "Part-time"],
+  "identifier": {"@type": "PropertyValue", "name": "Job ID", "value": "100203"},
+  "hiringOrganization": {"@type": "Organization", "name": "Acme"},
+  "jobLocation": [
+    {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": "Capital City", "addressRegion": "OR", "postalCode": "97301", "addressCountry": "US"}},
+    {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": "Springfield", "addressRegion": "IL", "addressCountry": {"@type": "Country", "name": "United States"}}}
+  ],
+  "description": "<p>Plan and run interviews and usability studies for Acme's store apps.</p>
+<ul><li>Three years of user research</li><li>Mixed methods: interviews, surveys, analytics</li></ul>"
+}
+</script>
+</head>
+<body>
+<section class="job-description" data-org-id="1234" data-job-id="55500011125"><h1>UX Researcher</h1></section>
+</body>
+</html>

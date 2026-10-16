@@ -122,6 +122,21 @@ robots.txt SAP generates for every site disallows; so is SAP's older job board, 
 disallows everything. The text comes from the posting's own page, which must name itself as that
 posting; its `datePosted` is the day the page is read, so it is not used.
 
+**Radancy TalentBrew.** A TalentBrew career site is on the employer's own host, and the robots.txt
+it serves disallows its search, category and location pages. Its sitemap lists every open posting
+(`[/<lang>]/job/<city>/<title>/<org id>/<job id>`) among pages that are not postings, so the sitemap
+is the listing, read whole every update, with no search to scope. A posting's title and place come
+from its link's slugs; its text, date and own place from the schema.org `JobPosting` its page embeds,
+fetched on demand like the other detail sources. The page's title replaces the slug's only when their
+words are the same, so the change fingerprint never depends on whether the text was read; the place
+is the slug's city, the page's address decides parking, and its employment type goes into the text.
+Each update first reads robots.txt and fails the source if it disallows the sitemap or a posting.
+The engine reads robots.txt itself (`robots`), as RFC 9309 says, because `urllib.robotparser`
+answers differently by Python version (3.9's applies the first matching rule, reads no wildcards,
+and reads `Disallow: /?` as `Disallow: /`). The sitemap's dates are when it was made, so they are not
+used, and more than one posting link in twenty in another shape fails the source rather than
+shrinking it. Spike E13 in [spikes.md](spikes.md) records the structure.
+
 **Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail
 source whose listing is the file. A row is only a pointer: it is used when its link is one posting
 on a system with a public API this engine reads (Greenhouse, Lever, Ashby, SmartRecruiters,
@@ -237,9 +252,10 @@ pydantic, committed text files replace SQLite.
 
 Engine modules (`scripts/ajh/`): `model` (Job, keys, path-safe ids), `textutil` (HTML to text,
 normalization, wrapping, simhash, snippet), `http` (retries, per-host delay, injectable transport),
-`sources/` (ATS adapters, aggregators, lazy details, a feed's own readers, probing, registry),
-`state`, `criteria` (schema, stage-0 filters, profile hashes), `rules` (flag rules, years,
-seniority), `queue`, `packets`, `verdicts`, `render`, `publish`, `audit`, `scaffold`, `cli`.
+`robots` (robots.txt rules, read as RFC 9309 says), `sources/` (ATS adapters, aggregators, lazy
+details, a feed's own readers, probing, registry), `state`, `criteria` (schema, stage-0 filters,
+profile hashes), `rules` (flag rules, years, seniority), `queue`, `packets`, `verdicts`, `render`,
+`publish`, `audit`, `scaffold`, `cli`.
 
 ### CLI (stdout is one JSON object; exit 0 ok, 2 needs a human)
 

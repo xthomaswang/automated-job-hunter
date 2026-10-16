@@ -430,6 +430,40 @@ What changes for people who run a feed. Bring a feed repo up to date with
   SmartRecruiters company now asks for a page of 100 postings instead of 3, to know where they are;
   a company with more postings than that is not checked for its places.
 
+### A site that answers 429 is asked again more patiently
+
+- A request that a site answers with HTTP 429 (too many requests) is now asked again up to seven
+  times, waiting 1, 2, 4, 8, 16, 30 and 30 seconds, or as long as the site's `Retry-After` says, at
+  most 30 seconds (#89). It used to be asked again twice, so a site that refuses about one request
+  in three, as an Eightfold site on a company's own host does at any pace, failed almost every
+  update that made a hundred requests or more. Such a site can now be followed.
+- A server error (HTTP 5xx) or a network error is still asked again twice.
+- A 429 is retried with longer waits, with the same identity and at the same pace, and when the
+  retries are used up the source fails that update cleanly and keeps its last snapshot, as before.
+  The engine never changes its User-Agent, its address or anything else to get past a refusal.
+- `collect` reports how many 429 retries each source took, under `sources.rate_limited`
+  (`collect.sources.rate_limited` in what `tick` prints), for the sources that took any, so a
+  site's real rate can be read off a run. The counts are only shown, never stored.
+- `sources test` and `sources probe` still ask once, to answer quickly, so a 429 there does not mean
+  that `collect` will fail.
+
+### Gem job boards
+
+- New source type `gem`, added as `gem:<board>:Company` for a board whose page is
+  `jobs.gem.com/<board>` (#86). It reads Gem's public Job Board API like a Greenhouse board: every
+  posting with its text in one request an update. A reply that is not a whole board, or a posting
+  without its id, title, link or text, fails the source instead of closing postings.
+- `sources probe` reads a board's link, one posting's link (`jobs.gem.com/<board>/<id>`) or an
+  `api.gem.com/job_board/v0/<board>/...` address, and prints the add line. A name probe tries Gem as
+  well, with one more request for each name it tries. `sources hosts` lists `api.gem.com`.
+- A posting's place is its location, then the places of its other offices, sorted; remote or hybrid
+  work leads it, as in "Remote, London, United Kingdom". Its date is when it was first published,
+  and its employment type is Gem's own, such as `full_time`, which the hard limits read.
+- A job list's link to one Gem posting is read from Gem, and a posting on a Gem board the feed
+  watches is judged once.
+- Gem documents this API as public, so, like the other documented public board APIs, it is read
+  without consulting robots.txt. Spike E14 in `docs/spikes.md` records what was checked.
+
 ### A probe of a Phenom career site reads its search-results page for the board behind it
 
 - On the large employers' Phenom career sites checked for #79, every posting was applied for through

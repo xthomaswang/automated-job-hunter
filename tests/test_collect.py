@@ -1,10 +1,12 @@
 """`collect` across ticks, each tick starting from only what a fresh clone would have: the tracked tree."""
 
 import json
+import threading
 from datetime import timedelta
 
 from ajh import collect
 from ajh.cli import main
+from ajh.http import Client
 from ajh.layout import Layout
 from ajh.state import read_rows
 from ajh.textutil import simhash64
@@ -17,6 +19,7 @@ from helpers import (
     NOW,
     REMOTIVE,
     Boards,
+    adopt_state,
     frozen_hash,
     jobicy_posting,
     judge,
@@ -168,6 +171,43 @@ def test_a_rate_limited_source_is_left_alone_until_its_interval_passes(repo):
     tick(root, boards, now=NOW + timedelta(hours=12))
     tick(root, boards, now=NOW + timedelta(hours=13))
     assert boards.requests == ["acme"] * 3
+
+
+def test_each_source_reports_its_own_429_retries_though_two_share_a_host(repo):
+    root = repo(sources=(ACME, GLOBEX))  # both boards are on boards-api.greenhouse.io
+    boards, answers = Boards(acme=[posting(1)], globex=[posting(2)]), [429, 429]
+    reading, read = threading.Event(), threading.Event()
+
+    def transport(method, url, headers, body, timeout):
+        if "/boards/globex/" in url:  # Globex's board is read all the while Acme's is asked again
+            reading.set()
+            read.wait(5)
+        elif answers:
+            reading.wait(5)
+            return answers.pop(), {}, b"{}"
+        else:
+            read.set()
+        return boards.transport(method, url, headers, body, timeout)
+
+    sleeps = []
+    summary = collect.run(root, Client(transport, sleep=sleeps.append), NOW)  # the retries of `collect`'s own client
+    assert summary["sources"]["rate_limited"] == {"acme": 2} and summary["sources"]["fetched"] == 2
+    assert sleeps == [1.0, 2.0] and summary["new"] == 2
+
+
+def test_a_source_refused_eight_times_in_a_row_fails_cleanly_after_seven_retries(repo):
+    root, boards = repo(), Boards(acme=[posting(1), posting(2)])
+    tick(root, boards)
+    before, answers = rows(root), [429] * 8
+
+    def transport(method, url, headers, body, timeout):
+        return (answers.pop(), {}, b"{}") if answers else boards.transport(method, url, headers, body, timeout)
+
+    summary = collect.run(root, Client(transport, sleep=lambda seconds: None), NOW + timedelta(hours=4))
+    adopt_state(root)
+    assert summary["sources"]["rate_limited"] == {"acme": 7} and summary["sources"]["failed"] == 1
+    assert summary["sources"]["failures"]["acme"].startswith("HttpError: HTTP 429") and rows(root) == before
+    assert json.loads((Layout(root).state / "sources.json").read_text())["acme"]["error"] == "HTTP 429"
 
 
 def test_a_sharp_shrink_is_held_for_one_tick(repo):

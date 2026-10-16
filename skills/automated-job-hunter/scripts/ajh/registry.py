@@ -185,7 +185,7 @@ TINY = 5
 
 def _named(kind: str, payload: Any) -> list[str]:
     """The company names a board's own listing gives: Greenhouse and Recruitee name the company on each
-    posting, SmartRecruiters on each row it lists. Lever and Ashby name none."""
+    posting, SmartRecruiters on each row it lists. Lever, Ashby and Gem name none."""
     key = {"greenhouse": "jobs", "recruitee": "offers", "smartrecruiters": "content"}.get(kind)
     rows = payload.get(key) if key and isinstance(payload, dict) else None
     names = []
@@ -343,7 +343,7 @@ def probe(query: str, client: Client | None = None, stage0: C.Stage0 | None = No
     result: dict[str, Any] = {"company": company, "tried": slug_candidates(company), "matches": matches}
     if not matches:
         result["next"] = (
-            "None of Greenhouse, Ashby, Lever, Recruitee or SmartRecruiters has a board under these names. "
+            "None of Greenhouse, Ashby, Lever, Recruitee, Gem or SmartRecruiters has a board under these names. "
             "Large employers "
             "mostly use other systems: find the company's careers page, or the link of one of its postings, "
             "and run `sources probe <url> <Company Name>`. It reads Workday sites and names the systems this "
@@ -374,6 +374,10 @@ def _system(url: str) -> dict[str, Any] | None:
         kind, slug = "lever", path[0] if path else None
     elif re.fullmatch(r"[a-z0-9-]+\.recruitee\.com", host):
         kind, slug = "recruitee", host.split(".")[0]
+    elif host == "jobs.gem.com":  # the board's page, an app shell, or one posting's: /<board>[/<id>]
+        kind, slug = "gem", path[0] if path else None
+    elif host == "api.gem.com":  # the board's API: /job_board/v0/<board>/...
+        kind, slug = "gem", path[2] if len(path) > 2 and path[:2] == ["job_board", "v0"] else None
     elif host in ("jobs.smartrecruiters.com", "careers.smartrecruiters.com"):
         kind, slug = "smartrecruiters", path[0] if path else None
     elif workday.HOST.match(host):
@@ -565,7 +569,7 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
                     f"The page could not be read: {type(error).__name__}. Trying it again seldom helps when a site "
                     "refuses scripted requests. Open one of the company's postings instead (a job site's Apply button "
                     "often leads to one) and probe the URL of its page or its Apply link, or probe the company's "
-                    "name, which tries Greenhouse, Ashby, Lever, Recruitee and SmartRecruiters."
+                    "name, which tries Greenhouse, Ashby, Lever, Recruitee, Gem and SmartRecruiters."
                 ),
             }
         page, landed = reply.text, reply.url  # an old address may move to the site's own host

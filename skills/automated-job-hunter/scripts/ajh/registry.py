@@ -16,7 +16,7 @@ from .model import SourceError
 from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
-from .textutil import company_key
+from .textutil import LEGAL_SUFFIXES, words_key
 
 # Career systems this version cannot read, by the hosts their public pages are on. A probe names
 # them, so that nobody keeps looking for a board that no reader exists for.
@@ -188,30 +188,58 @@ def _named(kind: str, payload: Any) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def _name_words(name: str) -> list[str]:
-    words = company_key(name).split()  # without case, punctuation or a trailing legal suffix
-    return words[1:] if len(words) > 1 and words[0] == "the" else words
+# Words that often end a company's name without telling it from another company that starts the same way,
+# like the legal suffixes: "Acme Labs" and "Acme AI" are Acme, while "Capital One" is not just Capital. Words
+# for what a company does, such as Health or Robotics, still tell companies apart, so they are not here.
+GENERIC = frozenset(
+    "ai company global group holdings hq international io lab labs software solutions systems tech technologies "
+    "technology".split()
+)
+
+
+def _distinctive(name: str) -> list[str]:
+    """The words of a company's name that tell it apart: without case, punctuation, a leading "The", or
+    legal suffixes and generic words at its end."""
+    words = words_key(name).split()
+    words = words[1:] if len(words) > 1 and words[0] == "the" else words
+    while len(words) > 1 and (words[-1] in LEGAL_SUFFIXES or words[-1] in GENERIC):
+        words.pop()
+    return words
 
 
 def _same_company(named: str, company: str) -> bool:
     """Whether a name a board gives is the company's, as far as names tell: word by word, one begins the
     other ("Acme" and "Acme Rocket Co."), or they differ only in spaces ("Back Market" and "Backmarket")."""
-    a, b = _name_words(named), _name_words(company)
+    a, b = _distinctive(named), _distinctive(company)
     short, long = sorted((a, b), key=len)
     return long[: len(short)] == short or "".join(a) == "".join(b)
 
 
+def _partial(slug: str, company: str, names: list[str]) -> bool:
+    """Whether a board's slug spells only the first words of the company's name, as `capital` does for
+    Capital One, and no name the board gives spells all of them."""
+    words, key = _distinctive(company), re.sub(r"[^a-z0-9]+", "", slug.lower())
+    if not any(key == "".join(words[:n]) for n in range(1, len(words))):
+        return False
+    given = [_distinctive(name) for name in names]
+    return not any(spelled[: len(words)] == words or "".join(spelled) == "".join(words) for spelled in given)
+
+
 def _rated(match: dict[str, Any], names: list[str], company: str) -> dict[str, Any]:
     """A name probe's match with how sure it is that the board is the company's: high when the board names
-    the company, medium when it names none, and low, with a warning, when it may be another company's."""
-    count, doubts = match["postings"], []
+    the company, medium when it names none or its slug spells only part of the name, and low when it may
+    well be another company's. Every doubt comes with a warning."""
+    count, low, medium = match["postings"], [], []
     if count < TINY:  # whatever name it gives: a company with the same short name gives that name too
         size = f"Only {count} posting{'' if count == 1 else 's'}" if count else "No postings"
-        doubts.append(f"{size}, and a board this small is often another company's with the same name.")
+        low.append(f"{size}, and a board this small is often another company's with the same name.")
     if names and not any(_same_company(name, company) for name in names):
-        doubts.append(f"Its postings name the company {names[0]}, not the one asked for.")
-    confidence = "low" if doubts else "high" if names else "medium"
-    return {**match, "confidence": confidence, **({"warning": " ".join(doubts)} if doubts else {})}
+        low.append(f"Its postings name the company {names[0]}, not the one asked for.")
+    if _partial(match["slug"], company, names):
+        medium.append("Its slug matches only part of the name asked for.")
+    confidence = "low" if low else "medium" if medium or not names else "high"
+    warning = " ".join(low + medium)
+    return {**match, "confidence": confidence, **({"warning": warning} if warning else {})}
 
 
 def probe(query: str, client: Client | None = None) -> dict[str, Any]:
@@ -256,9 +284,9 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
         )
     elif any("warning" in match for match in matches):
         result["next"] = (
-            "A match with a warning may be another company's board with the same name. Check that its sample "
-            "looks like this company's postings before adding it; if you cannot tell, find the company's careers "
-            "page, or the link of one of its postings, and run `sources probe <url> <Company Name>` instead."
+            "A match with a warning may be another company's board. Check that its sample looks like this "
+            "company's postings before adding it; if you cannot tell, find the company's careers page, or the "
+            "link of one of its postings, and run `sources probe <url> <Company Name>` instead."
         )
     return result
 

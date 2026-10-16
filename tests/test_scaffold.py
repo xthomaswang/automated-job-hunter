@@ -269,10 +269,11 @@ def test_probe_finds_a_companys_board_by_trying_likely_slugs():
 
 
 SMALL = "a board this small is often another company's with the same name."
+PART = "Its slug matches only part of the name asked for."
 DOUBT = (
-    "A match with a warning may be another company's board with the same name. Check that its sample looks like "
-    "this company's postings before adding it; if you cannot tell, find the company's careers page, or the link of "
-    "one of its postings, and run `sources probe <url> <Company Name>` instead."
+    "A match with a warning may be another company's board. Check that its sample looks like this company's "
+    "postings before adding it; if you cannot tell, find the company's careers page, or the link of one of its "
+    "postings, and run `sources probe <url> <Company Name>` instead."
 )
 
 
@@ -286,11 +287,13 @@ def serving(replies):
     return Client(transport, retries=0)
 
 
-def test_a_name_probe_says_how_sure_it_is_of_each_board_and_warns_of_another_companys():
-    def offer(jid, company):  # a Recruitee posting, which names its company
-        return {"id": jid, "title": "UX Researcher", "careers_url": f"https://acme.recruitee.com/o/{jid}",
-                "description": f"<p>{prose(jid)}</p>", "company_name": company}  # fmt: skip
+def offer(jid, company, location="Remote"):
+    """A posting as Recruitee's API lists it, which names its company."""
+    return {"id": jid, "title": "UX Researcher", "careers_url": f"https://acme.recruitee.com/o/{jid}",
+            "description": f"<p>{prose(jid)}</p>", "company_name": company, "location": location}  # fmt: skip
 
+
+def test_a_name_probe_says_how_sure_it_is_of_each_board_and_warns_of_another_companys():
     web = serving(
         {
             "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": {
@@ -352,12 +355,41 @@ def test_a_name_probe_warns_of_a_board_of_fewer_than_five_postings():
     assert result["next"] == DOUBT
 
 
+def test_a_name_probe_warns_when_a_boards_slug_matches_only_part_of_the_name():
+    def named(company, count):  # a Greenhouse board whose postings name their company
+        return {"jobs": [dict(posting(n), company_name=company) for n in range(1, count + 1)]}
+
+    web = serving(
+        {  # Capital One's name run together or hyphenated finds nothing; its first word finds three boards
+            "https://boards-api.greenhouse.io/v1/boards/capital/jobs?content=true": named("Capital", 10),
+            "https://api.lever.co/v0/postings/capital?mode=json": [
+                lever_posting(f"c{n}", "capital") for n in range(50)
+            ],
+            "https://capital.recruitee.com/api/offers/": {"offers": [offer(n, "Capital One") for n in range(1, 9)]},
+            "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": named("Acme", 6),
+        }
+    )
+    capital = registry.probe("Capital One", web)
+    rated = [(m["ats"], m["slug"], m["confidence"], m.get("warning")) for m in capital["matches"]]
+    assert rated == [
+        ("greenhouse", "capital", "medium", PART),  # its postings name only that word
+        ("lever", "capital", "medium", PART),  # Lever names no company
+        ("recruitee", "capital", "high", None),  # its postings name the whole company
+    ]
+    assert capital["next"] == DOUBT
+    for name in ("Acme Inc", "Acme Labs"):  # a legal suffix, or a generic word at the end, is not a part to match
+        found = registry.probe(name, web)
+        assert [(m["slug"], m["confidence"], m.get("warning")) for m in found["matches"]] == [("acme", "high", None)]
+        assert "next" not in found
+
+
 @pytest.mark.parametrize(
     ("named", "company", "same"),
     [
         ("ACME, Inc.", "Acme", True),
         ("Acme", "Acme Rocket Co.", True),  # one begins the other
         ("The Acme Company", "Acme", True),
+        ("Acme Technologies", "Acme Labs", True),  # generic words at the end tell nothing apart
         ("Backmarket", "Back Market", True),
         ("Initech", "Acme", False),
         ("Acmeville Bakery", "Acme", False),  # a longer word is another name

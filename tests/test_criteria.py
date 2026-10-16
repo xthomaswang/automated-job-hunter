@@ -144,6 +144,27 @@ def test_region_words_and_groups_expand_to_countries():
     assert PLACES.resolve("Americas")[0] >= {"US", "CA", "BR"}
 
 
+def test_oregons_code_is_not_the_word_or_which_still_splits_places():
+    expected = {
+        "Portland, OR": ({"US"}, True),  # unknown before: the splitter took OR for the word "or" (#69)
+        "Eugene, OR, USA": ({"US"}, True),  # partly unknown before
+        "Salem, OR / Remote": ({"US"}, False),  # two places, the first in the US
+        "US - OR - Portland": ({"US"}, True),
+        "Remote (OR)": ({"US"}, True),
+        "Portland, OR or Seattle, WA": ({"US"}, True),  # the second "or" splits
+        "Remote or New York": ({"US"}, False),
+        "London or Paris": ({"GB", "FR"}, True),
+        "Remote OR Hybrid": (set(), False),  # split, or it would read as Oregon
+        "Remote, or New York": ({"US"}, False),
+        "Remote; or Hybrid": (set(), False),
+        "Remote or": (set(), False),  # a dangling "or" is no state either
+        "Remote OR": (set(), False),  # nor one in capitals after a word, which may be the word cut short
+        "Remote, or": (set(), False),  # nor one in lower case after a comma: the code is in capitals
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+    assert [place.strip() for place in C._places("Salem, OR / Remote")] == ["Salem, OR", "Remote"]
+
+
 @pytest.mark.parametrize(
     "location,countries",
     [

@@ -213,7 +213,32 @@ def employment_kinds(label: str | None) -> set[str]:
     return {kind for kind, pattern in _EMPLOYMENT if re.search(pattern, text, re.I)}
 
 
-_PLACE_SEPARATOR = re.compile(r"\s*(?:/|;|\||•|·|\n|\bor\b)\s*", re.I)
+_PLACE_SEPARATOR = re.compile(r"\s*(?:/|;|\||•|·|\n)\s*")
+# "or" as a word, or Oregon's code: not inside a word or a name such as Côte d'Or.
+_OR = re.compile(r"(?<![^\s,(\[–—-])or(?![^\s,)\]:–—-])", re.I)
+
+
+def _split_or(text: str) -> list[str]:
+    """`text` split at the word "or" between places ("Remote or New York", "Remote OR Hybrid"), but not
+    at Oregon's code OR, in capitals and standing as a part of its own: after a comma, a dash, a bracket
+    or nothing, and before one, nothing, or the word "or" ("Portland, OR", "Eugene, OR, USA", "US - OR -
+    Portland", and the first in "Portland, OR or Seattle, WA")."""
+    pieces, start = [], 0
+    for match in _OR.finditer(text):
+        before, after = text[: match.start()].rstrip(), text[match.end() :].lstrip()
+        alone = (not before or before[-1] in ",([–—-") and (not after or after[0] in ",)]:–—-" or _OR.match(after))
+        if alone and match.group() == "OR":
+            continue
+        pieces.append(text[start : match.start()])
+        start = match.end()
+    return [*pieces, text[start:]]
+
+
+def _places(location: str | None) -> list[str]:
+    """The places a location lists: split at a slash, semicolon, bar, bullet or line break, and at "or"."""
+    return [p for part in _PLACE_SEPARATOR.split(location or "") for p in _split_or(part) if p.strip()]
+
+
 _NOISE = re.compile(
     r"\b(?:remote|hybrid|on-?site|in-?office|flexible|anywhere|worldwide|global|based|only|office|hq"
     r"|(?-i:in|the|within|from))\b",
@@ -366,7 +391,7 @@ class Places:
 
     def resolve(self, location: str | None) -> tuple[set[str], bool]:
         """(countries named, whether every listed place could be read)."""
-        places = [p for p in _PLACE_SEPARATOR.split(location or "") if p.strip()]
+        places = _places(location)
         found: set[str] = set()
         complete = bool(places)
         for place in places:

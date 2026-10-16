@@ -298,7 +298,8 @@ key, no cookies kept, no script run. No model was involved.
 - `robots.txt` on a public tenant (`<company>.eightfold.ai`), and the same file on a public tenant
   on its company's own host, has `User-agent: *` and `Disallow: /`, then `Allow: /careers`,
   `Allow: /api/apply` and `Allow: /api/pcsx` among others. The reader requests only
-  `/api/pcsx/...`, and the probe also `/careers`. The bare host redirects to `/home`, which is not
+  `/api/pcsx/...` (for a site in the older layout, below, robots.txt and `/api/apply/...`), and the
+  probe also `/careers`. The bare host redirects to `/home`, which is not
   allowed, so the probe asks `/careers` for a site's domain. A bare host that a user pastes is
   fetched as given, like any other page handed to the probe.
 - The career site shows visitors no terms (its terms-of-service setting is off). Its legal links
@@ -362,6 +363,47 @@ key, no cookies kept, no script run. No model was involved.
 One search there listed 3 postings and fetched 2 texts, each starting with the site's time type. The
 probe of the tenant on its own host recognized the site from its page, and then its search answered
 429. Both took 6 requests and 4.5 seconds.
+
+**The older layout.** 2026-10-16, macOS 27.2 build 26B5101f, Xcode 27.0 (27A266a), Claude Code
+2.1.299. Written with the reader (#75) from the layout as #75 describes it; every test reads
+synthetic fixtures offline, and no model was involved. The live check, by hand: one public site on a
+company's own domain: robots.txt allows /careers and /api/apply; a search for two words matched 13
+postings; one posting's text was about 6 KB.
+
+The `GET /api/apply/v2/jobs` that answered 403 on a tenant in the newer layout (above) is how a site
+in the app's older layout lists its postings. Some sites on a company's own host run it:
+
+- Its career page (`/careers`, and a posting's page `/careers/job/<id>`) has no `pcsx-data`. It
+  embeds `<code id="smartApplyData">` instead: HTML-escaped JSON of about 27 KB holding the `domain`,
+  the first 10 `positions`, their total `count`, and many UI settings. The probe knows a site by it
+  and reads the domain from it.
+- `GET /api/apply/v2/jobs?domain=<domain>&start=<n>&num=10&query=<q>&sort_by=relevance` returns the
+  same UI settings, the search's `count`, and up to 10 `positions`, with no `status` or `data`
+  around them. A row has `id` (a number) and `name` (the title, also in `posting_name`), `location`
+  (`<city>,<country>`, no space after the comma) and `locations` (a list of the same), `department`
+  and `business_unit`, `t_create` and `t_update` (seconds since the epoch), `ats_job_id` (the
+  employer's requisition), `work_location_option` (`onsite`, `remote` or `hybrid`),
+  `canonicalPositionUrl` (`https://<host>/careers/job/<id>`), and an empty `job_description`.
+- `GET /api/apply/v2/jobs/<id>?domain=<domain>` returns one record with the same fields and its
+  `job_description` in HTML.
+- Its robots.txt is the file above: `Disallow: /`, then `Allow:` for `/careers`, `/api/apply`,
+  `/api/pcsx` and a few others, and a sitemap.
+
+What the reader makes of it, with the newer layout's rules: searches, pages of 10, every search's
+total checked, at most 500 postings a search, texts on demand under `max_details`, one request a
+second.
+
+- A source in this layout says `"layout": "apply-v2"`, which the probe's add line
+  (`eightfold:<host>/<domain>/apply-v2:Company`) carries. A source without it reads the newer
+  layout as before, with no request more. Finding the layout anew on every update would cost a page
+  request each time, and a site that changed layout would quietly be read another way; as it is,
+  such a site fails, keeps its last snapshot, and is probed again.
+- Every update reads robots.txt first and refuses the site unless it allows each listing request
+  and every listed posting's text. The probe reads it before the one page of the listing it asks for.
+- A posting's place is its record's places with a space after each comma ("Helsinki, Finland"), the
+  country spelled out; its date is `t_create`; its link is `/careers/job/<id>` on the site's host, the
+  same as `canonicalPositionUrl`. When its text is read, the record's places also go in
+  `own_location`.
 
 ## E12: SAP SuccessFactors, as it answers today
 

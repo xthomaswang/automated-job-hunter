@@ -375,3 +375,19 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - Where the page also links a system the probe reads, that board is reported as before. For the
   other systems it cannot read, such as iCIMS or Oracle Recruiting Cloud, which hold the postings
   themselves, it still says that there is no board to add.
+
+### Eightfold career sites in the older layout
+
+- Some companies run an Eightfold career site on their own host in the app's older layout, which
+  neither the probe nor the reader knew (#75). `sources probe` now recognizes such a site from its
+  careers page or one posting's page and prints `eightfold:<host>/<domain>/apply-v2:Company`, which
+  adds the source with `"layout": "apply-v2"`.
+- Such a site is read like one in the newer layout: through `queries`, 10 postings a request, every
+  search checked against its total, and a search matching more than 500 postings refused. Texts are
+  fetched on demand under `max_details`, one request a second. Place, date and link come from the
+  listing; a place the site writes as "Helsinki,Finland" reads "Helsinki, Finland".
+- Every update of such a site, and its probe, first reads the site's robots.txt, and the source
+  fails if it disallows the listing or a posting's text.
+- Eightfold sources without `layout` are read exactly as before, with nothing to change. A site that
+  moves to the other layout fails until it is probed again and its new add line is added, which
+  replaces the entry under the same id.

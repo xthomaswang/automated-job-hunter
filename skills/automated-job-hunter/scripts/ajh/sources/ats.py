@@ -9,6 +9,7 @@ import re
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 from ..http import Client
 from ..model import Job, SourceError
@@ -16,15 +17,18 @@ from ..textutil import html_to_text
 
 ATS = ("greenhouse", "ashby", "lever", "recruitee")
 _SLUG = re.compile(r"[A-Za-z0-9_-]+\Z")
+# An Ashby board's name may also have spaces and dots, as in `Acme AI` or `acme.com`, but not a space
+# at either end, nor dots alone: `.` and `..` are steps in a URL's path.
+_ASHBY_NAME = re.compile(r"(?!\.*\Z)(?! )[A-Za-z0-9 ._-]+(?<! )\Z")
 
 
 def feed_url(source: Mapping[str, Any]) -> str:
     slug = source.get("slug") or ""
-    if not _SLUG.match(slug):
+    if not (_ASHBY_NAME if source.get("ats") == "ashby" else _SLUG).match(slug):
         raise SourceError(f"Invalid board slug {slug!r}")
     urls = {
         "greenhouse": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true",
-        "ashby": f"https://api.ashbyhq.com/posting-api/job-board/{slug}",
+        "ashby": f"https://api.ashbyhq.com/posting-api/job-board/{quote(slug, safe='')}",
         "lever": f"https://api.lever.co/v0/postings/{slug}?mode=json",
         "recruitee": f"https://{slug}.recruitee.com/api/offers/",
     }

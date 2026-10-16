@@ -360,6 +360,20 @@ def test_a_lists_posting_is_the_employers_own_with_its_text_and_date_from_their_
     assert lever_posting(LEVER_ID)["description"][3:40] in brief and "Employment: Full-time" in brief
 
 
+def test_a_lists_greenhouse_posting_whose_own_record_has_no_link_still_brings_its_text(repo):
+    root = repo(sources=(JSON_LIST,))
+    found = boards()
+    del found.jobs["acme"][1]["absolute_url"]
+    found.lists["someone/job-list/main/jobs.json"] = json.dumps(
+        [role("Acme", "https://job-boards.greenhouse.io/acme/jobs/1?gh_src=list")]
+    )
+    full_tick(root, found)
+    records = {r["key"]: r for r in map(json.loads, Layout(root).positions.read_text().splitlines())}
+    record = records["joblist:greenhouse~acme~1"]
+    assert record["url"] == "https://job-boards.greenhouse.io/acme/jobs/1"  # its page on Greenhouse
+    assert prose(1)[:40] in (root / record["brief"]).read_text()
+
+
 def test_a_board_named_in_another_case_is_the_same_board(repo):
     root = repo(sources=(JSON_LIST, README))
     found = boards()

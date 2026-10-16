@@ -332,3 +332,13 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - The cities of the provinces and territories whose codes are also countries' codes are known too
   (Regina, Saskatoon, St. John's, Charlottetown, Whitehorse, Iqaluit and a few more), so "Regina, SK"
   reads as Canada even without "CA" or "Canada" beside it.
+
+### A Greenhouse board whose postings have no https link is read whole
+
+- A Greenhouse posting whose link in the board's API (`absolute_url`) is missing or not https is now
+  linked to its page on Greenhouse itself, `https://job-boards.greenhouse.io/<board>/jobs/<id>`, the
+  form a list's link to it already takes. Such a posting failed its whole board, since one
+  incomplete posting aborts the snapshot: `Job … has no public https URL` (#74). A posting whose
+  link is https keeps it, and one missing its id or title still fails the board, as before.
+- A list's link to a Greenhouse posting that has no link of its own now brings the posting's text.
+  It used to wait for it on every update.

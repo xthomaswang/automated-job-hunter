@@ -84,9 +84,12 @@ other systems: find the company's careers page, or one posting's link, and run
 `workday:<host>/<site>:Company`; on a very large site, also set `categories` from the job
 categories it lists), follows a company's own careers page to the board it links to, and
 names the systems this version cannot read, such as Oracle, Taleo, iCIMS or SuccessFactors on SAP's
-own hosts; for those, tell the user there is no board to add rather than searching further. It also
-reads Eightfold career sites, on `<company>.eightfold.ai` or the company's own host (added as
-`eightfold:<host>/<domain>:Company`, with the domain the probe reads from the site), and SAP
+own hosts; for those, tell the user there is no board to add rather than searching further. Phenom
+and Avature are the exception, as they are often only a front end: open one posting and probe its
+Apply link, which can lead to a system this version reads, such as Workday. It also
+reads Eightfold career sites, on `<company>.eightfold.ai` or the company's own host, in both of the
+app's layouts (added as `eightfold:<host>/<domain>:Company`, with the domain the probe reads from the
+site, and `/apply-v2` after the domain for a site in the older layout), and SAP
 SuccessFactors career sites on a company's own domain, which it knows by their page (added as
 `successfactors:<host>:Company`); when it names SuccessFactors on SAP's own hosts, probe the company's
 own career site (often `jobs.<company>.com`) before giving up. It knows Radancy TalentBrew career

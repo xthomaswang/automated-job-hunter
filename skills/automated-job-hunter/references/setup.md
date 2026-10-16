@@ -132,7 +132,11 @@ Eightfold career sites are searched and filled in the same way. They are on
 careers page or one posting's link, and add the line it prints, `eightfold:<host>/<domain>:Company`.
 The domain is the one the site's own pages name; the probe reads it from them. A search there
 lists 10 postings a request, so a search matching more than 500 postings fails the source: set
-fewer, more specific `queries` on the entry.
+fewer, more specific `queries` on the entry. Both of the app's layouts are read. Some sites on a
+company's own host run its older layout; the probe knows those by their pages as well and prints
+`eightfold:<host>/<domain>/apply-v2:Company`, which adds the entry with `"layout": "apply-v2"`. Such
+a site is searched and filled in the same way, but only while its robots.txt allows it, which the
+probe and every update read first.
 
 An SAP SuccessFactors career site (built with Career Site Builder) is on the company's own domain,
 often `jobs.<company>.com`, so it cannot be found by name: probe its address or one posting's link.

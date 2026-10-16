@@ -109,7 +109,12 @@ the site's pages name, so an entry names host and domain, and the probe recogniz
 company's own host by the settings its pages embed. The listing gives place, remote work and date
 for stage 0. It has no employment type: that stays in the text, as for Workday, with the site's own
 posting fields. Robots.txt allows these paths; spike E11 in [spikes.md](spikes.md) records the terms
-read.
+read. Some sites on a company's own host run the app's older layout, whose pages embed other settings
+and whose listing and texts are under `/api/apply/v2`; it is read with the same rules. A source names
+that layout (`"layout": "apply-v2"`, which the probe's add line carries), so one without the field
+reads the newer layout with no request more, and a site that changes layout fails instead of being
+read another way. Such a site's robots.txt disallows all but a few paths, so every update of one
+reads it first.
 
 **SAP SuccessFactors.** A Career Site Builder site has no API: its search pages are HTML, 25 postings
 a page with the number the search found. So the reader checks every page against that number (the

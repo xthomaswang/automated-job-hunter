@@ -7,11 +7,12 @@ import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import criteria as C
+from . import robots
 from . import sources as S
-from .http import Client
+from .http import Client, HttpError
 from .layout import Layout
 from .model import SourceError
 from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
@@ -42,6 +43,9 @@ UNSUPPORTED = (
     (r"(^|\.)(ultipro|ukg)\.com$", "UKG"),
     (r"(^|\.)dayforcehcm\.com$", "Dayforce"),
 )
+# Of those, the ones a company's career site may run on only as a front end: its postings are applied for
+# through another system, which one posting's Apply link leads to and which this version may read.
+FRONT_ENDS = ("Avature", "Phenom")
 # Never read, whose terms forbid it. Named only for a URL probed directly: almost every careers page
 # links to them in its footer, which says nothing about where its postings are.
 _FORBIDDEN = re.compile(r"(^|\.)(linkedin|indeed)\.com$")
@@ -78,6 +82,8 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
         parts = item.split(":", 2)
         if len(parts) == 3 and parts[0] in ats.ATS:
             kind, slug, company = parts
+            if kind == "ashby":  # the name, or the name as the board's link writes it: `Acme%20AI` is `Acme AI`
+                slug = unquote(slug)
             entry = {
                 "id": re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-"),
                 "company": company,
@@ -112,8 +118,12 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
         elif len(parts) == 3 and parts[0] in eightfold.KINDS:
             _, target, company = parts
             host, _, domain = target.partition("/")  # the site's host, then the domain its pages name
+            domain, slash, older = domain.partition("/")  # then `apply-v2` for a site in the older layout
             entry = {"id": "", "company": company, "ats": "eightfold", "host": host.lower(), "domain": domain.lower()}
+            if slash:
+                entry["layout"] = older
             eightfold.site(entry)  # refuses anything but a plain host name and domain name
+            eightfold.layout(entry)  # and any layout but the older one
             entry["id"] = re.sub(r"[^a-z0-9]+", "-", entry["domain"].split(".")[0]).strip("-")
             other, same = current.get(entry["id"]), ("ats", "host", "domain")
             if other and [other.get(k) for k in same] != [entry[k] for k in same]:  # another board has the name
@@ -142,7 +152,7 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
         else:
             unknown.append(item)
             continue
-        ats.feed_url(entry) if entry["ats"] in ats.ATS else None  # rejects a slug that is not a plain token
+        ats.feed_url(entry) if entry["ats"] in ats.ATS else None  # rejects a name its board's system does not allow
         if entry["id"] not in current:
             added.append(entry["id"])
         current[entry["id"]] = entry
@@ -358,8 +368,8 @@ def _system(url: str) -> dict[str, Any] | None:
         kind = "greenhouse"
         slug = (parse_qs(parts.query).get("for") or [None])[0] if path[:2] == ["embed", "job_board"] else None
         slug = slug or (path[0] if path and path[0] != "embed" else None)
-    elif host == "jobs.ashbyhq.com":
-        kind, slug = "ashby", path[0] if path else None
+    elif host == "jobs.ashbyhq.com":  # a name with spaces is percent-encoded in the link
+        kind, slug = "ashby", unquote(path[0]) if path else None
     elif host == "jobs.lever.co":
         kind, slug = "lever", path[0] if path else None
     elif re.fullmatch(r"[a-z0-9-]+\.recruitee\.com", host):
@@ -405,7 +415,18 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             source = {"id": "probe", "company": company, "ats": "workday", "host": found["host"], "site": found["site"]}
             if found.get("tenant"):
                 source["tenant"] = found["tenant"]
-            data = workday.search(client, workday.site(source)[2], "", limit=3)
+            try:
+                data = workday.search(client, workday.site(source)[2], "", limit=3)
+            except HttpError as error:
+                if error.status != 422:
+                    raise
+                return {  # what a site answers for a site name it does not have, which reads like a refusal
+                    **{k: v for k, v in found.items() if v is not None},
+                    "supported": True,
+                    "error": f"HTTP 422 from this Workday site: the site name {found['site']!r} is probably wrong, "
+                    "or the site is not public. Open one of the company's postings and probe its URL, which carries "
+                    "the right tenant and site.",
+                }
             count, sample = data["total"], [row.get("title") for row in data["jobPostings"]]
             target = "/".join(p for p in (found["host"], found.get("tenant"), found["site"]) if p)
             add = f"workday:{target}:{company}"
@@ -424,17 +445,23 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add}
         elif found["ats"] == "eightfold":
             client.space(found["host"], eightfold.DELAY)
-            named = found.get("domain") or eightfold.page_domain(
-                client.get(f"https://{found['host']}/careers").raise_for_status().text
-            )  # the site's pages name its domain, which its search needs
-            if not named:
+            if not found.get("domain"):  # the site's pages name its domain, which its search needs, and its layout
+                page = client.get(f"https://{found['host']}/careers").raise_for_status().text
+                found = {**found, **(eightfold.page_site(page) or {})}
+            if not found.get("domain"):
                 error = "No Eightfold career site answers at this address: probe the careers page itself"
                 return {**{k: v for k, v in found.items() if v is not None}, "supported": True, "error": error}
-            host, domain = eightfold.site({"host": found["host"], "domain": named})
-            data = eightfold.search(client, host, domain, "")
+            host, domain = eightfold.site(found)
+            target = f"{host}/{domain}"
+            if eightfold.layout(found) == eightfold.OLDER:  # robots.txt first, then one page of its listing
+                client.sleep(eightfold.DELAY)  # the site's own page was read from this host a moment ago
+                data = eightfold.search_older(client, robots.permits(client, host), host, domain, "")
+                target += f"/{eightfold.OLDER}"
+            else:
+                data = eightfold.search(client, host, domain, "")
             count, sample = data["count"], [row.get("name") for row in data["positions"]]
             return {**found, "domain": domain, "supported": True, "postings": count, "sample": sample[:3],
-                    "add": f"eightfold:{host}/{domain}:{company}"}  # fmt: skip
+                    "add": f"eightfold:{target}:{company}"}  # fmt: skip
         elif found["ats"] == "successfactors":
             facts = {k: v for k, v in found.items() if v is not None}
             _, base = successfactors.site(found)
@@ -490,10 +517,10 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
         systems = [found]
     else:
         systems, seen = [], set()
-        named = eightfold.page_domain(page)
+        named = eightfold.page_site(page)  # its domain, and its layout when that is the older one
         if named:  # an Eightfold career site itself, on the company's own host or eightfold.ai
             host = urlsplit(landed).hostname
-            systems.append({"system": "Eightfold", "ats": "eightfold", "host": host, "domain": named})
+            systems.append({"system": "Eightfold", "ats": "eightfold", "host": host, **named})
         for link in _LINK.findall(page):
             system = _system(link)
             if not system or system.get("forbidden"):  # a footer link says nothing about where postings are
@@ -524,9 +551,12 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
             "posting and probe the URL of its page or its Apply link."
         )
     elif not result["matches"]:
-        result["next"] = (
-            f"This company uses {', '.join(result['unsupported'])}, which this version cannot read. "
-            "There is no board to add."
+        fronts = [system for system in result["unsupported"] if system in FRONT_ENDS]
+        result["next"] = f"This company uses {', '.join(result['unsupported'])}, which this version cannot read. " + (
+            f"{' or '.join(fronts)} may be only a front end for another system: open one posting and probe its "
+            "Apply link, which can lead to a system this version reads, such as Workday."
+            if fronts
+            else "There is no board to add."
         )
     return result
 

@@ -3,18 +3,44 @@
 `urllib.robotparser` is not used, because its answer depends on the Python version. Python 3.9's
 applies the first matching rule, not the longest; reads `*` and `$` as plain characters; and rewrites
 a rule's path through urlparse and urlunparse, so `Disallow: /?` (the root with a query string)
-becomes `Disallow: /`, which blocks the whole site. Fetching the file is the caller's: what its
-status means is in RFC 9309, section 2.3.1.
+becomes `Disallow: /`, which blocks the whole site. `allowed` reads rules a caller already has;
+`permits` fetches a site's file and reads what its status means, as RFC 9309, section 2.3.1 says.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from functools import lru_cache
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
+
+from .http import Client
+from .model import SourceError
 
 _ESCAPED = re.compile(r"%[0-9A-Fa-f]{2}")
 _TOKEN = re.compile(r"[A-Za-z_-]*")  # the characters a product token may have
+
+
+def permits(client: Client, host: str) -> Callable[[str], bool]:
+    """What a site's robots.txt, as it reads now, lets this client fetch there: a test of one URL.
+
+    None (another 4xx) disallows nothing; 401 or 403 disallows everything; a 429, a 5xx or a failed
+    request says nothing now, so nothing is read (RFC 9309, 2.3.1). The rules are read by `allowed`,
+    the same on every Python version.
+    """
+    reply = client.get(f"https://{host}/robots.txt")
+    if reply.status in (401, 403):
+        raise SourceError(f"robots.txt on {host} answers HTTP {reply.status}, which disallows the whole site")
+    if 400 <= reply.status < 500 and reply.status != 429:
+        return lambda url: True  # no robots.txt: nothing is disallowed (RFC 9309, 2.3.1.3)
+    text = reply.raise_for_status().text
+    return lambda url: allowed(text, client.user_agent, _target(url))
+
+
+def _target(url: str) -> str:
+    """What robots.txt rules are matched against: a URL's path and query, as they are sent."""
+    parts = urlsplit(url)
+    return (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
 
 
 def allowed(robots_txt: str, agent: str, target: str) -> bool:

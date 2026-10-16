@@ -333,6 +333,65 @@ What changes for people who run a feed. Bring a feed repo up to date with
   (Regina, Saskatoon, St. John's, Charlottetown, Whitehorse, Iqaluit and a few more), so "Regina, SK"
   reads as Canada even without "CA" or "Canada" beside it.
 
+### A Greenhouse board whose postings have no https link is read whole
+
+- A Greenhouse posting whose link in the board's API (`absolute_url`) is missing or not https is now
+  linked to its page on Greenhouse itself, `https://job-boards.greenhouse.io/<board>/jobs/<id>`, the
+  form a list's link to it already takes. Such a posting failed its whole board, since one
+  incomplete posting aborts the snapshot: `Job … has no public https URL` (#74). A posting whose
+  link is https keeps it, and one missing its id or title still fails the board, as before.
+- A list's link to a Greenhouse posting that has no link of its own now brings the posting's text.
+  It used to wait for it on every update.
+
+### Ashby boards whose names have spaces or dots can be added
+
+- An Ashby board's name can have spaces and dots, as in `Acme AI` or `acme.com`, and such boards are
+  public. `sources add` and `sources probe` refused them as invalid board slugs (#73). Now
+  `sources add "ashby:Acme AI:Acme"` adds one, and so does the name as the board's link writes it,
+  `Acme%20AI`. `sources probe https://jobs.ashbyhq.com/Acme%20AI Acme` reads the board and prints
+  that add line, and `sources hosts` names Ashby's API host for it. The board is read like any
+  other, with its name percent-encoded in the address of Ashby's API.
+- A list's link to a posting on such a board already kept the name percent-encoded in the posting's
+  id, as in `ashby~Acme%20AI~<id>`. Now that such a board can be watched, a list naming one of its
+  postings defers to the board's own, as for any other board.
+- Greenhouse, Lever and Recruitee board names are still letters, digits, `-` and `_`, as their
+  addresses need.
+
+### A Workday site's HTTP 422 says that the site name is probably wrong
+
+- A Workday site's jobs API answers HTTP 422 when the site name in the address is wrong, or the site
+  is not public. `sources probe` showed only `HttpError: HTTP 422 …` for it, which looks like a
+  refusal. It now says that the site name is probably wrong, or the site is not public, and to open
+  one of the company's postings and probe its URL, which carries the right tenant and site (#76).
+- Every other error is shown as before, including a 422 from another system.
+
+### A probe that finds a Phenom career site points to a posting's Apply link
+
+- Several large companies' career sites are a Phenom front end: a posting's Apply button leads to
+  the system that holds it, often a Workday site this version reads. `sources probe <url>` named
+  Phenom as a system it cannot read and said there was no board to add. When it finds no board it
+  reads and names Phenom, or Avature, which some companies use the same way, it now says to open
+  one posting and probe its Apply link, which can lead to a system it reads, such as Workday (#78).
+- Where the page also links a system the probe reads, that board is reported as before. For the
+  other systems it cannot read, such as iCIMS or Oracle Recruiting Cloud, which hold the postings
+  themselves, it still says that there is no board to add.
+
+### Eightfold career sites in the older layout
+
+- Some companies run an Eightfold career site on their own host in the app's older layout, which
+  neither the probe nor the reader knew (#75). `sources probe` now recognizes such a site from its
+  careers page or one posting's page and prints `eightfold:<host>/<domain>/apply-v2:Company`, which
+  adds the source with `"layout": "apply-v2"`.
+- Such a site is read like one in the newer layout: through `queries`, 10 postings a request, every
+  search checked against its total, and a search matching more than 500 postings refused. Texts are
+  fetched on demand under `max_details`, one request a second. Place, date and link come from the
+  listing; a place the site writes as "Helsinki,Finland" reads "Helsinki, Finland".
+- Every update of such a site, and its probe, first reads the site's robots.txt, and the source
+  fails if it disallows the listing or a posting's text.
+- Eightfold sources without `layout` are read exactly as before, with nothing to change. A site that
+  moves to the other layout fails until it is probed again and its new add line is added, which
+  replaces the entry under the same id.
+
 ### A name probe says how sure it is of each board it finds
 
 - `sources probe "<Company>"` tries the company's name on Greenhouse, Ashby, Lever, Recruitee and

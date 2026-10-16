@@ -297,3 +297,16 @@ What changes for people who run a feed. Bring a feed repo up to date with
   were decided when it was parked. So one parked under the old reading, such as "Mexico, MO" read as
   Mexico, stays parked until its listing changes and its own record is read again, or until the
   regions take in that country. `requeue --parked` leaves it parked.
+
+### Oregon's code OR is no longer read as the word "or"
+
+- The place reader split a location at "or", so that "Remote or New York" is two places, and took
+  Oregon's code for that word too. "Portland, OR" read as unknown and "Eugene, OR, USA" as partly
+  unknown, both of which pass, and a town named like a country or a city abroad, such as "Lebanon,
+  OR" or "Dublin, OR", read as that country (#69).
+- An OR in capitals that stands as a part of its own, after a comma, a dash or a bracket and before
+  one or nothing, is now Oregon's code. So those read as the US, and "Salem, OR / Remote" is two
+  places, the first in the US.
+- The word "or" between places still splits them, as in "Remote or New York", "London or Paris" or
+  "Remote OR Hybrid", and "Portland, OR or Seattle, WA" is two places in the US. A dangling "or" is
+  no state, as in "Remote or", "Remote OR" or "Remote, or".

@@ -16,6 +16,7 @@ from .model import SourceError
 from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
+from .textutil import company_key
 
 # Career systems this version cannot read, by the hosts their public pages are on. A probe names
 # them, so that nobody keeps looking for a board that no reader exists for.
@@ -164,6 +165,54 @@ def slug_candidates(company: str) -> list[str]:
     return list(dict.fromkeys(form for form in forms if form))
 
 
+# A name probe labels a board with fewer postings than this as perhaps another company's. Another company
+# with the same short name often has a board of one or two postings, and the probe's sample of three titles
+# then shows all of it, which is too little to tell whose board it is.
+TINY = 3
+
+
+def _named(kind: str, payload: Any) -> list[str]:
+    """The company names a board's own listing gives: Greenhouse and Recruitee name the company on each
+    posting, SmartRecruiters on each row it lists. Lever and Ashby name none."""
+    key = {"greenhouse": "jobs", "recruitee": "offers", "smartrecruiters": "content"}.get(kind)
+    rows = payload.get(key) if key and isinstance(payload, dict) else None
+    names = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("company") if kind == "smartrecruiters" else row.get("company_name")
+        name = name.get("name") if isinstance(name, dict) else name
+        if isinstance(name, str) and name.strip():
+            names.append(" ".join(name.split()))
+    return list(dict.fromkeys(names))
+
+
+def _name_words(name: str) -> list[str]:
+    words = company_key(name).split()  # without case, punctuation or a trailing legal suffix
+    return words[1:] if len(words) > 1 and words[0] == "the" else words
+
+
+def _same_company(named: str, company: str) -> bool:
+    """Whether a name a board gives is the company's, as far as names tell: word by word, one begins the
+    other ("Acme" and "Acme Rocket Co."), or they differ only in spaces ("Back Market" and "Backmarket")."""
+    a, b = _name_words(named), _name_words(company)
+    short, long = sorted((a, b), key=len)
+    return long[: len(short)] == short or "".join(a) == "".join(b)
+
+
+def _rated(match: dict[str, Any], names: list[str], company: str) -> dict[str, Any]:
+    """A name probe's match with how sure it is that the board is the company's: high when the board names
+    the company, medium when it names none, and low, with a warning, when it may be another company's."""
+    count, doubts = match["postings"], []
+    if count < TINY:  # whatever name it gives: a company with the same short name gives that name too
+        size = f"Only {count} posting{'' if count == 1 else 's'}" if count else "No postings"
+        doubts.append(f"{size}, and a board this small is often another company's with the same name.")
+    if names and not any(_same_company(name, company) for name in names):
+        doubts.append(f"Its postings name the company {names[0]}, not the one asked for.")
+    confidence = "low" if doubts else "high" if names else "medium"
+    return {**match, "confidence": confidence, **({"warning": " ".join(doubts)} if doubts else {})}
+
+
 def probe(query: str, client: Client | None = None) -> dict[str, Any]:
     """Find a company's board: by its name, trying likely slugs, or by a careers page URL."""
     client = client or Client(retries=0, timeout=20)
@@ -177,23 +226,24 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
     for slug in slug_candidates(company):
         for kind in ats.ATS:
             source = {"id": "probe", "company": company, "ats": kind, "slug": slug}
-            try:
-                jobs = ats.fetch_board(client, source)
+            try:  # as ats.fetch_board reads a board, keeping the reply, which may name the board's company
+                payload = client.get(ats.feed_url(source)).raise_for_status().json()
+                jobs = ats.parse_feed(source, payload)
             except Exception:  # not there, blocked, or not a board: simply not a match
                 continue
-            matches.append(
-                {
-                    "ats": kind,
-                    "slug": slug,
-                    "postings": len(jobs),
-                    "sample": [job.title for job in jobs[:3]],
-                    "add": f"{kind}:{slug}:{company}",
-                }
-            )
+            match = {
+                "ats": kind,
+                "slug": slug,
+                "postings": len(jobs),
+                "sample": [job.title for job in jobs[:3]],
+                "add": f"{kind}:{slug}:{company}",
+            }
+            matches.append(_rated(match, _named(kind, payload), company))
     for slug in slug_candidates(company):  # an unknown company answers with no postings, not an error
         found = _try({"system": "SmartRecruiters", "ats": "smartrecruiters", "slug": slug}, company, client)
         if found.get("postings"):
-            matches.append({k: found[k] for k in ("ats", "slug", "postings", "sample", "add")})
+            match = {k: found[k] for k in ("ats", "slug", "postings", "sample", "add")}
+            matches.append(_rated(match, found.get("named", []), company))
     result: dict[str, Any] = {"company": company, "tried": slug_candidates(company), "matches": matches}
     if not matches:
         result["next"] = (
@@ -202,6 +252,12 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
             "mostly use other systems: find the company's careers page, or the link of one of its postings, "
             "and run `sources probe <url> <Company Name>`. It reads Workday sites and names the systems this "
             "version cannot read."
+        )
+    elif any("warning" in match for match in matches):
+        result["next"] = (
+            "A match with a warning may be another company's board with the same name. Check that its sample "
+            "looks like this company's postings before adding it; if you cannot tell, find the company's careers "
+            "page, or the link of one of its postings, and run `sources probe <url> <Company Name>` instead."
         )
     return result
 
@@ -278,8 +334,9 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             rows = data["content"]
             slug = ((rows[0].get("company") or {}).get("identifier") if rows else None) or found["slug"]
             count, sample = data["totalFound"], [row.get("name") for row in rows]
-            add = f"smartrecruiters:{slug}:{company}"
-            return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add}
+            add, names = f"smartrecruiters:{slug}:{company}", _named("smartrecruiters", data)  # a name probe checks it
+            return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add,
+                    "named": names}  # fmt: skip
         elif found["ats"] == "eightfold":
             client.space(found["host"], eightfold.DELAY)
             named = found.get("domain") or eightfold.page_domain(

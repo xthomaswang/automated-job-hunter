@@ -332,3 +332,25 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - The cities of the provinces and territories whose codes are also countries' codes are known too
   (Regina, Saskatoon, St. John's, Charlottetown, Whitehorse, Iqaluit and a few more), so "Regina, SK"
   reads as Canada even without "CA" or "Canada" beside it.
+
+### A name probe says how sure it is of each board it finds
+
+- `sources probe "<Company>"` tries the company's name on Greenhouse, Ashby, Lever, Recruitee and
+  SmartRecruiters, and a short name often finds another company's board with the same name. Each
+  match now has a `confidence` (#77):
+  - `high` when the board's postings name the company asked for. Greenhouse, Recruitee and
+    SmartRecruiters name it in the reply the probe already reads.
+  - `medium` when they name no company, as on Lever and Ashby, so only the board's address matches.
+  - `low`, with a `warning`, when the board has fewer than 3 postings, or its postings name another
+    company. A board that small is often another company's with the same name, and the sample of
+    three titles then shows all of it, too little to tell whose board it is. It is flagged even
+    when it names the company asked for, since a company with the same short name names itself the
+    same way.
+- Names are compared word by word, without case, punctuation, a leading "The" or a trailing legal
+  suffix such as Inc or GmbH. One beginning the other counts as the same, as "Acme" and "Acme Rocket
+  Co." do, and so does a difference only in spaces, as in "Back Market" and "Backmarket".
+- When any match has a warning, `next` says to check that its sample looks like the company's
+  postings before adding it, or to probe the company's careers page, or one of its postings,
+  instead.
+- No match is dropped, and the probe makes no more requests than before. A SmartRecruiters match
+  from `sources probe <url>` now also shows the company names its postings give, under `named`.

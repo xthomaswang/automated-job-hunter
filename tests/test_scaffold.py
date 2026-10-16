@@ -13,7 +13,7 @@ from ajh import feed, publish, registry, scaffold, tick
 from ajh.cli import main
 from ajh.http import Client
 from ajh.model import Job, SourceError
-from helpers import Boards, answer_assess, answer_triage, posting, wd_posting
+from helpers import Boards, answer_assess, answer_triage, lever_posting, posting, prose, wd_posting
 
 SKILL = Path(scaffold.SCRIPTS).parent
 REPO = SKILL.parent.parent
@@ -263,8 +263,90 @@ def test_probe_finds_a_companys_board_by_trying_likely_slugs():
 
     result = registry.probe("Acme Rocket Co.", Client(transport, retries=0))
     assert result["matches"] == [{"ats": "lever", "slug": "acme-rocket", "postings": 1, "sample": ["Propulsion Engineer"],
-                                  "add": "lever:acme-rocket:Acme Rocket Co."}]  # fmt: skip
+                                  "add": "lever:acme-rocket:Acme Rocket Co.", "confidence": "low",
+                                  "warning": f"Only 1 posting, and {SMALL}"}]  # fmt: skip
     assert registry.probe("Nobody Inc", Client(transport, retries=0))["matches"] == []
+
+
+SMALL = "a board this small is often another company's with the same name."
+DOUBT = (
+    "A match with a warning may be another company's board with the same name. Check that its sample looks like "
+    "this company's postings before adding it; if you cannot tell, find the company's careers page, or the link of "
+    "one of its postings, and run `sources probe <url> <Company Name>` instead."
+)
+
+
+def serving(replies):
+    """A client whose transport answers each URL given with its JSON, and any other with 404."""
+
+    def transport(method, url, headers, body, timeout):
+        reply = replies.get(url)
+        return (404, {}, b"{}") if reply is None else (200, {}, json.dumps(reply).encode())
+
+    return Client(transport, retries=0)
+
+
+def test_a_name_probe_says_how_sure_it_is_of_each_board_and_warns_of_another_companys():
+    def offer(jid, company):  # a Recruitee posting, which names its company
+        return {"id": jid, "title": "UX Researcher", "careers_url": f"https://acme.recruitee.com/o/{jid}",
+                "description": f"<p>{prose(jid)}</p>", "company_name": company}  # fmt: skip
+
+    web = serving(
+        {
+            "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": {
+                "jobs": [dict(posting(n), company_name="Acme, Inc.") for n in (1, 2, 3, 4)]
+            },
+            "https://api.lever.co/v0/postings/acme?mode=json": [lever_posting("a1", "acme", "Social Media Manager")],
+            "https://acme.recruitee.com/api/offers/": {"offers": [offer(n, "Initech") for n in (1, 2, 3, 4, 5)]},
+            "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=3&offset=0": {
+                "offset": 0,
+                "limit": 3,
+                "totalFound": 1,
+                "content": [{"id": "9", "name": "Test UAT", "company": {"identifier": "acme", "name": "Globex"}}],
+            },
+        }
+    )
+    result = registry.probe("Acme", web)
+    rated = [(m["ats"], m["postings"], m["confidence"], m.get("warning")) for m in result["matches"]]
+    assert rated == [  # every board that answered, none dropped
+        ("greenhouse", 4, "high", None),  # its postings name the company asked for
+        ("lever", 1, "low", f"Only 1 posting, and {SMALL}"),  # Lever names no company
+        ("recruitee", 5, "low", "Its postings name the company Initech, not the one asked for."),
+        ("smartrecruiters", 1, "low", f"Only 1 posting, and {SMALL} Its postings name the company Globex, not the one "
+         "asked for."),
+    ]  # fmt: skip
+    assert result["next"] == DOUBT
+
+
+def test_a_name_probe_does_not_warn_of_boards_that_look_like_the_companys():
+    web = serving(
+        {
+            "https://boards-api.greenhouse.io/v1/boards/globex/jobs?content=true": {
+                "jobs": [dict(posting(n), company_name="Globex Corporation") for n in (1, 2, 3)]
+            },
+            "https://api.lever.co/v0/postings/globex?mode=json": [lever_posting(f"g{n}", "globex") for n in (1, 2, 3)],
+        }
+    )
+    result = registry.probe("Globex", web)
+    rated = [(m["ats"], m["confidence"]) for m in result["matches"]]
+    assert rated == [("greenhouse", "high"), ("lever", "medium")]  # Lever names no company: only its address matches
+    assert not any("warning" in m for m in result["matches"]) and "next" not in result
+
+
+@pytest.mark.parametrize(
+    ("named", "company", "same"),
+    [
+        ("ACME, Inc.", "Acme", True),
+        ("Acme", "Acme Rocket Co.", True),  # one begins the other
+        ("The Acme Company", "Acme", True),
+        ("Backmarket", "Back Market", True),
+        ("Initech", "Acme", False),
+        ("Acmeville Bakery", "Acme", False),  # a longer word is another name
+        ("Acme Dental", "Acme Rocket", False),
+    ],
+)
+def test_a_name_a_board_gives_is_compared_word_by_word(named, company, same):
+    assert registry._same_company(named, company) is same
 
 
 ICIMS = "iCIMS (its terms forbid automated reading of its career sites)"  # docs/spikes.md, E10

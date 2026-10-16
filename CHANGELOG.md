@@ -429,3 +429,18 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - No match is dropped, and the probe makes no more requests than before. Its one request to a
   SmartRecruiters company now asks for a page of 100 postings instead of 3, to know where they are;
   a company with more postings than that is not checked for its places.
+
+### A probe of a Phenom career site reads its search-results page for the board behind it
+
+- On the large employers' Phenom career sites checked for #79, every posting was applied for through
+  the employer's Workday site, and the site's search-results page linked those postings. Its home
+  page, which people usually paste, links none, so `sources probe <url>` named Phenom and said to
+  open one posting and probe its Apply link. When it reads a Phenom page that links no board it
+  reads, it now reads the site's search-results page too, and reports a board that page links to,
+  such as a Workday site, with its add line (#87).
+- That page's address comes from the site's settings on the page read (the `baseUrl` of `phApp`)
+  when they name the same host, or else from the page's own `/<country>/<language>/` path, or
+  `/global/en/`. The site's robots.txt is read first, and the page is not asked for when robots.txt
+  disallows it or cannot be read: at most two more requests, a second apart, to the host of the
+  page read, and only for a Phenom page.
+- When that page links no board the probe reads, the advice from #78 stands.

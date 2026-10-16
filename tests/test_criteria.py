@@ -288,14 +288,31 @@ def test_a_province_code_that_is_also_a_countrys_proves_nothing_alone():
         "Lima, PE": ({"PE"}, True),
         "Bratislava, SK": ({"SK"}, True),
         "Toronto, SK": ({"CA"}, True),
-        "Delft, NL": (set(), False),  # read as the Netherlands before: Newfoundland's NL, or theirs
-        "Saskatoon, SK": (set(), False),  # read as Slovakia before
+        "Saskatoon, SK": (set(), False),  # read as Slovakia before: a town the table does not know settles nothing
         "Seattle, SK": (set(), False),  # a US city settles no Canadian province
         "NL, PE": (set(), False),  # two such codes settle nothing: CA must be one of them
         "Monterrey, NL, Mexico": ({"MX"}, True),  # Nuevo León's NL: read as the Netherlands too, before
         "Netherlands": ({"NL"}, True),  # the countries by name are read as before
         "Peru": ({"PE"}, True),
         "Slovakia": ({"SK"}, True),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def test_the_main_job_cities_of_the_netherlands_peru_and_slovakia_settle_their_codes():
+    expected = {
+        "Delft, NL": ({"NL"}, True),  # Dutch employers write this form: NL alone proves nothing
+        "Leiden, Zuid-Holland, NL": ({"NL"}, True),
+        "The Hague, NL": ({"NL"}, True),
+        "Den Haag, NL": ({"NL"}, True),
+        "'s-Hertogenbosch, NL": ({"NL"}, True),
+        "Hoofddorp, NL": ({"NL"}, True),
+        "Cusco, PE": ({"PE"}, True),
+        "Arequipa, PE": ({"PE"}, True),
+        "Košice, SK": ({"SK"}, True),
+        "Banska Bystrica, SK": ({"SK"}, True),  # without its accent
+        "Breda, IA": ({"US"}, True),  # a state of its own still decides
+        "Zwolle, LA": (set(), False),  # and a state code that is also a country's (Laos) is no Dutch one
     }
     assert {location: PLACES.resolve(location) for location in expected} == expected
 
@@ -330,6 +347,12 @@ def test_no_name_reads_as_two_countries():
     assert {
         key: (owners[key], cities[key]) for key in owners.keys() & cities.keys() if owners[key] != {cities[key]}
     } == {}
+    towns: dict[str, set[str]] = {}  # nor a city under two countries
+    for code, names in data["cities"].items():
+        for name in names:
+            for key in C._keys(name):
+                towns.setdefault(key, set()).add(code)
+    assert {key: codes for key, codes in towns.items() if len(codes) > 1} == {}
 
 
 def test_the_code_lists_agree_with_the_countries():

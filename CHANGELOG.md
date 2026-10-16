@@ -306,11 +306,13 @@ What changes for people who run a feed. Bring a feed repo up to date with
   wanting Canada left it out; it now reads as Canada. "Regina, SK, Canada" no longer names Slovakia
   as well, nor "St. John's, NL, Canada" the Netherlands or "Charlottetown, PE, Canada" Peru (#68).
 - SK, NL, PE, NU and YT are also the codes of Slovakia, the Netherlands, Peru, Niue and Mayotte, so
-  on their own they prove nothing, as IL or IN don't. A known city settles them: "Amsterdam, NL" is
-  the Netherlands, "Lima, PE" Peru and "Bratislava, SK" Slovakia, as Bratislava is now in the table of
-  cities. So does CA beside them, since CA is Canada's code and California's: "Saskatoon, SK, CA" is
-  in Canada. The countries by name are read as before.
-- Such a code with a town the table doesn't know is now unknown, which passes: "Delft, NL",
-  "Cusco, PE" and "Remote, SK" were read as the Netherlands, Peru and Slovakia, and "St. John's, NL"
-  or "Saskatoon, SK" as the Netherlands and Slovakia. Beside another country's code it now counts for
+  on their own they prove nothing, as IL or IN don't. A known city settles them, and the table of
+  cities now has the main job cities of the Netherlands, Peru and Slovakia, such as Delft, Leiden,
+  The Hague or Den Bosch, Cusco or Arequipa, and Bratislava or Košice. So "Delft, NL", "Leiden,
+  Zuid-Holland, NL", "Cusco, PE" and "Bratislava, SK" read as before. So does CA beside such a code,
+  since CA is Canada's code and California's: "Saskatoon, SK, CA" is in Canada. The countries by name
+  are read as before.
+- Such a code alone, or with a town the table doesn't know, is now unknown, which passes: "Remote,
+  NL" and "Remote, SK" were read as the Netherlands and Slovakia, and "St. John's, NL" or
+  "Saskatoon, SK" as the Netherlands and Slovakia. Beside another country's code it now counts for
   nothing, as DE already did: "Remote (NL, BE)" reads as Belgium only.

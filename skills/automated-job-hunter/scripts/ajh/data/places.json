@@ -338,7 +338,7 @@
   "TW": ["taipei"],
   "AU": ["sydney", "brisbane", "perth"],
   "NZ": ["auckland", "wellington"],
-  "CA": ["toronto", "vancouver", "montreal", "montréal", "ottawa", "calgary"],
+  "CA": ["toronto", "vancouver", "montreal", "montréal", "ottawa", "calgary", "regina", "saskatoon", "moose jaw", "prince albert", "st. john's", "saint john's", "mount pearl", "corner brook", "charlottetown", "summerside", "iqaluit", "whitehorse", "yellowknife"],
   "MX": ["mexico city", "guadalajara"],
   "BR": ["são paulo", "sao paulo", "rio de janeiro"],
   "AR": ["buenos aires"],

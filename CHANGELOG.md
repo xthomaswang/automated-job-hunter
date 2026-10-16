@@ -316,3 +316,6 @@ What changes for people who run a feed. Bring a feed repo up to date with
   NL" and "Remote, SK" were read as the Netherlands and Slovakia, and "St. John's, NL" or
   "Saskatoon, SK" as the Netherlands and Slovakia. Beside another country's code it now counts for
   nothing, as DE already did: "Remote (NL, BE)" reads as Belgium only.
+- The cities of the provinces and territories whose codes are also countries' codes are known too
+  (Regina, Saskatoon, St. John's, Charlottetown, Whitehorse, Iqaluit and a few more), so "Regina, SK"
+  reads as Canada even without "CA" or "Canada" beside it.

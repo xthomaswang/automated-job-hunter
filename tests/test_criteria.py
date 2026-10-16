@@ -288,13 +288,25 @@ def test_a_province_code_that_is_also_a_countrys_proves_nothing_alone():
         "Lima, PE": ({"PE"}, True),
         "Bratislava, SK": ({"SK"}, True),
         "Toronto, SK": ({"CA"}, True),
-        "Saskatoon, SK": (set(), False),  # read as Slovakia before: a town the table does not know settles nothing
+        "Humboldt, SK": (set(), False),  # read as Slovakia before: a town the table does not know settles nothing
         "Seattle, SK": (set(), False),  # a US city settles no Canadian province
         "NL, PE": (set(), False),  # two such codes settle nothing: CA must be one of them
         "Monterrey, NL, Mexico": ({"MX"}, True),  # Nuevo León's NL: read as the Netherlands too, before
         "Netherlands": ({"NL"}, True),  # the countries by name are read as before
         "Peru": ({"PE"}, True),
         "Slovakia": ({"SK"}, True),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def test_the_cities_of_the_provinces_whose_codes_are_also_countries_settle_them():
+    expected = {
+        "Saskatoon, SK": ({"CA"}, True),
+        "Regina, SK": ({"CA"}, True),
+        "St. John's, NL": ({"CA"}, True),
+        "Charlottetown, PE": ({"CA"}, True),
+        "Whitehorse, YT": ({"CA"}, True),
+        "Iqaluit, NU": ({"CA"}, True),
     }
     assert {location: PLACES.resolve(location) for location in expected} == expected
 

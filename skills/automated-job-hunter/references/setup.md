@@ -67,7 +67,7 @@ Do not copy the résumé file into the feed repo.
   every posting it dropped and asks for every assessment again, which after a few weeks can be
   hundreds of assessments (about $0.02 each).
 - `employment` and `locations.regions` are hard limits; leave them empty for no limit. Regions are
-  two-letter country codes, or `EU`.
+  two-letter country codes, or `EU`. `US` takes in the US territories, such as Puerto Rico and Guam.
 - `locations.remote` and `locations.cities` are preferences passed to the assessment, not filters.
 - Optional: `thresholds` (`strong` 75, `good` 55, `publish_min` 40), `caps` (`max_triage` 1500,
   `max_assess` 100 per update), `backfill.days` (unset: judge every open posting on the first run;

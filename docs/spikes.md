@@ -481,7 +481,8 @@ What the reader makes of it:
   `assistant-store-manager` keeps "Assistant Store Manager".
 - A bare city name is read through the bundled table of cities, so stage 0 reads `london` as the
   United Kingdom on the link alone. A posting in a US town named like a city in that table (Dublin,
-  Ohio; Vancouver, Washington) would be left out the same way when `locations.regions` is set.
+  Ohio; Vancouver, Washington), or like a country (Lebanon, Pennsylvania), would be left out the same
+  way when `locations.regions` is set.
 - The page's address goes to the posting's own place ("Springfield, IL, USA"), which parks a posting
   outside the wanted regions; it and the employment type are also the first lines of the text.
 - The employment type is not the posting's `employment_type`: the sitemap has none, so stage 0 would

@@ -262,3 +262,38 @@ What changes for people who run a feed. Bring a feed repo up to date with
   error that lists several problems shows every one. `collect` shows up to 1,000 characters of it
   under `sources.failures`, where it showed 200. The state still records only the error's type or
   HTTP status, and the README and `feed/meta.json` still name only the failing sources.
+
+### Every country's name is read in a posting's place
+
+- The place table now has every country, all 249 ISO 3166 codes, under its English name, common
+  alternates such as Czechia or Ivory Coast, and its own names, such as Deutschland, Suomi or
+  República Dominicana. Accents and capitals don't matter, so "Panamá, Panamá, Panama" and
+  "Beirut, Beyrouth, Lebanon" read as Panama and Lebanon: a posting whose own address is there is
+  parked as outside `locations.regions` instead of going to triage (#63). Any country code can now
+  go in `locations.regions`.
+- `US` in `locations.regions` takes in the US territories, where US law applies: Puerto Rico, the
+  US Virgin Islands, Guam, American Samoa, the Northern Mariana Islands and the US Minor Outlying
+  Islands. So a posting in "San Juan, Puerto Rico" is still neither left out nor parked for
+  `["US"]`, as when the table did not know Puerto Rico. A place there still reads as the territory,
+  so regions that leave out `US` leave it out, and a posting parked there is tagged with its own
+  code, such as `PR`.
+- A country's name before a US state or Canadian province is a town there. "Lebanon,
+  Pennsylvania" and "Holland, MI" are in the US. "Lebanon, PA", "Peru, IN" and "Mexico, MO" are
+  unknown, since PA, IN and MO are also the codes of Panama, India and Macao. "Holland, MI" and
+  "Mexico, MO" were read as the Netherlands and Mexico before.
+- A two-letter code of a country the table did not have before is read only at the end of an
+  address with a locality and a region, as in "Beirut, Beyrouth, LB". Elsewhere such a code is as
+  often a region: MH in "Mumbai, MH" is Maharashtra, not the Marshall Islands, and "Remote - NA" is
+  North America, not Namibia. The codes read before are read as before.
+- "Georgia" alone is still unknown, since it names a US state too. "Tbilisi, Georgia" is the
+  country and "Atlanta, Georgia" the US state, as the table knows both cities. Another city no longer
+  outweighs it: "Rome, Georgia" was read as Italy and is now unknown.
+- Known limit: a country's name alone is that country. A listing that gives only the town, as a
+  Radancy link does, reads a US town named like a country, such as Lebanon, Pennsylvania, as
+  abroad, as it already read Dublin, Ohio as Ireland.
+- From the next update, a posting whose listing or own record names one of the newly read countries
+  outside `locations.regions` is left out or parked, as other postings outside the regions are.
+- A posting parked for its place before this version keeps the countries in its `place` tag, which
+  were decided when it was parked. So one parked under the old reading, such as "Mexico, MO" read as
+  Mexico, stays parked until its listing changes and its own record is read again, or until the
+  regions take in that country. `requeue --parked` leaves it parked.

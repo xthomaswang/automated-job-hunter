@@ -240,7 +240,7 @@ automated-job-hunter/
 │   └── assets/
 │       ├── agents/{claude/*.md, codex/*.toml}       # haiku triage, sonnet assess; Read + Write only
 │       ├── template/               # feed-repo scaffold: workflow, AGENTS.md, HANDOFF.md, RUNBOOK.md, settings
-│       └── seeds/{registry.json, places.json}       # known boards; small location alias table
+│       └── seeds/{registry.json, places.json}       # known boards; every country's names, some cities
 ├── tests/{fixtures/, test_*.py}    # pytest, dev only
 ├── pyproject.toml (dev tooling via uv), AGENTS.md, README.md, LICENSE, docs/
 ```

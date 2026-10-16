@@ -334,6 +334,33 @@ def test_probe_says_what_to_try_when_a_careers_page_cannot_be_read():
     assert said.startswith("The page could not be read: HttpError. ")  # the last one, the 403
 
 
+def test_probe_says_a_workday_sites_http_422_means_a_wrong_site_name():
+    answers = {  # what each jobs API answers: a Workday site answers 422 for a site name it does not have
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/careers/jobs": 422,
+        "https://wd1.myworkdaysite.com/wday/cxs/acme/careers/jobs": 422,
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs": 404,
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": 422,
+    }
+
+    def transport(method, url, headers, body, timeout):
+        return answers[url], {}, b'{"errorCode":"HTTP_422"}'
+
+    web = Client(transport, retries=0)
+    hint = (
+        "HTTP 422 from this Workday site: the site name 'careers' is probably wrong, or the site is not public. "
+        "Open one of the company's postings and probe its URL, which carries the right tenant and site."
+    )
+    guessed = registry.probe("https://acme.wd1.myworkdayjobs.com/en-US/careers Acme", web)
+    assert guessed["matches"] == [{"system": "Workday", "ats": "workday", "host": "acme.wd1.myworkdayjobs.com",
+                                   "site": "careers", "supported": True, "error": hint}]  # fmt: skip
+    shared = registry.probe("https://wd1.myworkdaysite.com/recruiting/acme/careers Acme", web)["matches"][0]
+    assert (shared["tenant"], shared["error"]) == ("acme", hint)
+    other = registry.probe("https://acme.wd1.myworkdayjobs.com/External Acme", web)["matches"][0]  # as it was
+    assert other["error"] == "HttpError: HTTP 404 for https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs"
+    board = registry.probe("https://boards.greenhouse.io/acme Acme", web)["matches"][0]  # not a Workday site
+    assert board["error"] == "HttpError: HTTP 422 for https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"
+
+
 def test_probe_reads_an_http_careers_address_over_https():
     asked = []
 

@@ -332,3 +332,11 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - The cities of the provinces and territories whose codes are also countries' codes are known too
   (Regina, Saskatoon, St. John's, Charlottetown, Whitehorse, Iqaluit and a few more), so "Regina, SK"
   reads as Canada even without "CA" or "Canada" beside it.
+
+### A Workday site's HTTP 422 says that the site name is probably wrong
+
+- A Workday site's jobs API answers HTTP 422 when the site name in the address is wrong, or the site
+  is not public. `sources probe` showed only `HttpError: HTTP 422 …` for it, which looks like a
+  refusal. It now says that the site name is probably wrong, or the site is not public, and to open
+  one of the company's postings and probe its URL, which carries the right tenant and site (#76).
+- Every other error is shown as before, including a 422 from another system.

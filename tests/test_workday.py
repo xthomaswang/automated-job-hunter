@@ -87,6 +87,9 @@ def test_a_row_with_neither_link_nor_title_is_skipped_and_counted_while_such_row
     with skips.counting() as skipped:
         assert len(S.fetch(client(board), SEARCHED)) == 25
     assert skipped == {"no link or title": 1}
+    with skips.counting() as skipped:  # counted in each search that lists it
+        assert len(S.fetch(client(board), dict(SEARCHED, queries=["UX Researcher", "Researcher"]))) == 25
+    assert skipped == {"no link or title": 2}
     root = repo(sources=(INITECH,))
     summary = tick(root, board)
     assert summary["sources"]["failed"] == 0 and len(rows(root, "initech")) == 25

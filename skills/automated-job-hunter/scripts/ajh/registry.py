@@ -40,6 +40,9 @@ UNSUPPORTED = (
     (r"(^|\.)(ultipro|ukg)\.com$", "UKG"),
     (r"(^|\.)dayforcehcm\.com$", "Dayforce"),
 )
+# Of those, the ones a company's career site may run on only as a front end: its postings are applied for
+# through another system, which one posting's Apply link leads to and which this version may read.
+FRONT_ENDS = ("Avature", "Phenom")
 # Never read, whose terms forbid it. Named only for a URL probed directly: almost every careers page
 # links to them in its footer, which says nothing about where its postings are.
 _FORBIDDEN = re.compile(r"(^|\.)(linkedin|indeed)\.com$")
@@ -382,9 +385,12 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
             "posting and probe the URL of its page or its Apply link."
         )
     elif not result["matches"]:
-        result["next"] = (
-            f"This company uses {', '.join(result['unsupported'])}, which this version cannot read. "
-            "There is no board to add."
+        fronts = [system for system in result["unsupported"] if system in FRONT_ENDS]
+        result["next"] = f"This company uses {', '.join(result['unsupported'])}, which this version cannot read. " + (
+            f"{' or '.join(fronts)} may be only a front end for another system: open one posting and probe its "
+            "Apply link, which can lead to a system this version reads, such as Workday."
+            if fronts
+            else "There is no board to add."
         )
     return result
 

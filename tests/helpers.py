@@ -128,7 +128,8 @@ class Boards:
     the query, within the job categories asked for and on the posting's own site if it has one, and
     `workday_down` lists ids whose detail request fails. `hooli` is the same for the fake
     SmartRecruiters API, where only the company Hooli exists (in any case, as there) and an unknown
-    company has no postings.
+    company has no postings. `gem` holds Gem boards by name, each the list its listing returns; only
+    that listing is served, and `status["gem:<board>"]` makes it answer that status instead.
     """
 
     def __init__(self, **boards):
@@ -137,6 +138,7 @@ class Boards:
         self.workday, self.workday_down = {}, set()
         self.hooli, self.hooli_down = {}, set()
         self.lists, self.lever, self.ashby = {}, {}, {}  # files by repo/branch/path; boards by name
+        self.gem = {}
 
     def _smartrecruiters(self, url):
         parts = urllib.parse.urlsplit(url)
@@ -222,6 +224,15 @@ class Boards:
             if board not in self.ashby:
                 return 404, {}, b"{}"
             return 200, {}, json.dumps({"jobs": self.ashby[board]}).encode()
+        if "://api.gem.com/" in url:
+            listing = re.fullmatch(r"https://api\.gem\.com/job_board/v0/([^/]+)/job_posts/", url)
+            board = listing.group(1) if listing else None
+            self.requests.append(("gem", board or url))
+            if board not in self.gem:
+                return 404, {}, b'{"error": "Not found"}'
+            if f"gem:{board}" in self.status:
+                return self.status[f"gem:{board}"], {}, b"{}"
+            return 200, {}, json.dumps(self.gem[board]).encode()
         single = re.search(r"://boards-api\.greenhouse\.io/v1/boards/([^/]+)/jobs/(\d+)$", url)
         if single:
             self.requests.append(("detail", single.group(2)))

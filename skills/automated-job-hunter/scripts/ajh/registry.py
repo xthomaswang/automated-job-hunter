@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 from . import criteria as C
 from . import robots
@@ -191,7 +191,7 @@ TINY = 5
 
 def _named(kind: str, payload: Any) -> list[str]:
     """The company names a board's own listing gives: Greenhouse and Recruitee name the company on each
-    posting, SmartRecruiters on each row it lists. Lever and Ashby name none."""
+    posting, SmartRecruiters on each row it lists. Lever, Ashby and Gem name none."""
     key = {"greenhouse": "jobs", "recruitee": "offers", "smartrecruiters": "content"}.get(kind)
     rows = payload.get(key) if key and isinstance(payload, dict) else None
     names = []
@@ -349,7 +349,7 @@ def probe(query: str, client: Client | None = None, stage0: C.Stage0 | None = No
     result: dict[str, Any] = {"company": company, "tried": slug_candidates(company), "matches": matches}
     if not matches:
         result["next"] = (
-            "None of Greenhouse, Ashby, Lever, Recruitee or SmartRecruiters has a board under these names. "
+            "None of Greenhouse, Ashby, Lever, Recruitee, Gem or SmartRecruiters has a board under these names. "
             "Large employers "
             "mostly use other systems: find the company's careers page, or the link of one of its postings, "
             "and run `sources probe <url> <Company Name>`. It reads Workday sites and names the systems this "
@@ -380,6 +380,10 @@ def _system(url: str) -> dict[str, Any] | None:
         kind, slug = "lever", path[0] if path else None
     elif re.fullmatch(r"[a-z0-9-]+\.recruitee\.com", host):
         kind, slug = "recruitee", host.split(".")[0]
+    elif host == "jobs.gem.com":  # the board's page, an app shell, or one posting's: /<board>[/<id>]
+        kind, slug = "gem", path[0] if path else None
+    elif host == "api.gem.com":  # the board's API: /job_board/v0/<board>/...
+        kind, slug = "gem", path[2] if len(path) > 2 and path[:2] == ["job_board", "v0"] else None
     elif host in ("jobs.smartrecruiters.com", "careers.smartrecruiters.com"):
         kind, slug = "smartrecruiters", path[0] if path else None
     elif workday.HOST.match(host):
@@ -498,6 +502,63 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
     return {**found, "supported": True, "postings": count, "sample": sample[:3], "add": add}
 
 
+# A Phenom career site, which the probe knows by the links its pages have to Phenom's hosts, lists its postings
+# on its search-results page: server-rendered with the first ten, each with the link it is applied through,
+# often the employer's Workday site. Its other pages, such as the home page people paste, link none. Every
+# page carries the site's settings, `phApp = {...}`, whose `baseUrl` is the site's root for one country and
+# language, such as https://careers.<company>.com/us/en/, under which the search-results page is.
+_PHENOM_SETTINGS = re.compile(r"\bphApp\s*=\s*(?:phApp\s*\|\|\s*)?\{")
+_PHENOM_BASE = re.compile(r'"baseUrl"\s*:\s*"([^"]{1,500})"')
+_PHENOM_PATH = re.compile(r"(?:/[A-Za-z0-9_-]+)*/?\Z")  # a root's path, such as /us/en/
+_PHENOM_LOCALE = re.compile(r"/(?:[a-z]{2}|global)/[a-z]{2}(?:[-_][a-z]{2})?(?=/|\Z)", re.I)  # /us/en, /global/en
+PHENOM_DELAY = 1.0  # seconds between requests to a Phenom site: no rate is documented
+
+
+def _search_results(landed: str, page: str) -> str:
+    """Where a Phenom site's search-results page is, on the host of the page read: under the `baseUrl` of the
+    site's settings on that page when it is on that host, else under the page's own /<country>/<language>/,
+    or under /global/en/."""
+    parts = urlsplit(landed)
+    host = (parts.hostname or "").lower()
+    settings = _PHENOM_SETTINGS.search(page)
+    named = _PHENOM_BASE.search(page, settings.end(), settings.end() + 20000) if settings else None
+    try:
+        base = urlsplit(urljoin(landed, named.group(1).replace("\\/", "/"))) if named else None
+    except ValueError:  # not an address
+        base = None
+    on_site = base is not None and base.scheme in ("http", "https") and (base.hostname or "").lower() == host
+    if on_site and _PHENOM_PATH.match(base.path):
+        return f"https://{host}{base.path.rstrip('/')}/search-results"
+    locale = _PHENOM_LOCALE.match(parts.path)
+    return f"https://{host}{locale.group() if locale else '/global/en'}/search-results"
+
+
+def _behind_phenom(client: Client, landed: str, page: str) -> list[dict[str, Any]]:
+    """The boards this version reads that a Phenom site's search-results page links to, such as the Workday
+    site its postings are applied through. robots.txt is read first, and the page is not asked for when it
+    disallows it: two requests at most, both to the host of the page read."""
+    host = (urlsplit(landed).hostname or "").lower()
+    url = _search_results(landed, page)
+    if urlsplit(url).path == urlsplit(landed).path.rstrip("/"):  # the page read is that page
+        return []
+    client.space(host, PHENOM_DELAY)
+    client.sleep(PHENOM_DELAY)  # the site's page was read from this host a moment ago
+    try:
+        if not robots.permits(client, host)(url):
+            return []
+        reply = client.get(url).raise_for_status()
+    except Exception:  # a robots.txt that cannot be read now, a refusal or a timeout: nothing more is learnt
+        return []
+    if (urlsplit(reply.url).hostname or "").lower() != host:  # redirected off the site: not its page
+        return []
+    found: dict[str, dict[str, Any]] = {}
+    for link in _LINK.findall(reply.text):
+        system = _system(link)
+        if system and system.get("supported") is not False:  # where its postings are applied for
+            found.setdefault(json.dumps(system, sort_keys=True), system)
+    return list(found.values())[:10]
+
+
 def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
     """What a careers URL is: a known system's board, or a company's own page linking to one."""
     name = company or "<Company Name>"
@@ -514,7 +575,7 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
                     f"The page could not be read: {type(error).__name__}. Trying it again seldom helps when a site "
                     "refuses scripted requests. Open one of the company's postings instead (a job site's Apply button "
                     "often leads to one) and probe the URL of its page or its Apply link, or probe the company's "
-                    "name, which tries Greenhouse, Ashby, Lever, Recruitee and SmartRecruiters."
+                    "name, which tries Greenhouse, Ashby, Lever, Recruitee, Gem and SmartRecruiters."
                 ),
             }
         page, landed = reply.text, reply.url  # an old address may move to the site's own host
@@ -547,6 +608,9 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
         site = radancy.recognize(landed, page)  # the page is itself a TalentBrew career site: its links to other
         if site:  # systems are where its postings are applied for, which its own sitemap already lists
             systems = [site]
+        unread = [system["system"] for system in systems if system.get("supported") is False]
+        if "Phenom" in unread and len(unread) == len(systems):  # a Phenom page that links no board read here:
+            systems += _behind_phenom(client, landed, page)  # the site's search-results page may link one
     results = [_try(system, name, client) for system in systems]
     result: dict[str, Any] = {"url": url}
     if landed != url:  # the page moved: what was read is there

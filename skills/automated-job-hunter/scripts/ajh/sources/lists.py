@@ -2,7 +2,7 @@
 
 A list is one file in a public repo: JSON rows, or Markdown tables. A row names a company, a role
 and a link. Only a row whose link is one posting on a system this engine reads through a public
-API is used (Greenhouse, Lever, Ashby, SmartRecruiters, Workday): its text, date and link then come
+API is used (Greenhouse, Lever, Ashby, Gem, SmartRecruiters, Workday): its text, date and link then come
 from that system, never from the list, so each posting is the employer's own. So does the place
 that decides whether it is in the wanted regions: a list's region or location is only a label. A
 row linking anywhere else (a site that re-posts jobs, a redirect, a system with no public API, an
@@ -31,10 +31,10 @@ from . import ats, lazy, smartrecruiters, workday
 
 KINDS = ("github-list",)
 RAW = "raw.githubusercontent.com"
-GREENHOUSE, LEVER, ASHBY = "boards-api.greenhouse.io", "api.lever.co", "api.ashbyhq.com"
+GREENHOUSE, LEVER, ASHBY, GEM = "boards-api.greenhouse.io", "api.lever.co", "api.ashbyhq.com", "api.gem.com"
 # Every host a list can lead to, for a network allowlist. Workday sites are each on their own host.
-HOSTS = (RAW, GREENHOUSE, LEVER, ASHBY, smartrecruiters.HOST, "*.myworkdayjobs.com", "*.myworkdaysite.com")
-SYSTEMS = ("greenhouse", "lever", "ashby", "smartrecruiters", "workday")
+HOSTS = (RAW, GREENHOUSE, LEVER, ASHBY, GEM, smartrecruiters.HOST, "*.myworkdayjobs.com", "*.myworkdaysite.com")
+SYSTEMS = ("greenhouse", "lever", "ashby", "gem", "smartrecruiters", "workday")
 DETAILS = 50  # postings whose text one list fetches per update, unless the source sets max_details
 DELAY = 0.5  # seconds between requests to one system's API
 
@@ -50,7 +50,9 @@ NO_READER = frozenset(
     "icims.com successfactors.com successfactors.eu sapsf.com oraclecloud.com taleo.net eightfold.ai amazon.jobs "
     "jobvite.com workable.com bamboohr.com recruitee.com paylocity.com ultipro.com adp.com google.com".split()
 )
-READ = ("greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com", "myworkdayjobs.com", "myworkdaysite.com")
+READ = tuple(
+    "greenhouse.io lever.co ashbyhq.com jobs.gem.com smartrecruiters.com myworkdayjobs.com myworkdaysite.com".split()
+)
 # What a table's column headings may be called, for each fact a row gives.
 HEADINGS = {
     "company": ("company", "employer", "organization"),
@@ -74,7 +76,7 @@ class Link:
     """One posting on a system this engine reads: where it lives, and what fetching it takes."""
 
     system: str
-    board: str  # a Greenhouse, Lever or Ashby board, a SmartRecruiters company, or Workday's `<tenant>/<site>`
+    board: str  # a Greenhouse, Lever, Ashby or Gem board, a SmartRecruiters company, or Workday's `<tenant>/<site>`
     id: str
     url: str  # the posting's own page, without tracking parameters
     host: str = ""  # Workday: the site's host
@@ -107,6 +109,10 @@ def link(url: Any) -> Link | None:
         board, pid = segments[0], segments[1].lower()
         if _BOARD.match(board):
             return Link(system, board, pid, f"https://{host}/{board}/{pid}")
+    elif host == "jobs.gem.com" and len(segments) >= 2:  # /<board>/<id>, the posting's page
+        board, pid = segments[0], segments[1]  # as written: an id may be a token whose case counts
+        if ats._GEM_BOARD.match(board) and ats._GEM_ID.match(pid):
+            return Link("gem", board, pid, f"https://jobs.gem.com/{board}/{pid}")
     elif host == "jobs.smartrecruiters.com" and len(segments) >= 2:
         found = re.match(r"\d+", segments[1])
         if found and smartrecruiters._SLUG.match(segments[0]):
@@ -157,7 +163,7 @@ def identity(source_id: str) -> tuple[str, str, str] | None:
 def board_identity(source: Mapping[str, Any], row_id: str) -> tuple[str, str, str] | None:
     """Where a posting of a watched board lives, in the form `identity` gives a list's posting."""
     kind = source.get("ats")
-    if kind in ("greenhouse", "lever", "ashby", *smartrecruiters.KINDS):
+    if kind in ("greenhouse", "lever", "ashby", "gem", *smartrecruiters.KINDS):
         board = source.get("slug")
     elif kind in workday.KINDS:
         try:
@@ -449,6 +455,18 @@ def _detail(client: Client, job: Job, found: Link, boards: dict[str, Any]) -> Jo
             if row is None or row.get("isListed") is False:
                 return None
             facts = ats._ashby(row)
+        elif found.system == "gem":  # the board's listing, as a watched board reads it, once per update
+            key = f"gem~{found.board}"  # apart from an Ashby board of the same name, kept by its name alone
+            if key not in boards:
+                boards[key] = None  # a board that does not answer is not asked again this update
+                client.space(GEM, DELAY)
+                data = client.get(ats.feed_url({"ats": "gem", "slug": found.board})).raise_for_status().json()
+                boards[key] = data if isinstance(data, list) else None
+            wanted, rows = found.id.casefold(), boards[key] or []
+            row = next((r for r in rows if isinstance(r, dict) and str(r.get("id")).casefold() == wanted), None)
+            if row is None:
+                return None
+            facts = ats._gem(row)
         else:
             host = GREENHOUSE if found.system == "greenhouse" else LEVER
             client.space(host, DELAY)

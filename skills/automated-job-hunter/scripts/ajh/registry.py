@@ -46,6 +46,12 @@ UNSUPPORTED = (
 # Of those, the ones a company's career site may run on only as a front end: its postings are applied for
 # through another system, which one posting's Apply link leads to and which this version may read.
 FRONT_ENDS = ("Avature", "Phenom")
+# An Avature portal on any host, known by its page: the meta tags it carries (avature.portal.id, .name, .urlPath,
+# .lang and .page), or the vendor's assets it loads. A link to avature.net, as in a footer, does not make one.
+_AVATURE_PAGE = re.compile(
+    r"<meta\b[^>]{0,500}?\bname\s*=\s*[\"']?avature\.portal\.[a-z]+|(?:https?:)?//templates-static-assets\.avacdn\.net/",
+    re.I,
+)
 # Never read, whose terms forbid it. Named only for a URL probed directly: almost every careers page
 # links to them in its footer, which says nothing about where its postings are.
 _FORBIDDEN = re.compile(r"(^|\.)(linkedin|indeed)\.com$")
@@ -582,6 +588,10 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
         if named:  # an Eightfold career site itself, on the company's own host or eightfold.ai
             host = urlsplit(landed).hostname
             systems.append({"system": "Eightfold", "ats": "eightfold", "host": host, **named})
+        if _AVATURE_PAGE.search(page):  # an Avature portal itself, on any host: a front end, whose links still count
+            portal = {"system": "Avature", "supported": False}
+            seen.add(json.dumps(portal, sort_keys=True))  # named once, though it may link avature.net too
+            systems.append(portal)
         for link in _LINK.findall(page):
             system = _system(link)
             if not system or system.get("forbidden"):  # a footer link says nothing about where postings are

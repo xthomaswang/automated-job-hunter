@@ -478,3 +478,13 @@ What changes for people who run a feed. Bring a feed repo up to date with
   disallows it or cannot be read: at most two more requests, a second apart, to the host of the
   page read, and only for a Phenom page.
 - When that page links no board the probe reads, the advice from #78 stands.
+
+### The probe knows an Avature portal by its page, on any host
+
+- An Avature portal can be served from a company's own host, where `sources probe <url>`, which
+  named Avature only by the avature.net host, found no link to a known career system. It now knows
+  such a portal by its page: the `avature.portal.*` meta tags it carries, or the assets it loads
+  from templates-static-assets.avacdn.net. It names Avature and, as for a Phenom site, says to open
+  one posting and probe its Apply link, since Avature can also be only a front end (#88).
+- Where the page also links a system the probe reads, that board is reported as before. Only those
+  markers make a page a portal, not a mention of Avature in its text.

@@ -712,6 +712,51 @@ def test_probe_knows_a_board_that_an_old_careers_address_moved_to():
     assert [m["add"] for m in found["matches"]] == ["workday:initech.wd1.myworkdayjobs.com/External:Initech"]
 
 
+AVATURE = (  # an Avature portal's own meta tags, on whatever host it is served from
+    '<meta name="avature.portal.id" content="7"><meta name="avature.portal.name" content="External Careers">'
+    '<meta name="avature.portal.urlPath" content="careers"><meta name="avature.portal.lang" content="en_US">'
+    '<meta name="avature.portal.page" content="SearchJobs">'
+)
+AVATURE_FRONT = (
+    "This company uses Avature, which this version cannot read. Avature may be only a front end for another system: "
+    "open one posting and probe its Apply link, which can lead to a system this version reads, such as Workday."
+)
+
+
+def test_probe_knows_an_avature_portal_by_its_page_on_any_host():
+    assets = '<link rel="stylesheet" href="https://templates-static-assets.avacdn.net/portal/7/main.css">'
+    portals = {
+        "https://careers.acme.example/": f"<html><head>{AVATURE}</head><body>Search jobs</body></html>",
+        "https://jobs.acme.example/search": f"<html><head>{assets}</head></html>",  # by the vendor's assets alone
+        "https://jobs.umbrella.example/": '<META content="12" NAME="avature.portal.id">',  # in any order or case
+        "https://careers.initech.example/": AVATURE + '<a href="https://initech.avature.net/careers">All jobs</a>',
+    }
+    ordinary = '<meta name="description" content="Hooli careers, formerly on Avature"><p>Powered by Avature.</p>'
+    pages = {**portals, "https://careers.hooli.example/": ordinary}
+    web = Client(lambda method, url, headers, body, timeout: (200, {}, pages[url].encode()), retries=0)
+    for url in portals:  # each named once, though the last also links avature.net
+        found = registry.probe(f"{url} Acme", web)
+        assert (found["matches"], found["unsupported"], found["next"]) == ([], ["Avature"], AVATURE_FRONT)
+    text = registry.probe("https://careers.hooli.example/ Hooli", web)  # it only mentions Avature: not a portal
+    assert (text["matches"], text["unsupported"]) == ([], [])
+    assert text["next"].startswith("No link to a known career system")
+
+
+def test_probe_reports_a_board_that_an_avature_portal_links_as_before():
+    board = Boards()
+    board.workday = {"R1": wd_posting("R1")}
+    workday = '<a href="https://globex.wd1.myworkdayjobs.com/en-US/External/job/San-Jose/UX-Researcher_R1">Apply</a>'
+
+    def transport(method, url, headers, body, timeout):
+        if url == "https://careers.globex.example/":
+            return 200, {}, (AVATURE + workday).encode()
+        return board.transport(method, url, headers, body, timeout)
+
+    found = registry.probe("https://careers.globex.example/ Globex", Client(transport, retries=0))
+    assert [m["add"] for m in found["matches"]] == ["workday:globex.wd1.myworkdayjobs.com/External:Globex"]
+    assert found["unsupported"] == ["Avature"] and "next" not in found
+
+
 def test_probe_says_what_to_try_when_a_careers_page_cannot_be_read():
     def timing_out(method, url, headers, body, timeout):
         raise socket.timeout("timed out")  # named timeout on Python 3.9, TimeoutError from 3.10

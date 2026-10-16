@@ -238,3 +238,10 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - The engine reads robots.txt itself, as RFC 9309 says, so a file gives the same answer on every
   Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
   the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.
+
+### A probe that cannot read a careers page says what to try instead
+
+- When `sources probe <url>` cannot read a company's careers page (a timeout, a refusal, or a bot
+  filter's 403), it still names the error and now says what to try: open one of the company's
+  postings and probe the URL of its page or its Apply link, or probe the company's name. Trying the
+  same page again seldom helps when a site refuses scripted requests.

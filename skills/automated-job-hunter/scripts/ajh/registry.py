@@ -323,12 +323,17 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
     if found is None:  # a company's own careers page: look for links to a known system on it, one request
         try:
             reply = client.get(url).raise_for_status()
-        except Exception as error:
+        except Exception as error:  # a timeout, a refusal, or a bot filter's 403
             return {
                 "url": url,
                 "matches": [],
                 "unsupported": [],
-                "next": f"The page could not be read: {type(error).__name__}",
+                "next": (
+                    f"The page could not be read: {type(error).__name__}. Trying it again seldom helps when a site "
+                    "refuses scripted requests. Open one of the company's postings instead (a job site's Apply button "
+                    "often leads to one) and probe the URL of its page or its Apply link, or probe the company's "
+                    "name, which tries Greenhouse, Ashby, Lever, Recruitee and SmartRecruiters."
+                ),
             }
         page, landed = reply.text, reply.url  # an old address may move to the site's own host
         found = _system(landed)

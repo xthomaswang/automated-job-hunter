@@ -2,6 +2,7 @@
 
 import json
 import re
+import socket
 import subprocess
 import sys
 import textwrap
@@ -314,6 +315,23 @@ def test_probe_knows_a_board_that_an_old_careers_address_moved_to():
     found = registry.probe("https://jobs.initech.example/ Initech", Client(transport, retries=0))
     assert found["resolved"] == landing
     assert [m["add"] for m in found["matches"]] == ["workday:initech.wd1.myworkdayjobs.com/External:Initech"]
+
+
+def test_probe_says_what_to_try_when_a_careers_page_cannot_be_read():
+    def timing_out(method, url, headers, body, timeout):
+        raise socket.timeout("timed out")  # named timeout on Python 3.9, TimeoutError from 3.10
+
+    def refusing(method, url, headers, body, timeout):  # as a bot filter answers
+        return 403, {}, b"<html><body>Access denied</body></html>"
+
+    for transport in (timing_out, refusing):
+        found = registry.probe("https://careers.acme.example/ Acme", Client(transport, retries=0))
+        assert (found["matches"], found["unsupported"]) == ([], [])
+        said = found["next"]
+        assert said.startswith("The page could not be read: ")  # with the error's name
+        assert "seldom helps" in said and "Apply link" in said and "probe the company's name" in said
+        assert "Greenhouse, Ashby, Lever, Recruitee and SmartRecruiters" in said  # what a name probe tries
+    assert said.startswith("The page could not be read: HttpError. ")  # the last one, the 403
 
 
 def test_a_workday_site_is_added_by_host_and_site(tmp_path):

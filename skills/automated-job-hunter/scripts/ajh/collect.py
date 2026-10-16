@@ -613,7 +613,8 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
             info["error"] = _failure(result)
             info.setdefault("fail_since", today.isoformat())
             summary["sources"]["failed"] += 1
-            summary["sources"]["failures"][sid] = f"{type(result).__name__}: {str(result)[:200]}"
+            # enough to act on, for display only: the state keeps just the short `_failure` above
+            summary["sources"]["failures"][sid] = f"{type(result).__name__}: {str(result)[:1000]}"
             continue
         seen[sid], events = reconcile(
             source, result, state.rows(sid), info, stage0, today, criteria["backfill"]["days"]

@@ -423,7 +423,7 @@ def test(root: Path | str, client: Client | None = None) -> dict[str, Any]:
                 report[source["id"]] = lists.read(client, source)[1]
             else:
                 report[source["id"]] = {"postings": len(S.fetch(client, searched))}
-        except Exception as error:
-            report[source["id"]] = {"error": f"{type(error).__name__}: {str(error)[:160]}"}
+        except Exception as error:  # the whole message: this stores nothing, and it may list several problems
+            report[source["id"]] = {"error": f"{type(error).__name__}: {error}"}
     failing = sorted(sid for sid, result in report.items() if "error" in result)
     return {"sources": report, "failing": failing, **({"readers": own.report()} if own.found else {})}

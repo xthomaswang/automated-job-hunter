@@ -238,3 +238,10 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - The engine reads robots.txt itself, as RFC 9309 says, so a file gives the same answer on every
   Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
   the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.
+
+### `sources test` and `collect` show more of a source's error
+
+- `sources test` now shows a failing source's whole error, where it showed 160 characters, so an
+  error that lists several problems shows every one. `collect` shows up to 1,000 characters of it
+  under `sources.failures`, where it showed 200. The state still records only the error's type or
+  HTTP status, and the README and `feed/meta.json` still name only the failing sources.

@@ -269,3 +269,7 @@ What changes for people who run a feed. Bring a feed repo up to date with
   abroad, as it already read Dublin, Ohio as Ireland.
 - From the next update, a posting whose listing or own record names one of the newly read countries
   outside `locations.regions` is left out or parked, as other postings outside the regions are.
+- A posting parked for its place before this version keeps the countries in its `place` tag, which
+  were decided when it was parked. So one parked under the old reading, such as "Mexico, MO" read as
+  Mexico, stays parked until its listing changes and its own record is read again, or until the
+  regions take in that country. `requeue --parked` leaves it parked.

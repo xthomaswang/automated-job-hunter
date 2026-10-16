@@ -155,6 +155,19 @@ brief is not rewritten, until an update fetches its text. Title and place come f
 every update, so the change fingerprint compares like with like; the detail's extra places and its
 employment type go into the text, and its own place decides parking, as above.
 
+**A feed's own readers.** A feed repo can keep reader modules in a `readers/` folder at its root:
+for a career site only its owner needs, or one whose employer the owner would rather not name in
+this public repo. Each module declares a source type (`KIND`) and a `fetch` with the built-in
+readers' contract, and optionally that it is query-scoped or detailed (which `collect` treats as
+for the built-in types) and the hosts it contacts. `sources/own.py` loads each file by its path,
+never on import and never through `sys.path`, and only in the commands that read sources
+(`collect`, `sources test`, `sources hosts`; `status` reports on them). Nothing the judging step
+runs loads them, so its trust boundary is unchanged. A reader runs during `collect` with the
+engine's own access, which is why the guide,
+[own-readers.md](../skills/automated-job-hunter/references/own-readers.md), holds it to the
+built-in readers' rules. A module that fails to load, or declares a built-in or duplicate type,
+fails only the sources of that type, which keep their last snapshot.
+
 **Measured cost.** At API list prices (Haiku 5.5 $0.10/$0.50 and Sonnet 5.5 $2/$10 per million
 input/output tokens, price table dated 2026-10-06), triage costs about $0.14 per 1,000 postings and
 assessment about $0.017 per posting, orchestrator included (see [spikes.md](spikes.md)). A fully
@@ -224,9 +237,9 @@ pydantic, committed text files replace SQLite.
 
 Engine modules (`scripts/ajh/`): `model` (Job, keys, path-safe ids), `textutil` (HTML to text,
 normalization, wrapping, simhash, snippet), `http` (retries, per-host delay, injectable transport),
-`sources/` (ATS adapters, aggregators, lazy details, probing, registry), `state`, `criteria`
-(schema, stage-0 filters, profile hashes), `rules` (flag rules, years, seniority), `queue`,
-`packets`, `verdicts`, `render`, `publish`, `audit`, `scaffold`, `cli`.
+`sources/` (ATS adapters, aggregators, lazy details, a feed's own readers, probing, registry),
+`state`, `criteria` (schema, stage-0 filters, profile hashes), `rules` (flag rules, years,
+seniority), `queue`, `packets`, `verdicts`, `render`, `publish`, `audit`, `scaffold`, `cli`.
 
 ### CLI (stdout is one JSON object; exit 0 ok, 2 needs a human)
 
@@ -260,6 +273,7 @@ it), `hunter requeue --parked`, and a Codex runner for `tick`.
 ├── HANDOFF.md, AGENTS.md, CLAUDE.md   # contract and rules for downstream agents
 ├── profile/{profile.md, criteria.json}
 ├── config/{hunter.json, sources.json}
+├── readers/                     # optional: the feed's own reader modules (sources/own.py)
 ├── state/{meta.json, sources.json, profile.json, titles.tsv, jobs/<source>.tsv}
 ├── .hunter/{VERSION, MANIFEST.sha256, RUNBOOK.md, agents.json, engine/}   # pinned engine; work/ is gitignored
 ├── .claude/agents/, .codex/agents/       # the same subagents for Routines, interactive use and Codex
@@ -354,7 +368,7 @@ Default: `.github/workflows/job-hunter.yml`, cadence 1 h / 4 h / 8 h chosen at s
 on:
   schedule: [{cron: "17 */4 * * *"}]          # minute randomized at setup
   workflow_dispatch: {}
-  push: {branches: [main], paths: ["profile/**", "config/**"]}
+  push: {branches: [main], paths: ["profile/**", "config/**", "readers/**"]}
 permissions: {contents: write}
 concurrency: {group: job-hunter, cancel-in-progress: false}
 jobs:
@@ -412,7 +426,7 @@ jobs:
 - Checkout leaves no credentials on disk. `hunter publish` reads `GH_TOKEN` from its environment and
   passes it to that one `git push` only; it is never written to `.git/config`.
 - Pushes made with the workflow token do not trigger workflows, so the `push` trigger fires only
-  when a person edits the profile or config. That is intended.
+  when a person edits the profile, the config or the feed's own readers. That is intended.
 - Source failures exit 0; only auth or audit failures fail the run.
 - The workflow token cannot edit workflow files, so `upgrade` runs locally.
 - GitHub ties a schedule to the user who last changed its cron line: notifications for scheduled

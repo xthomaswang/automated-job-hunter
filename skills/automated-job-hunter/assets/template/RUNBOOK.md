@@ -80,6 +80,10 @@ Published postings stay listed until their new assessment arrives.
 - **`PublishBlocked: Audit failed`**: the profile or config contains what the message names.
 - **A source keeps failing**: `README.md` lists it under Status. `hunter sources test` shows the
   error. A failing source keeps its last known postings; nothing is closed because of an outage.
+- **A source fails with an error naming a file in `readers/`**: its type comes from the feed's own
+  readers, and that file failed to load, lacks `KIND` or `fetch`, or declares a type it may not.
+  `hunter status` lists every reader file not used and why. Fix the file, try it with
+  `hunter sources test`, which changes nothing, and commit it.
 - **Judging failed**: `README.md` says so at the top, and `feed/meta.json` has `judging_failed`
   with the day it started, the stages, and the first line of the error. New postings wait in the
   queue and are judged once it works again. In the scheduled workflow, the judging step's log has

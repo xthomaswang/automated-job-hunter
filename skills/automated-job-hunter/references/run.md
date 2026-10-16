@@ -1,7 +1,8 @@
 # Running one update
 
-Work in the feed repo. The working tree must be clean: commit or discard any edits to `profile/` or
-`config/` first, because the engine refuses to publish results made from uncommitted inputs.
+Work in the feed repo. The working tree must be clean: commit or discard any edits to `profile/`,
+`config/` or `readers/` first, because the engine refuses to publish results made from uncommitted
+inputs.
 
 ## The usual way
 

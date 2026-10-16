@@ -245,3 +245,5 @@ What changes for people who run a feed. Bring a feed repo up to date with
   filter's 403), it still names the error and now says what to try: open one of the company's
   postings and probe the URL of its page or its Apply link, or probe the company's name. Trying the
   same page again seldom helps when a site refuses scripted requests.
+- An `http://` careers address is probed over `https://`, as the engine reads only https. It used to
+  fail on that alone.

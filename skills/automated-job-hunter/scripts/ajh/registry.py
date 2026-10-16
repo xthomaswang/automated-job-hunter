@@ -164,6 +164,8 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
     client = client or Client(retries=0, timeout=20)
     first, _, rest = query.strip().partition(" ")
     if first.lower().startswith(("https://", "http://")):
+        if first[:7].lower() == "http://":  # only https is read, and a careers site serves it too
+            first = "https://" + first[7:]
         return probe_url(first, rest.strip() or None, client)
     company = query
     matches = []

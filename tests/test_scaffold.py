@@ -334,6 +334,24 @@ def test_probe_says_what_to_try_when_a_careers_page_cannot_be_read():
     assert said.startswith("The page could not be read: HttpError. ")  # the last one, the 403
 
 
+def test_probe_reads_an_http_careers_address_over_https():
+    asked = []
+
+    def page(method, url, headers, body, timeout):
+        asked.append(url)
+        return 200, {}, b'<a href="https://boards.greenhouse.io/acme">Jobs</a>'
+
+    def board(method, url, headers, body, timeout):
+        asked.append(url)
+        if url.startswith("https://careers.acme.example"):
+            return page(method, url, headers, body, timeout)
+        return 200, {}, json.dumps({"jobs": []}).encode()
+
+    found = registry.probe("http://careers.acme.example/jobs Acme", Client(board, retries=0))
+    assert asked[0] == "https://careers.acme.example/jobs" and found["url"] == "https://careers.acme.example/jobs"
+    assert [m["ats"] for m in found["matches"]] == ["greenhouse"]  # not the advice for a page that refuses
+
+
 def test_a_workday_site_is_added_by_host_and_site(tmp_path):
     scaffold.init(tmp_path / "feed")
     root = tmp_path / "feed"

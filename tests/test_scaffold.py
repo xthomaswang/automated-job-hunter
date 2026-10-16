@@ -662,16 +662,18 @@ def test_probe_does_not_ask_for_a_search_results_page_that_robots_txt_disallows(
         assert asked == [f"{SITE}/", f"{SITE}/robots.txt"]
 
 
-def test_probe_does_not_follow_a_phenom_sites_base_url_to_another_host():
-    elsewhere = "https://careers.globex.example/us/en/"
+def test_probe_takes_a_phenom_sites_base_url_on_another_host_as_a_link_to_the_site_there():
+    elsewhere = "https://careers.acme-jobs.example/us/en/"  # where the site's settings say its root is
+    board = Boards()
+    board.workday = {"R1": wd_posting("R1")}
     files = {
         f"{SITE}/": HOME.replace('"https://careers.acme.example/us/en/"', f'"{elsewhere}"'),
         f"{elsewhere}search-results": search_page(apply_at("R1")),
     }
-    web, asked = phenom_site(files, Boards())
+    web, asked = phenom_site(files, board)
     found = registry.probe(f"{SITE}/ Acme", web)
-    assert (found["matches"], found["next"]) == ([], FRONT)
-    assert asked == [f"{SITE}/", f"{SITE}/robots.txt", f"{SITE}/global/en/search-results"]  # this host's own
+    assert [m["add"] for m in found["matches"]] == ["workday:acme.wd5.myworkdayjobs.com/External:Acme"]
+    assert asked == [f"{SITE}/", "https://careers.acme-jobs.example/robots.txt", f"{elsewhere}search-results", CXS]
 
 
 def test_probe_asks_a_site_for_more_only_when_its_page_is_phenom_and_links_no_board():
@@ -695,6 +697,75 @@ def test_probe_asks_a_site_for_more_only_when_its_page_is_phenom_and_links_no_bo
         asked.clear()
         registry.probe(f"{url} Acme", web)
         assert asked == [url, *extra]
+
+
+CAREERS = "https://www.acme.example/careers/"  # a company's careers page, on its corporate host
+JOBS = "https://careers.acme-jobs.example"  # the company's Phenom career site, on a host of its own
+BOT = '<script src="https://cdn-bot.phenompeople.com/us/en/acme/chatbot.js"></script>'  # its one sign of Phenom
+
+
+def test_probe_reads_the_search_results_page_of_the_phenom_site_a_page_links_on_another_host():
+    board = Boards()
+    board.workday = {jid: wd_posting(jid) for jid in ("R1", "R2")}
+    careers = BOT + (  # whose path, on Phenom's own host, starts like a site's page
+        '<a href="http://jobs.acme-old.example/us/en/search-results">Our old site</a>'  # not https: never followed
+        '<a href="https://192.0.2.7/us/en/job/R9">A posting</a>'  # an address, not a site's host name
+        '<a href="https://www.acme.example/us/en/students">Students</a>'  # on the page's own host
+        '<a href="https://investors.acme.example/us/en/annual-report">Investors</a>'  # not one of a site's own pages
+        f'<a href="{JOBS}/global/en/jointalentcommunity">Join our talent community</a>'
+    )
+    files = {
+        CAREERS: careers,
+        f"{JOBS}/robots.txt": "User-agent: *\nDisallow: */apply\n",
+        f"{JOBS}/global/en/search-results": search_page(apply_at("R1"), apply_at("R2")),
+    }
+    web, asked = phenom_site(files, board)
+    slept = []  # its waits, on a clock that stands still
+    web = Client(web.transport, sleep=slept.append, clock=lambda: 0.0, retries=0)
+    found = registry.probe(f"{CAREERS} Acme", web)
+    assert [(m["add"], m["postings"]) for m in found["matches"]] == [
+        ("workday:acme.wd5.myworkdayjobs.com/External:Acme", 2)
+    ]
+    assert found["unsupported"] == ["Phenom"] and "next" not in found
+    assert asked == [CAREERS, f"{JOBS}/robots.txt", f"{JOBS}/global/en/search-results", CXS]  # two more, then the board
+    assert slept == [registry.PHENOM_DELAY]  # a second between those two, and no wait before the first
+    asked.clear()
+    files[f"{SITE}/"] = HOME + f'<a href="{JOBS}/global/en/search-results">Jobs</a>'  # settings naming its own host
+    files[f"{SITE}/us/en/search-results"] = search_page(apply_at("R1"))
+    registry.probe(f"{SITE}/ Acme", web)
+    assert asked == [f"{SITE}/", f"{SITE}/robots.txt", f"{SITE}/us/en/search-results", CXS]  # as before
+
+
+def test_probe_reads_robots_txt_on_the_host_of_the_phenom_site_a_page_links():
+    files = {
+        CAREERS: BOT + f'<a href="{JOBS}/global/en/jointalentcommunity">Join our talent community</a>',
+        f"{JOBS}/global/en/search-results": search_page(apply_at("R1")),
+    }
+    for robots_txt in ("User-agent: *\nDisallow: */search-results\n", (403, {}, b"Forbidden")):
+        files[f"{JOBS}/robots.txt"] = robots_txt
+        web, asked = phenom_site(files, Boards())
+        found = registry.probe(f"{CAREERS} Acme", web)
+        assert (found["matches"], found["unsupported"], found["next"]) == ([], ["Phenom"], FRONT)
+        assert asked == [CAREERS, f"{JOBS}/robots.txt"]  # nothing more there, nor on the page's own host
+
+
+def test_probe_keeps_its_advice_when_the_site_a_page_links_on_another_host_links_no_board():
+    unrelated = "https://www.globex.example"  # another company's site, whose paths start like a Phenom site's
+    own = "https://www.acme.example"
+    files = {
+        CAREERS: BOT + f'<a href="{own}/us/en/students">Students</a><a href="{unrelated}/de/de/impressum">Impressum</a>'
+    }
+    web, asked = phenom_site(files, Boards())
+    for reply in ((404, {}, b"Not found"), (200, {}, b"<p>Search our products.</p>")):  # none, or one linking nothing
+        files[f"{unrelated}/de/de/search-results"] = reply
+        asked.clear()
+        found = registry.probe(f"{CAREERS} Acme", web)
+        assert (found["matches"], found["unsupported"], found["next"]) == ([], ["Phenom"], FRONT)
+        assert asked == [CAREERS, f"{unrelated}/robots.txt", f"{unrelated}/de/de/search-results"]
+    files[CAREERS] = BOT + '<a href="http://careers.acme-jobs.example/global/en/jointalentcommunity">Join</a>'
+    asked.clear()  # a link there on http only: the page's own host is asked, as before
+    assert registry.probe(f"{CAREERS} Acme", web)["next"] == FRONT
+    assert asked == [CAREERS, f"{own}/robots.txt", f"{own}/global/en/search-results"]
 
 
 def test_probe_knows_a_board_that_an_old_careers_address_moved_to():

@@ -506,18 +506,23 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
 # on its search-results page: server-rendered with the first ten, each with the link it is applied through,
 # often the employer's Workday site. Its other pages, such as the home page people paste, link none. Every
 # page carries the site's settings, `phApp = {...}`, whose `baseUrl` is the site's root for one country and
-# language, such as https://careers.<company>.com/us/en/, under which the search-results page is.
+# language, such as https://careers.<company>.com/us/en/, under which the search-results page is. A company's
+# careers page on its corporate host may be Phenom's only by the chatbot it loads from Phenom, and link the
+# career site on a host of its own: the path of each of the site's pages starts with the country and language
+# of the site's root, as /global/en/jointalentcommunity does.
 _PHENOM_SETTINGS = re.compile(r"\bphApp\s*=\s*(?:phApp\s*\|\|\s*)?\{")
 _PHENOM_BASE = re.compile(r'"baseUrl"\s*:\s*"([^"]{1,500})"')
 _PHENOM_PATH = re.compile(r"(?:/[A-Za-z0-9_-]+)*/?\Z")  # a root's path, such as /us/en/
 _PHENOM_LOCALE = re.compile(r"/(?:[a-z]{2}|global)/[a-z]{2}(?:[-_][a-z]{2})?(?=/|\Z)", re.I)  # /us/en, /global/en
+_PHENOM_PAGE = re.compile(r"/(?:search-results|job|jointalentcommunity)(?=/|\Z)", re.I)  # pages after the locale
+_HOST_NAME = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]\Z")  # not an address
 PHENOM_DELAY = 1.0  # seconds between requests to a Phenom site: no rate is documented
 
 
 def _search_results(landed: str, page: str) -> str:
-    """Where a Phenom site's search-results page is, on the host of the page read: under the `baseUrl` of the
-    site's settings on that page when it is on that host, else under the page's own /<country>/<language>/,
-    or under /global/en/."""
+    """Where a Phenom site's search-results page is: under the `baseUrl` of the site's settings on the page read
+    when it is on that page's host; else on the Phenom site the page links on another host; else on the page's
+    own host, under its own /<country>/<language>/, or under /global/en/."""
     parts = urlsplit(landed)
     host = (parts.hostname or "").lower()
     settings = _PHENOM_SETTINGS.search(page)
@@ -530,19 +535,49 @@ def _search_results(landed: str, page: str) -> str:
     if on_site and _PHENOM_PATH.match(base.path):
         return f"https://{host}{base.path.rstrip('/')}/search-results"
     locale = _PHENOM_LOCALE.match(parts.path)
-    return f"https://{host}{locale.group() if locale else '/global/en'}/search-results"
+    return _linked_site(host, page) or f"https://{host}{locale.group() if locale else '/global/en'}/search-results"
+
+
+def _linked_site(host: str, page: str) -> str | None:
+    """The search-results page of a Phenom site that a page on `host` links on another host, by a link whose path
+    starts with a /<country>/<language>/: on the host of the first such link to one of the site's own pages (its
+    search results, a posting under job/, or its talent community), else of the first such link, under that
+    link's /<country>/<language>/. A link that is not https on the usual port, names an address rather than a host
+    name, or leads to a system the probe reads or names, as Phenom's own hosts with its scripts and chatbot do,
+    does not count. None when the page has no such link."""
+    first = None
+    for link in _LINK.findall(page):
+        try:
+            parts = urlsplit(link)
+            other, port = (parts.hostname or "").lower(), parts.port
+        except ValueError:  # not an address
+            continue
+        locale = _PHENOM_LOCALE.match(parts.path)
+        if not locale or other == host or parts.scheme != "https" or port not in (None, 443):
+            continue
+        if len(other) > 253 or not _HOST_NAME.match(other) or _system(link) is not None:
+            continue
+        url = f"https://{other}{locale.group()}/search-results"
+        if _PHENOM_PAGE.match(parts.path, locale.end()):
+            return url
+        first = first or url
+    return first
 
 
 def _behind_phenom(client: Client, landed: str, page: str) -> list[dict[str, Any]]:
     """The boards this version reads that a Phenom site's search-results page links to, such as the Workday
     site its postings are applied through. robots.txt is read first, and the page is not asked for when it
-    disallows it: two requests at most, both to the host of the page read."""
-    host = (urlsplit(landed).hostname or "").lower()
+    disallows it: two requests at most, both to the site's host, which is the page read's unless that page
+    links the site on another host."""
     url = _search_results(landed, page)
-    if urlsplit(url).path == urlsplit(landed).path.rstrip("/"):  # the page read is that page
+    site, read = urlsplit(url), urlsplit(landed)
+    host = site.hostname or ""
+    own = host == (read.hostname or "").lower()  # the site is on the host of the page read
+    if own and site.path == read.path.rstrip("/"):  # the page read is that page
         return []
     client.space(host, PHENOM_DELAY)
-    client.sleep(PHENOM_DELAY)  # the site's page was read from this host a moment ago
+    if own:
+        client.sleep(PHENOM_DELAY)  # the site's page was read from this host a moment ago
     try:
         if not robots.permits(client, host)(url):
             return []

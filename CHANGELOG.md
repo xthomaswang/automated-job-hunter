@@ -488,3 +488,21 @@ What changes for people who run a feed. Bring a feed repo up to date with
   one posting and probe its Apply link, since Avature can also be only a front end (#88).
 - Where the page also links a system the probe reads, that board is reported as before. Only those
   markers make a page a portal, not a mention of Avature in its text.
+
+### A probe follows a careers page to the Phenom career site it links on another host
+
+- A company's careers page on its corporate host can be a Phenom page only by the chatbot it loads
+  from Phenom, and link the company's Phenom career site on a host of its own. `sources probe <url>`
+  asked for that site's search-results page on the corporate host, which has none, and gave only
+  the advice from #78 (#94). When the page read has no Phenom settings naming its own host (the
+  `baseUrl` of `phApp`) and links a page on another host whose path starts with a country and a
+  language, such as `/global/en/jointalentcommunity`, it now reads the search-results page there,
+  under that country and language, and reports a board that page links to, such as a Workday site.
+- Of such links, the first to one of a Phenom site's own pages (its search results, a posting under
+  `job/`, or its talent community) is taken, else the first. A link that is not https, names an
+  address rather than a host, or leads to Phenom's own hosts, such as those of its scripts and
+  chatbot, or to another system the probe reads or names, does not count. Settings naming another
+  host count as such a link too, where #87 asked the page's own host. With no such link, the page's
+  own host is asked, as before.
+- robots.txt is read on that host first, and the page is not asked for when robots.txt disallows
+  it or cannot be read: still at most two more requests, a second apart, and only for a Phenom page.

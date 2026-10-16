@@ -357,7 +357,8 @@ key, no cookies kept, no script run. No model was involved.
   one a minute after the previous request, and one a second after its careers page at the start of
   a later session. Two searches seven seconds apart both answered.
 - The reader keeps to one request a second. A 429 is retried twice; after that the source fails
-  that update and keeps its last snapshot.
+  that update and keeps its last snapshot. (Since #89, a 429 is retried seven times, waiting up to
+  30 seconds.)
 
 **One run of the reader.** The probe found the tenant on eightfold.ai (334 postings) in one request.
 One search there listed 3 postings and fetched 2 texts, each starting with the site's time type. The

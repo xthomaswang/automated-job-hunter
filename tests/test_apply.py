@@ -116,6 +116,29 @@ def test_a_tick_with_nothing_new_leaves_every_tracked_file_byte_identical(repo):
     assert changed == {"README.md", "feed/meta.json", "state/meta.json", "state/sources.json"}  # only the day moved
 
 
+def test_429_retries_are_reported_but_leave_every_tracked_file_byte_identical(repo):
+    root, board, answers = repo(), boards(), []
+
+    def transport(method, url, headers, body, timeout):
+        return (answers.pop(), {}, b"{}") if answers else board.transport(method, url, headers, body, timeout)
+
+    def tick_refused(times, now):
+        """A whole tick in which Acme's board, the only source, first answers 429 `times` times."""
+        answers[:] = [429] * times
+        summary = collect.run(root, Client(transport, sleep=lambda seconds: None), now)  # the retries `collect` makes
+        answer_triage(root, triage)
+        moved = advance.run(root, summary["seal"])
+        answer_assess(root, assess)
+        apply.run(root, moved["seal"])
+        return summary["sources"].get("rate_limited")
+
+    assert tick_refused(3, NOW) == {"acme": 3} and len(positions(root)) == 2  # two retries would have failed it
+    before = tracked(root)
+    assert tick_refused(3, NOW + timedelta(hours=4)) == {"acme": 3} and tracked(root) == before
+    assert tick_refused(6, NOW + timedelta(hours=5)) == {"acme": 6} and tracked(root) == before
+    assert tick_refused(0, NOW + timedelta(hours=6)) is None and tracked(root) == before
+
+
 def test_a_closed_posting_leaves_the_feed_with_a_tombstone_event(repo):
     root, board = repo(), boards()
     full_tick(root, board, triage=triage, assess=assess)

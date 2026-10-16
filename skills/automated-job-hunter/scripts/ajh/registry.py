@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -17,6 +18,7 @@ from .model import SourceError
 from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
+from .textutil import LEGAL_SUFFIXES, words_key
 
 # Career systems this version cannot read, by the hosts their public pages are on. A probe names
 # them, so that nobody keeps looking for a board that no reader exists for.
@@ -174,8 +176,127 @@ def slug_candidates(company: str) -> list[str]:
     return list(dict.fromkeys(form for form in forms if form))
 
 
-def probe(query: str, client: Client | None = None) -> dict[str, Any]:
-    """Find a company's board: by its name, trying likely slugs, or by a careers page URL."""
+# A name probe labels a board with fewer postings than this as perhaps another company's. Another company
+# with the same short name often has a board of one to three postings, and the probe's sample of three titles
+# then shows most or all of it, too little to tell whose board it is. A warning drops nothing, so a board
+# this small costs only a look at its sample.
+TINY = 5
+
+
+def _named(kind: str, payload: Any) -> list[str]:
+    """The company names a board's own listing gives: Greenhouse and Recruitee name the company on each
+    posting, SmartRecruiters on each row it lists. Lever and Ashby name none."""
+    key = {"greenhouse": "jobs", "recruitee": "offers", "smartrecruiters": "content"}.get(kind)
+    rows = payload.get(key) if key and isinstance(payload, dict) else None
+    names = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("company") if kind == "smartrecruiters" else row.get("company_name")
+        name = name.get("name") if isinstance(name, dict) else name
+        if isinstance(name, str) and name.strip():
+            names.append(" ".join(name.split()))
+    return list(dict.fromkeys(names))
+
+
+# Words that often end a company's name without telling it from another company that starts the same way,
+# like the legal suffixes: "Acme Labs" and "Acme AI" are Acme, while "Capital One" is not just Capital. Words
+# for what a company does, such as Health or Robotics, still tell companies apart, so they are not here.
+GENERIC = frozenset(
+    "ai company global group holdings hq international io lab labs software solutions systems tech technologies "
+    "technology".split()
+)
+
+
+def _distinctive(name: str) -> list[str]:
+    """The words of a company's name that tell it apart: without case, punctuation, a leading "The", or
+    legal suffixes and generic words at its end."""
+    words = words_key(name).split()
+    words = words[1:] if len(words) > 1 and words[0] == "the" else words
+    while len(words) > 1 and (words[-1] in LEGAL_SUFFIXES or words[-1] in GENERIC):
+        words.pop()
+    return words
+
+
+def _same_company(named: str, company: str) -> bool:
+    """Whether a name a board gives is the company's, as far as names tell: word by word, one begins the
+    other ("Acme" and "Acme Rocket Co."), or they differ only in spaces ("Back Market" and "Backmarket")."""
+    a, b = _distinctive(named), _distinctive(company)
+    short, long = sorted((a, b), key=len)
+    return long[: len(short)] == short or "".join(a) == "".join(b)
+
+
+def _partial(slug: str, company: str, names: list[str]) -> bool:
+    """Whether a board's slug spells only the first words of the company's name, as `capital` does for
+    Capital One, and no name the board gives spells all of them."""
+    words, key = _distinctive(company), re.sub(r"[^a-z0-9]+", "", slug.lower())
+    if not any(key == "".join(words[:n]) for n in range(1, len(words))):
+        return False
+    given = [_distinctive(name) for name in names]
+    return not any(spelled[: len(words)] == words or "".join(spelled) == "".join(words) for spelled in given)
+
+
+def _abroad(stage0: C.Stage0, places: list[str]) -> str | None:
+    """A warning when every posting of a board whose place can be read is outside the wanted regions. As in
+    stage 0, a place that cannot be read is not outside, and with no regions set nothing is."""
+    if not stage0.allowed:
+        return None
+    known, counts = 0, Counter()
+    for place in places:
+        outside = stage0.outside(place)  # empty when it is in the regions, or when it cannot be read
+        if outside:
+            known += 1
+            counts.update(outside)
+        elif stage0.places.resolve(place)[1]:
+            return None  # a posting in the wanted regions
+    if not known:
+        return None
+    ranked = sorted(counts, key=lambda code: (-counts[code], code))  # the countries most postings are in first
+    shown = ", ".join(ranked[:5]) + (f" and {len(ranked) - 5} more" if len(ranked) > 5 else "")
+    postings = f"{known} posting{'' if known == 1 else 's'}" + ("" if known == len(places) else " with a known place")
+    return f"None of its {postings} is in the wanted regions ({shown})."
+
+
+def _rated(
+    match: dict[str, Any],
+    names: list[str],
+    company: str,
+    places: list[str] | None = None,
+    stage0: C.Stage0 | None = None,
+) -> dict[str, Any]:
+    """A name probe's match with how sure it is that the board is the company's: high when the board names
+    the company, medium when it names none, its slug spells only part of the name or none of its postings
+    is in the wanted regions, and low when it may well be another company's. Every doubt comes with a
+    warning. `places` are where its postings are, when the probe read every one."""
+    count, low, medium = match["postings"], [], []
+    if count < TINY:  # whatever name it gives: a company with the same short name gives that name too
+        size = f"Only {count} posting{'' if count == 1 else 's'}" if count else "No postings"
+        low.append(f"{size}, and a board this small is often another company's with the same name.")
+    if names and not any(_same_company(name, company) for name in names):
+        low.append(f"Its postings name the company {names[0]}, not the one asked for.")
+    if _partial(match["slug"], company, names):
+        medium.append("Its slug matches only part of the name asked for.")
+    abroad = _abroad(stage0, places) if stage0 is not None and places is not None else None
+    if abroad:
+        medium.append(abroad)
+    confidence = "low" if low else "medium" if medium or not names else "high"
+    warning = " ".join(low + medium)
+    return {**match, "confidence": confidence, **({"warning": warning} if warning else {})}
+
+
+def wanted(root: Path | str) -> C.Stage0 | None:
+    """A feed's hard constraints, for a name probe to say when none of a board's postings is in the wanted
+    regions. None outside a feed, or when its criteria cannot be read: the probe then leaves that out."""
+    places = C.Places.bundled()
+    try:
+        return C.Stage0(C.load(Layout(root).criteria, places), places)
+    except C.CriteriaError:
+        return None
+
+
+def probe(query: str, client: Client | None = None, stage0: C.Stage0 | None = None) -> dict[str, Any]:
+    """Find a company's board: by its name, trying likely slugs, or by a careers page URL. A name probe
+    with a feed's hard constraints (`wanted`) also checks where each board's postings are."""
     client = client or Client(retries=0, timeout=20)
     first, _, rest = query.strip().partition(" ")
     if first.lower().startswith(("https://", "http://")):
@@ -187,23 +308,38 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
     for slug in slug_candidates(company):
         for kind in ats.ATS:
             source = {"id": "probe", "company": company, "ats": kind, "slug": slug}
-            try:
-                jobs = ats.fetch_board(client, source)
+            try:  # as ats.fetch_board reads a board, keeping the reply, which may name the board's company
+                payload = client.get(ats.feed_url(source)).raise_for_status().json()
+                jobs = ats.parse_feed(source, payload)
             except Exception:  # not there, blocked, or not a board: simply not a match
                 continue
-            matches.append(
-                {
-                    "ats": kind,
-                    "slug": slug,
-                    "postings": len(jobs),
-                    "sample": [job.title for job in jobs[:3]],
-                    "add": f"{kind}:{slug}:{company}",
-                }
-            )
+            match = {
+                "ats": kind,
+                "slug": slug,
+                "postings": len(jobs),
+                "sample": [job.title for job in jobs[:3]],
+                "add": f"{kind}:{slug}:{company}",
+            }
+            places = [job.location for job in jobs]
+            matches.append(_rated(match, _named(kind, payload), company, places, stage0))
     for slug in slug_candidates(company):  # an unknown company answers with no postings, not an error
-        found = _try({"system": "SmartRecruiters", "ats": "smartrecruiters", "slug": slug}, company, client)
-        if found.get("postings"):
-            matches.append({k: found[k] for k in ("ats", "slug", "postings", "sample", "add")})
+        try:  # still one request, now for a whole page, so that the places of up to that many postings are known
+            data = smartrecruiters.search(client, smartrecruiters.root({"slug": slug}), "", limit=smartrecruiters.PAGE)
+            rows = data["content"]
+            owner = (rows[0].get("company") or {}).get("identifier") if rows else None  # the API's own spelling
+            places = [smartrecruiters._place(row.get("location")) for row in rows]
+        except Exception:  # blocked, or not in the expected shape: simply not a match
+            continue
+        if data["totalFound"]:
+            match = {
+                "ats": "smartrecruiters",
+                "slug": owner or slug,
+                "postings": data["totalFound"],
+                "sample": [row.get("name") for row in rows[:3]],
+                "add": f"smartrecruiters:{owner or slug}:{company}",
+            }
+            read = places if len(rows) == data["totalFound"] else None  # where every posting is, or nothing
+            matches.append(_rated(match, _named("smartrecruiters", data), company, read, stage0))
     result: dict[str, Any] = {"company": company, "tried": slug_candidates(company), "matches": matches}
     if not matches:
         result["next"] = (
@@ -212,6 +348,12 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
             "mostly use other systems: find the company's careers page, or the link of one of its postings, "
             "and run `sources probe <url> <Company Name>`. It reads Workday sites and names the systems this "
             "version cannot read."
+        )
+    elif any("warning" in match for match in matches):
+        result["next"] = (
+            "A match with a warning may be another company's board. Check that its sample looks like this "
+            "company's postings before adding it; if you cannot tell, find the company's careers page, or the "
+            "link of one of its postings, and run `sources probe <url> <Company Name>` instead."
         )
     return result
 

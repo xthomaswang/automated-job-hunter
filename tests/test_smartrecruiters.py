@@ -91,6 +91,8 @@ def test_probe_finds_a_company_by_name_or_url_and_adds_it(tmp_path):
             "postings": 2,
             "sample": ["UX Researcher", "Analyst"],
             "add": "smartrecruiters:Hooli:Hooli",
+            "confidence": "low",  # two postings are too few, though its postings name the company asked for
+            "warning": "Only 2 postings, and a board this small is often another company's with the same name.",
         }
     ]
     assert registry.probe("Initrode", web)["matches"] == []  # an unknown company has no postings, not an error

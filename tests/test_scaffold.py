@@ -13,7 +13,7 @@ from ajh import feed, publish, registry, scaffold, tick
 from ajh.cli import main
 from ajh.http import Client
 from ajh.model import Job, SourceError
-from helpers import Boards, answer_assess, answer_triage, ashby_posting, posting, wd_posting
+from helpers import Boards, answer_assess, answer_triage, ashby_posting, lever_posting, posting, prose, wd_posting
 
 SKILL = Path(scaffold.SCRIPTS).parent
 REPO = SKILL.parent.parent
@@ -263,8 +263,201 @@ def test_probe_finds_a_companys_board_by_trying_likely_slugs():
 
     result = registry.probe("Acme Rocket Co.", Client(transport, retries=0))
     assert result["matches"] == [{"ats": "lever", "slug": "acme-rocket", "postings": 1, "sample": ["Propulsion Engineer"],
-                                  "add": "lever:acme-rocket:Acme Rocket Co."}]  # fmt: skip
+                                  "add": "lever:acme-rocket:Acme Rocket Co.", "confidence": "low",
+                                  "warning": f"Only 1 posting, and {SMALL}"}]  # fmt: skip
     assert registry.probe("Nobody Inc", Client(transport, retries=0))["matches"] == []
+
+
+SMALL = "a board this small is often another company's with the same name."
+PART = "Its slug matches only part of the name asked for."
+DOUBT = (
+    "A match with a warning may be another company's board. Check that its sample looks like this company's "
+    "postings before adding it; if you cannot tell, find the company's careers page, or the link of one of its "
+    "postings, and run `sources probe <url> <Company Name>` instead."
+)
+
+
+def serving(replies):
+    """A client whose transport answers each URL given with its JSON, and any other with 404."""
+
+    def transport(method, url, headers, body, timeout):
+        reply = replies.get(url)
+        return (404, {}, b"{}") if reply is None else (200, {}, json.dumps(reply).encode())
+
+    return Client(transport, retries=0)
+
+
+def offer(jid, company, location="Remote"):
+    """A posting as Recruitee's API lists it, which names its company."""
+    return {"id": jid, "title": "UX Researcher", "careers_url": f"https://acme.recruitee.com/o/{jid}",
+            "description": f"<p>{prose(jid)}</p>", "company_name": company, "location": location}  # fmt: skip
+
+
+def test_a_name_probe_says_how_sure_it_is_of_each_board_and_warns_of_another_companys():
+    web = serving(
+        {
+            "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": {
+                "jobs": [dict(posting(n), company_name="Acme, Inc.") for n in (1, 2, 3, 4, 5)]
+            },
+            "https://api.lever.co/v0/postings/acme?mode=json": [lever_posting("a1", "acme", "Social Media Manager")],
+            "https://acme.recruitee.com/api/offers/": {"offers": [offer(n, "Initech") for n in (1, 2, 3, 4, 5)]},
+            "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100&offset=0": {
+                "offset": 0,
+                "limit": 100,
+                "totalFound": 1,
+                "content": [{"id": "9", "name": "Test UAT", "company": {"identifier": "acme", "name": "Globex"}}],
+            },
+        }
+    )
+    result = registry.probe("Acme", web)
+    rated = [(m["ats"], m["postings"], m["confidence"], m.get("warning")) for m in result["matches"]]
+    assert rated == [  # every board that answered, none dropped
+        ("greenhouse", 5, "high", None),  # its postings name the company asked for
+        ("lever", 1, "low", f"Only 1 posting, and {SMALL}"),  # Lever names no company
+        ("recruitee", 5, "low", "Its postings name the company Initech, not the one asked for."),
+        ("smartrecruiters", 1, "low", f"Only 1 posting, and {SMALL} Its postings name the company Globex, not the one "
+         "asked for."),
+    ]  # fmt: skip
+    assert result["next"] == DOUBT
+
+
+def test_a_name_probe_does_not_warn_of_boards_that_look_like_the_companys():
+    web = serving(
+        {
+            "https://boards-api.greenhouse.io/v1/boards/globex/jobs?content=true": {
+                "jobs": [dict(posting(n), company_name="Globex Corporation") for n in range(1, 6)]
+            },
+            "https://api.lever.co/v0/postings/globex?mode=json": [
+                lever_posting(f"g{n}", "globex") for n in range(1, 6)
+            ],
+        }
+    )
+    result = registry.probe("Globex", web)
+    rated = [(m["ats"], m["confidence"]) for m in result["matches"]]
+    assert rated == [("greenhouse", "high"), ("lever", "medium")]  # Lever names no company: only its address matches
+    assert not any("warning" in m for m in result["matches"]) and "next" not in result
+
+
+def test_a_name_probe_warns_of_a_board_of_fewer_than_five_postings():
+    web = serving(
+        {
+            "https://api.ashbyhq.com/posting-api/job-board/initech": {
+                "jobs": [ashby_posting(f"i{n}", "initech") for n in range(1, 4)]  # another company's, as it was met
+            },
+            "https://api.lever.co/v0/postings/initech?mode=json": [
+                lever_posting(f"i{n}", "initech") for n in range(1, 6)
+            ],
+        }
+    )
+    result = registry.probe("Initech", web)
+    rated = [(m["ats"], m["postings"], m["confidence"], m.get("warning")) for m in result["matches"]]
+    assert rated == [("ashby", 3, "low", f"Only 3 postings, and {SMALL}"), ("lever", 5, "medium", None)]
+    assert result["next"] == DOUBT
+
+
+def test_a_name_probe_warns_when_a_boards_slug_matches_only_part_of_the_name():
+    def named(company, count):  # a Greenhouse board whose postings name their company
+        return {"jobs": [dict(posting(n), company_name=company) for n in range(1, count + 1)]}
+
+    web = serving(
+        {  # Capital One's name run together or hyphenated finds nothing; its first word finds three boards
+            "https://boards-api.greenhouse.io/v1/boards/capital/jobs?content=true": named("Capital", 10),
+            "https://api.lever.co/v0/postings/capital?mode=json": [
+                lever_posting(f"c{n}", "capital") for n in range(50)
+            ],
+            "https://capital.recruitee.com/api/offers/": {"offers": [offer(n, "Capital One") for n in range(1, 9)]},
+            "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": named("Acme", 6),
+        }
+    )
+    capital = registry.probe("Capital One", web)
+    rated = [(m["ats"], m["slug"], m["confidence"], m.get("warning")) for m in capital["matches"]]
+    assert rated == [
+        ("greenhouse", "capital", "medium", PART),  # its postings name only that word
+        ("lever", "capital", "medium", PART),  # Lever names no company
+        ("recruitee", "capital", "high", None),  # its postings name the whole company
+    ]
+    assert capital["next"] == DOUBT
+    for name in ("Acme Inc", "Acme Labs"):  # a legal suffix, or a generic word at the end, is not a part to match
+        found = registry.probe(name, web)
+        assert [(m["slug"], m["confidence"], m.get("warning")) for m in found["matches"]] == [("acme", "high", None)]
+        assert "next" not in found
+
+
+ABROAD = "None of its 61 postings is in the wanted regions (DE, GB)."
+
+
+def test_a_name_probe_in_a_feed_warns_when_none_of_a_boards_postings_is_in_its_regions(repo, monkeypatch, capsys):
+    root = repo(criteria={"locations": {"regions": ["US"]}})
+    stage0 = registry.wanted(root)
+    assert stage0 is not None and registry.wanted(root / "elsewhere") is None  # outside a feed nothing is checked
+
+    def row(jid, place, company="Globex"):  # a SmartRecruiters posting, which names its company
+        return {"id": jid, "name": "UX Researcher", "company": {"identifier": company.lower(), "name": company},
+                "location": {"fullLocation": place}}  # fmt: skip
+
+    abroad = [posting(n, location="London, United Kingdom" if n % 3 == 0 else "Berlin, Germany") for n in range(1, 62)]
+    replies = {
+        "https://boards-api.greenhouse.io/v1/boards/globex/jobs?content=true": {  # a company of that name abroad
+            "jobs": [dict(job, company_name="Globex") for job in abroad]
+        },
+        "https://api.lever.co/v0/postings/globex?mode=json": [  # sales agents in another country, some placed vaguely
+            lever_posting(f"g{n}", "globex", location="Remote" if n < 3 else "Lagos, Nigeria") for n in range(39)
+        ],
+        "https://globex.recruitee.com/api/offers/": {  # one of its postings is in the wanted regions
+            "offers": [offer(n, "Globex", "Austin, TX" if n == 1 else "London") for n in range(1, 7)]
+        },
+        "https://api.smartrecruiters.com/v1/companies/globex/postings?limit=100&offset=0": {
+            "offset": 0,
+            "limit": 100,
+            "totalFound": 5,
+            "content": [row(str(n), "Munich, Bavaria, Germany") for n in range(5)],
+        },
+    }
+    found = registry.probe("Globex", serving(replies), stage0=stage0)
+    rated = [(m["ats"], m["confidence"], m.get("warning")) for m in found["matches"]]
+    assert rated == [
+        ("greenhouse", "medium", ABROAD),  # though its postings name the company asked for
+        ("lever", "medium", "None of its 36 postings with a known place is in the wanted regions (NG)."),
+        ("recruitee", "high", None),
+        ("smartrecruiters", "medium", "None of its 5 postings is in the wanted regions (DE)."),
+    ]
+    assert found["next"] == DOUBT
+    plain = registry.probe("Globex", serving(replies))  # no feed, no regions
+    assert [m.get("warning") for m in plain["matches"]] == [None] * 4 and "next" not in plain
+    page = [row(str(n), "Munich, Bavaria, Germany", "Initech") for n in range(100)]  # one page of more postings
+    more = {"https://api.smartrecruiters.com/v1/companies/initech/postings?limit=100&offset=0": {
+        "offset": 0, "limit": 100, "totalFound": 120, "content": page}}  # fmt: skip
+    assert registry.probe("Initech", serving(more), stage0=stage0)["matches"][0]["confidence"] == "high"  # unread
+    monkeypatch.setattr(registry, "Client", lambda **settings: serving(replies))  # what the command reads with
+    assert main(["--repo", str(root), "sources", "probe", "Globex"]) == 0
+    assert json.loads(capsys.readouterr().out)["matches"][0]["warning"] == ABROAD
+
+
+def test_a_name_probe_does_not_warn_of_a_board_whose_postings_are_in_the_wanted_regions(repo):
+    stage0 = registry.wanted(repo(criteria={"locations": {"regions": ["US"]}}))
+    places = ("Austin, TX", "New York, NY", "Remote", "San Francisco, CA", "London, United Kingdom")
+    jobs = [dict(posting(n, location=places[n % len(places)]), company_name="Initech") for n in range(1, 23)]
+    web = serving({"https://boards-api.greenhouse.io/v1/boards/initech/jobs?content=true": {"jobs": jobs}})
+    found = registry.probe("Initech", web, stage0=stage0)
+    assert [(m["postings"], m["confidence"], m.get("warning")) for m in found["matches"]] == [(22, "high", None)]
+    assert "next" not in found
+
+
+@pytest.mark.parametrize(
+    ("named", "company", "same"),
+    [
+        ("ACME, Inc.", "Acme", True),
+        ("Acme", "Acme Rocket Co.", True),  # one begins the other
+        ("The Acme Company", "Acme", True),
+        ("Acme Technologies", "Acme Labs", True),  # generic words at the end tell nothing apart
+        ("Backmarket", "Back Market", True),
+        ("Initech", "Acme", False),
+        ("Acmeville Bakery", "Acme", False),  # a longer word is another name
+        ("Acme Dental", "Acme Rocket", False),
+    ],
+)
+def test_a_name_a_board_gives_is_compared_word_by_word(named, company, same):
+    assert registry._same_company(named, company) is same
 
 
 def test_an_ashby_board_whose_name_has_a_space_or_a_dot_is_added_and_its_host_named(repo):

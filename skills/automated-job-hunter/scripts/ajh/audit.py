@@ -14,7 +14,7 @@ from . import decisions
 from .layout import Layout
 
 GENERATED = ("README.md", "positions.jsonl", "jobs", "feed", "state")
-HAND_WRITTEN = ("profile", "config")
+HAND_WRITTEN = ("profile", "config", "readers")  # what people edit; readers/ holds the feed's own readers
 SECRET_ENV = (
     "GH_TOKEN",
     "GITHUB_TOKEN",

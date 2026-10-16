@@ -218,3 +218,6 @@ What changes for people who run a feed. Bring a feed repo up to date with
   failed before its type was known.
 - `upgrade` and `init` leave `readers/` alone. The workflow now also starts when `readers/` changes
   on `main`; run `upgrade` to bring that line into a feed's workflow.
+- `readers/` counts as hand-written, like `profile/` and `config/`: `hunter audit` refuses a
+  reader holding a credential, and a run that finishes after a push to `readers/` lands on top of
+  it instead of stopping as `stale_base`.

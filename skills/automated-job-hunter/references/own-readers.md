@@ -163,7 +163,8 @@ second request: build each `Job` with its `description` and return the list.
 3. Run `sources hosts`, and check that it lists every host the reader contacts.
 4. Commit `readers/` and the entry together. A full update refuses to publish from uncommitted
    files, and a push that changes `readers/` starts the scheduled workflow, as one that changes
-   `profile/` or `config/` does.
+   `profile/` or `config/` does. `hunter audit` checks `readers/` for credentials as it checks those
+   folders, and a run that finishes after such a push lands on top of it.
 
 `hunter upgrade` replaces the engine and its own files only; it never touches `readers/`. A reader
 that uses only the names listed above keeps working across engine versions.

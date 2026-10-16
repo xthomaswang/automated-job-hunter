@@ -3,9 +3,10 @@
 Most boards return every posting with its text in one response. A detail source (Workday,
 SmartRecruiters, a GitHub job list) lists postings without their text and needs one more request
 per posting for it. Workday and SmartRecruiters are read through searches; a list names its
-postings itself. Their text is fetched only where `collect` needs it. `collect` passes a rank
-function for that: it returns None for a posting whose text would not be used this update, or
-one of the ranks below, and the adapter fetches text in rank order within its per-update budget.
+postings itself, and so does a Radancy TalentBrew site's sitemap. Their text is fetched only where
+`collect` needs it. `collect` passes a rank function for that: it returns None for a posting whose
+text would not be used this update, or one of the ranks below, and the adapter fetches text in rank
+order within its per-update budget.
 A posting it did not fetch text for comes back with `detail_skipped`. `collect` keeps a new one out
 of the state until an update brings its text (it was never known, so nothing closes) and counts it
 as waiting for its text.
@@ -18,17 +19,17 @@ from typing import Any, Optional
 
 from ..http import Client
 from ..model import Job, SourceError
-from . import aggregators, ats, eightfold, lists, smartrecruiters, successfactors, workday
+from . import aggregators, ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
 
 KINDS = (*ats.ATS, "aggregator", *workday.KINDS, *smartrecruiters.KINDS, *lists.KINDS, *successfactors.KINDS)
-KINDS += eightfold.KINDS
+KINDS += eightfold.KINDS + radancy.KINDS
 QUERY_SCOPED = (
     *workday.KINDS,
     *smartrecruiters.KINDS,
     *eightfold.KINDS,
     *successfactors.KINDS,
 )  # read through their own search, by default for the wanted roles
-DETAILED = (*QUERY_SCOPED, *lists.KINDS)  # list postings without their text; see `fetch`
+DETAILED = (*QUERY_SCOPED, *lists.KINDS, *radancy.KINDS)  # list postings without their text; see `fetch`
 
 # Text first for a posting about to be judged, then for a new one, then for one whose listing changed
 # (it is judged again once its text comes), and last for a listed one, which needs it only to rewrite
@@ -62,4 +63,6 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Rank | None = None) -
         return eightfold.fetch(client, source, rank)
     if kind in successfactors.KINDS:
         return successfactors.fetch(client, source, rank)
+    if kind in radancy.KINDS:
+        return radancy.fetch(client, source, rank)
     raise SourceError(f"Unknown source type {kind!r} for {source.get('id')!r}")

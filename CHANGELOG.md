@@ -164,6 +164,23 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - Some sites on a company's own host answer 429 (too many requests) after a few requests, even at
   one a second. That update then skips the source and keeps its last snapshot.
 
+### Radancy TalentBrew career sites
+
+- New source type `radancy`, added as `radancy:<host>:Company`. It covers TalentBrew career sites on
+  a company's own host. `sources probe` recognizes such a site from its careers page or one
+  posting's page.
+- The site's sitemap is the listing, read whole every update, so `queries` do not apply. A
+  posting's title and city come from its link. Its text, date and own address come from its page,
+  fetched on demand under `max_details` (100), one request a second. A posting whose own address is
+  outside `locations.regions` is parked, and its employment type is written at the top of its text.
+- Each update first reads the site's robots.txt and fails the source if it disallows the sitemap
+  or the postings. A sitemap that cannot be read, one sitemap of an index that fails, or more than
+  one posting link in twenty in a shape the reader does not know also fails the source, which keeps
+  its last snapshot.
+- On a Python whose robots.txt parser is older than RFC 9309, such as 3.9, a site whose robots.txt
+  has Allow lines, wildcards or repeated groups is not read, because that parser can read them as
+  allowing what the file disallows.
+
 ### One Workday requisition that a list names on two sites is judged once
 
 - A job list can name one Workday requisition on two sites of a tenant, sometimes with the company

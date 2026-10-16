@@ -1,0 +1,14 @@
+# Synthetic: the shape of the robots.txt a TalentBrew career site serves.
+User-agent: *
+Disallow: /search-jobs
+Disallow: /en/search-jobs
+Disallow: /location/
+Disallow: /en/location/
+Disallow: /category/
+Disallow: /en/category/
+Disallow: /employment/
+Disallow: /en/employment/
+Disallow: /job_location/
+Disallow: /en/job_location/
+
+Sitemap: https://careers.acme.com/sitemap.xml

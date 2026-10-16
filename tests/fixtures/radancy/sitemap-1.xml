@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic: the first sitemap named by sitemap-index.xml. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://careers.acme.com/</loc><lastmod>2026-10-15T06:00:00+00:00</lastmod></url>
+  <url><loc>https://careers.acme.com/en/job/springfield/retail-store-associate/1234/55500011122</loc><lastmod>2026-10-15T06:00:00+00:00</lastmod></url>
+  <url><loc>https://careers.acme.com/job/shelbyville/assistant-store-manager/1234/55500011123</loc><lastmod>2026-10-15T06:00:00+00:00</lastmod></url>
+</urlset>

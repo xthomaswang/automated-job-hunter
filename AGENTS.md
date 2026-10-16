@@ -11,7 +11,9 @@ changing the code. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   source posting, validated as verbatim substrings.
 - Failed or unvalidated model output never becomes a fact. It is re-queued with feedback.
 - Adapters refuse partial snapshots: raise rather than return an incomplete board, so an outage
-  cannot close live jobs.
+  cannot close live jobs. The one exception is a row that is plainly no posting a person could
+  open, such as a Workday row with neither a link nor a title: skip it, count it with
+  `sources/skips.py`, and raise when such rows are more than a few.
 - Unknown is not a negative. Stage 0 drops only on positive evidence; missing years are unknown,
   not zero; preferred is not required.
 - Sponsorship and citizenship flags come from fixed rules over the posting text, preferring a missed

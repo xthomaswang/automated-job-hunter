@@ -70,6 +70,10 @@ file.
 - **Cost**: every update that judged is logged with its tokens and Claude Code's list-price
   estimate, in `feed/usage.jsonl` and the feed's README. A monthly budget
   (`caps.max_usd_per_month` in `profile/criteria.json`) pauses judging once it is reached.
+- **Where it looks**: the job boards in `config/sources.json`. A career site the engine has no
+  reader for, such as one employer's own site, can get a reader kept in your private feed repo
+  ([own readers](skills/automated-job-hunter/references/own-readers.md)). That reader is code that
+  runs during every update, under the same rules as the built-in readers.
 
 A model never touches git or a link, never sees a credential, and in a scheduled run has no shell
 and no network: it can read packets and write result files, nothing else.

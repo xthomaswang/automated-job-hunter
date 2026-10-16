@@ -164,23 +164,6 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - Some sites on a company's own host answer 429 (too many requests) after a few requests, even at
   one a second. That update then skips the source and keeps its last snapshot.
 
-### Radancy TalentBrew career sites
-
-- New source type `radancy`, added as `radancy:<host>:Company`. It covers TalentBrew career sites on
-  a company's own host. `sources probe` recognizes such a site from its careers page or one
-  posting's page.
-- The site's sitemap is the listing, read whole every update, so `queries` do not apply. A
-  posting's title and city come from its link. Its text, date and own address come from its page,
-  fetched on demand under `max_details` (100), one request a second. A posting whose own address is
-  outside `locations.regions` is parked, and its employment type is written at the top of its text.
-- Each update first reads the site's robots.txt and fails the source if it disallows the sitemap
-  or the postings. A sitemap that cannot be read, one sitemap of an index that fails, or more than
-  one posting link in twenty in a shape the reader does not know also fails the source, which keeps
-  its last snapshot.
-- The engine reads robots.txt itself, as RFC 9309 says, so a file gives the same answer on every
-  Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
-  the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.
-
 ### One Workday requisition that a list names on two sites is judged once
 
 - A job list can name one Workday requisition on two sites of a tenant, sometimes with the company
@@ -214,3 +197,44 @@ What changes for people who run a feed. Bring a feed repo up to date with
   - Otherwise it keeps the grouping it had. No new variant is made without a comparison.
 - Variants that came apart under an earlier version are not all grouped again. One whose lead was
   dropped at triage is triaged once on its own.
+
+### A feed can carry its own readers
+
+- A feed repo can keep reader modules in a `readers/` folder at its root, for a career site no
+  built-in reader reads: one employer's own site, say, or one whose employer you would rather not
+  name in a public repo. Each module declares a source type (`KIND`), which a source in
+  `config/sources.json` names with `"ats"`, and a `fetch` that returns every posting or raises
+  `SourceError`, as the built-in readers do. Optional flags have it searched for the wanted roles
+  (`QUERY_SCOPED`) or fetch texts on demand (`DETAILED`), and `HOSTS` or `hosts(source)` names its
+  hosts for `sources hosts`. `references/own-readers.md` has the contract, the names a reader may
+  import, and a skeleton.
+- A reader is code. It runs during `collect`, `sources test` and `sources hosts`, with the
+  workflow's permissions, and must keep to the built-in readers' rules. `status` loads the readers
+  too, to list the types they provide and every file not used, with the reason. Nothing the judging
+  step runs ever loads them.
+- A file that fails to load, or declares an invalid type, a built-in one or one another file
+  declares, fails only the sources of that type, with the file and the reason; they keep their last
+  snapshot. A type that no reader declares is still a configuration error, unless a reader file
+  failed before its type was known.
+- `upgrade` and `init` leave `readers/` alone. The workflow now also starts when `readers/` changes
+  on `main`; run `upgrade` to bring that line into a feed's workflow.
+- `readers/` counts as hand-written, like `profile/` and `config/`: `hunter audit` refuses a
+  reader holding a credential, and a run that finishes after a push to `readers/` lands on top of
+  it instead of stopping as `stale_base`.
+
+### Radancy TalentBrew career sites
+
+- New source type `radancy`, added as `radancy:<host>:Company`. It covers TalentBrew career sites on
+  a company's own host. `sources probe` recognizes such a site from its careers page or one
+  posting's page.
+- The site's sitemap is the listing, read whole every update, so `queries` do not apply. A
+  posting's title and city come from its link. Its text, date and own address come from its page,
+  fetched on demand under `max_details` (100), one request a second. A posting whose own address is
+  outside `locations.regions` is parked, and its employment type is written at the top of its text.
+- Each update first reads the site's robots.txt and fails the source if it disallows the sitemap
+  or the postings. A sitemap that cannot be read, one sitemap of an index that fails, or more than
+  one posting link in twenty in a shape the reader does not know also fails the source, which keeps
+  its last snapshot.
+- The engine reads robots.txt itself, as RFC 9309 says, so a file gives the same answer on every
+  Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
+  the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.

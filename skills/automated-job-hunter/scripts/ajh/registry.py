@@ -379,7 +379,8 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
 
 def hosts(root: Path | str) -> dict[str, Any]:
     """The hosts a tick contacts, for a network allowlist."""
-    found = set()
+    found, unlisted = set(), {}
+    own = S.load_own(root)  # the feed's own readers, which name their hosts themselves
     for source in read_json(Layout(root).sources, []):
         if source["ats"] in ats.ATS:
             found.add(urlsplit(ats.feed_url(source)).hostname)
@@ -397,13 +398,19 @@ def hosts(root: Path | str) -> dict[str, Any]:
             found.update(lists.HOSTS)  # a list can lead to any board on the systems it reads
         elif source.get("provider") in PROVIDERS:
             found.add(urlsplit(PROVIDERS[source["provider"]][2]).hostname)
-    return {"hosts": sorted(found)}
+        elif own.claims(source["ats"]):  # a reader in the feed's readers/ names its own hosts
+            try:
+                found.update(own.hosts(source))
+            except SourceError as error:
+                unlisted[source["id"]] = str(error)
+    return {"hosts": sorted(found), **({"unlisted": unlisted} if unlisted else {})}
 
 
 def test(root: Path | str, client: Client | None = None) -> dict[str, Any]:
     """Read every configured source once and report what each returned. Changes nothing."""
     client = client or Client(retries=0)
     layout = Layout(root)
+    own = S.load_own(layout.root)
     try:
         criteria = C.load(layout.criteria, C.Places.bundled())
     except C.CriteriaError:
@@ -419,4 +426,4 @@ def test(root: Path | str, client: Client | None = None) -> dict[str, Any]:
         except Exception as error:
             report[source["id"]] = {"error": f"{type(error).__name__}: {str(error)[:160]}"}
     failing = sorted(sid for sid, result in report.items() if "error" in result)
-    return {"sources": report, "failing": failing}
+    return {"sources": report, "failing": failing, **({"readers": own.report()} if own.found else {})}

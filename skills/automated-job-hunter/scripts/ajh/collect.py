@@ -64,10 +64,12 @@ def load_sources(path: Path) -> list[dict[str, Any]]:
         if sid in ids:
             problems.append(f"source id {sid!r} is repeated")
         ids.add(sid)
-        if entry.get("ats") not in S.KINDS:
+        if not S.known(entry.get("ats")):
             problems.append(f"{sid}: unknown source type {entry.get('ats')!r}")
         company = entry.get("company")
-        if entry.get("ats") not in ("aggregator", *L.KINDS) and not (isinstance(company, str) and company.strip()):
+        # An employer's board names its company. A feed's own reader checks the fields it reads itself.
+        board = entry.get("ats") in S.KINDS and entry.get("ats") not in ("aggregator", *L.KINDS)
+        if board and not (isinstance(company, str) and company.strip()):
             problems.append(f"{sid}: company is required")
         if entry.get("ats") in L.KINDS:
             problems.extend(L.problems(entry))
@@ -183,7 +185,7 @@ def reconcile(
             # A detail source's postings arrive over several updates as their text is fetched, so
             # the backfill limit applies to each one as it arrives, not only to the first read.
             parked = not away and (
-                (first_snapshot or source.get("ats") in S.DETAILED)
+                (first_snapshot or S.detailed(source.get("ats")))
                 and backfill_days is not None
                 and (age_days(item.job.posted_at, today) or 0) > backfill_days
             )
@@ -554,6 +556,7 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     places = C.Places.bundled()
     criteria = C.load(layout.criteria, places)
     profile_text = layout.profile.read_text(encoding="utf-8") if layout.profile.exists() else ""
+    S.load_own(layout.root)  # before the sources are checked: they may name the types of the feed's own readers
     sources = [S.scoped(source, criteria) for source in load_sources(layout.sources)]
     state = State(layout.state)
     client = client or Client()

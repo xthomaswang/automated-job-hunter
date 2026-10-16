@@ -196,6 +196,11 @@ Workday this goes by requisition, whatever the site: one requisition that a list
 sites of a tenant is judged once too. Each update fetches the text of up to 50 of a list's new
 postings (`max_details`), so a long list fills in over a few updates.
 
+A career site that no reader in this version reads, such as one employer's own site, can still be a
+source when the user wants it: the feed repo can carry its own reader for it, in a `readers/`
+folder. That reader is code that runs during every update, so write it only when the user asks for
+it, and follow [own-readers.md](own-readers.md).
+
 ## 5. Create the feed repo
 
 Ask where it should live (a new, empty directory) and confirm before creating anything.

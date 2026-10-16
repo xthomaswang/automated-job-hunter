@@ -127,6 +127,24 @@ def test_a_run_lands_on_top_of_a_persons_edit_merged_while_it_ran(feed_repo, tmp
     assert (root / "profile/profile.md").read_text() == "Five years of research, and now teaching."
 
 
+def test_a_run_lands_on_top_of_a_reader_edit_merged_while_it_ran(feed_repo, tmp_path_factory):
+    root, remote = feed_repo
+    edited = push_from_elsewhere(remote, tmp_path_factory, "readers/acme_jobs.py", "KIND = 'acme-jobs'\n")
+    tick(root)
+    result = publish.run(root)
+    assert (result["state"], result["pushed"], result["replayed"]) == ("published", True, ["readers/acme_jobs.py"])
+    assert git(remote, "rev-parse", "main^") == edited
+
+
+def test_a_feeds_own_reader_holds_no_credentials(feed_repo):
+    root, _ = feed_repo
+    (root / "readers").mkdir()
+    (root / "readers" / "acme_jobs.py").write_text("KIND = 'acme-jobs'\nTOKEN = 'ghp_" + "c" * 36 + "'\n")
+    assert audit.check(root) == ["readers/acme_jobs.py contains a GitHub token"]
+    with pytest.raises(publish.PublishBlocked, match="Audit failed"):
+        publish.run(root)
+
+
 def test_no_replay_over_generated_files_or_past_other_unpushed_work(feed_repo, tmp_path_factory, monkeypatch, capsys):
     root, remote = feed_repo
     ahead = push_from_elsewhere(remote, tmp_path_factory, "README.md", "edited by hand")
@@ -136,7 +154,7 @@ def test_no_replay_over_generated_files_or_past_other_unpushed_work(feed_repo, t
     assert git(remote, "rev-parse", "main") == ahead
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     assert main(["--repo", str(root), "publish"]) == 0  # a warning on the run, not a failure
-    assert "::warning::Nothing was pushed: the remote moved, with changes outside profile/ and config/" in (
+    assert "::warning::Nothing was pushed: the remote moved, with changes outside profile/, config/ and readers/" in (
         capsys.readouterr().err
     )
 

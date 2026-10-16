@@ -136,7 +136,7 @@ def _replay(git: Git, remote: str, branch: str, identity: tuple[str, ...]) -> tu
     """Put this engine's commit on top of a remote that moved, when nothing it was made from is lost.
 
     Only when the commit is one this engine made and the one thing the remote lacks, and everything
-    the remote gained since is a person's input (profile/ or config/), as when two edits are merged
+    the remote gained since is a person's input (profile/, config/ or readers/), as when two edits are merged
     seconds apart and each starts a run. A person's own commit is never moved. The verdicts were made
     from the earlier input; the next run judges again whatever the new input changes, exactly as
     after any edit to the profile. Returns the paths the remote gained, or None and the reason the
@@ -155,7 +155,7 @@ def _replay(git: Git, remote: str, branch: str, identity: tuple[str, ...]) -> tu
     gained = git.out("diff", "--name-only", base, "FETCH_HEAD").splitlines()
     outside = [path for path in gained if path.split("/")[0] not in audit.HAND_WRITTEN]
     if outside:
-        return None, "the remote moved, with changes outside profile/ and config/: " + ", ".join(outside[:5])
+        return None, "the remote moved, with changes outside profile/, config/ and readers/: " + ", ".join(outside[:5])
     if git.run("reset", "-q", "--keep", "FETCH_HEAD", check=False).returncode:
         return None, "the remote moved, and the working tree could not follow it"
     if git.run("cherry-pick", ours, check=False, config=(*identity, "commit.gpgsign=false")).returncode:

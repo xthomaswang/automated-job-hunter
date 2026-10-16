@@ -11,7 +11,8 @@ open postings that match, each with an assessment.
 
 | Path | Who writes it |
 |---|---|
-| `profile/`, `config/` | The person, or an agent they asked. These are the only inputs. |
+| `profile/`, `config/` | The person, or an agent they asked. These are the inputs. |
+| `readers/`, if present | The person, or an agent they asked: readers of the feed's own, for career sites the engine has no reader for. Each file is code that runs while the boards are read, so never add or change one without the person's say-so. |
 | `README.md`, `positions.jsonl`, `jobs/`, `feed/`, `state/` | The engine. Never edit these by hand: `apply` refuses to run on a tree with uncommitted changes, and hand edits are overwritten or break the next tick. |
 | `.hunter/`, `.claude/agents/`, `.github/workflows/job-hunter.yml`, this file, `HANDOFF.md` | The engine's own files, replaced by `hunter upgrade`. |
 | `.hunter/work/` | Scratch space for one tick, ignored by git. |

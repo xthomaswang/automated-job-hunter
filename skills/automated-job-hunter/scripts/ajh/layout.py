@@ -12,6 +12,7 @@ class Layout:
         self.profile = self.root / "profile" / "profile.md"
         self.decisions = self.root / "profile" / "decisions.jsonl"
         self.sources = self.root / "config" / "sources.json"
+        self.readers = self.root / "readers"  # the feed's own reader modules, if any (see sources/own.py)
         self.state = self.root / "state"
         # The published feed.
         self.readme = self.root / "README.md"

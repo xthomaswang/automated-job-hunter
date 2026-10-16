@@ -14,11 +14,12 @@ as waiting for its text.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, Optional
 
 from ..http import Client
 from ..model import Job, SourceError
-from . import aggregators, ats, eightfold, lists, smartrecruiters, successfactors, workday
+from . import aggregators, ats, eightfold, lists, own, smartrecruiters, successfactors, workday
 
 KINDS = (*ats.ATS, "aggregator", *workday.KINDS, *smartrecruiters.KINDS, *lists.KINDS, *successfactors.KINDS)
 KINDS += eightfold.KINDS
@@ -37,9 +38,34 @@ PENDING, NEW, CHANGED, LISTED = 0, 1, 2, 3
 Rank = Callable[[Job], Optional[int]]
 
 
+def load_own(root: Path | str) -> own.Loaded:
+    """Load the feed's own readers from its `readers/` folder, once per process (see `own`).
+
+    Only the commands that read sources call this. Until then, and while postings are judged, no
+    code from the feed runs.
+    """
+    return own.load(root, KINDS)
+
+
+def known(kind: Any) -> bool:
+    """A type a source may name: a built-in one, or the feed's own readers'. The type of a module
+    that failed to load counts too: each of its sources then fails, with the reason."""
+    return kind in KINDS or own.current.claims(kind)
+
+
+def query_scoped(kind: Any) -> bool:
+    """Read through its own search, by default for the wanted and related roles (see `scoped`)."""
+    return kind in QUERY_SCOPED or own.current.query_scoped(kind)
+
+
+def detailed(kind: Any) -> bool:
+    """Lists postings without their text, so `collect` passes a rank function (see `fetch`)."""
+    return kind in DETAILED or own.current.detailed(kind)
+
+
 def scoped(source: Mapping[str, Any], criteria: Mapping[str, Any]) -> Mapping[str, Any]:
     """A searched source with its queries: its own, or else the wanted and related roles."""
-    if source.get("ats") not in QUERY_SCOPED or source.get("queries"):
+    if not query_scoped(source.get("ats")) or source.get("queries"):
         return source
     targets = criteria["targets"]
     return {**source, "queries": list(dict.fromkeys([*targets["roles"], *targets["adjacent"]]))}
@@ -48,6 +74,8 @@ def scoped(source: Mapping[str, Any], criteria: Mapping[str, Any]) -> Mapping[st
 def fetch(client: Client, source: Mapping[str, Any], rank: Rank | None = None) -> list[Job]:
     """A board's postings. Without `rank`, a detail source fetches no text (enough to count them)."""
     kind = source.get("ats")
+    if own.current.claims(kind):  # the feed's own readers, and the types they declared but cannot read
+        return own.current.fetch(client, source, rank)
     if kind in ats.ATS:
         return ats.fetch_board(client, source)
     if kind == "aggregator":

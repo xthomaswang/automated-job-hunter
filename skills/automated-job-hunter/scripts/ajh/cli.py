@@ -21,6 +21,7 @@ from .model import SourceError
 from .packets import ProfileTooLong
 from .publish import PublishBlocked
 from .scaffold import ScaffoldError
+from .sources import load_own
 from .state import StateError, read_json
 from .timer import TimerError
 
@@ -101,9 +102,13 @@ def _audit(args: argparse.Namespace) -> dict[str, Any]:
 def _status(args: argparse.Namespace) -> dict[str, Any]:
     layout = Layout(args.repo)
     meta = read_json(layout.feed_meta, {})
+    # The types the feed's own readers provide, and the files not used and why. Loading them runs
+    # their code, as `sources test` does; nothing the judging step runs ever loads them.
+    readers = load_own(layout.root)
     return {
         "engine": scaffold.verify(layout.root),
         "sources_configured": len(read_json(layout.sources, [])),
+        **({"readers": readers.report()} if readers.found else {}),
         "as_of": meta.get("as_of"),
         "counts": meta.get("counts"),
         "triage_check": meta.get("canary"),

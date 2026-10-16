@@ -571,11 +571,14 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     to_fetch = [s for s in sources if due(s)]
     ranks = {s["id"]: detail_rank(state.rows(s["id"]), stage0, generations) for s in to_fetch}
 
-    def fetch(source: Mapping[str, Any]) -> list[Job] | Exception:
-        try:
-            return S.fetch(client, source, ranks[source["id"]])
-        except Exception as error:  # any failure keeps this source's previous snapshot in force
-            return error
+    def fetch(source: Mapping[str, Any]) -> tuple[list[Job] | Exception, int]:
+        """The source's postings, or why it failed, and how many 429 retries reading it took."""
+        with client.tally() as by_host:  # this thread reads only this source until the block ends
+            try:
+                result: list[Job] | Exception = S.fetch(client, source, ranks[source["id"]])
+            except Exception as error:  # any failure keeps this source's previous snapshot in force
+                result = error
+        return result, sum(by_host.values())
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         fetched = dict(zip((s["id"] for s in to_fetch), pool.map(fetch, to_fetch)))
@@ -608,7 +611,9 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         interval = source.get("min_fetch_interval_seconds", 0)
         if interval:  # a failed attempt uses up the interval too
             info["next_after"] = (now + timedelta(seconds=interval)).replace(second=0, microsecond=0).isoformat()
-        result = fetched[sid]
+        result, refused = fetched[sid]
+        if refused:  # for display only, like `failures`: so a site's real rate can be read off a run
+            summary["sources"].setdefault("rate_limited", {})[sid] = refused
         if isinstance(result, Exception):
             info["error"] = _failure(result)
             info.setdefault("fail_since", today.isoformat())

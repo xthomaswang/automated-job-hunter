@@ -11,6 +11,7 @@ from ajh.sources import lists as L
 
 SITE = "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1"
 WHY = "Oracle Recruiting Cloud (its job APIs are only for Oracle and approved partners)"
+FILE = "https://objectstorage.us-ashburn-1.oraclecloud.com/n/acme/b/web/o/team.jpg"  # Oracle Cloud's object storage
 
 
 def web(pages=None):
@@ -31,6 +32,7 @@ def web(pages=None):
         SITE + "/requisitions",  # the career site
         SITE + "/job/1001",  # one posting
         "https://globex.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/77",  # a host without a region
+        "https://initech.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/42",  # on Oracle's OCS hosts
     ],
 )
 def test_a_career_site_or_posting_is_named_with_why_and_never_requested(url):
@@ -51,3 +53,23 @@ def test_a_careers_page_linking_to_it_names_it_and_a_lists_link_to_it_is_skipped
     assert (found["matches"], found["unsupported"]) == ([], [WHY, "Oracle Taleo"])  # Taleo is a system of its own
     assert asked == ["https://www.hooli.example/careers"]  # the company's own page, once
     assert L.link(SITE + "/job/1001") is None and L._why(SITE + "/job/1001") == "no reader"
+
+
+def test_only_oracle_fusion_hosts_are_oracle_recruiting_cloud():
+    for host in ("acme.fa.us2.oraclecloud.com", "acme.fa.oraclecloud.com", "acme.fa.ocs.oraclecloud.com"):
+        found = registry._system(f"https://{host}/hcmUI/CandidateExperience/en/sites/CX_1/requisitions")
+        assert found == {"system": WHY, "supported": False}
+    assert registry._system(FILE) is None  # Oracle Cloud serves much more than career sites
+    assert registry._system("https://xfa.oraclecloud.com/careers") is None  # fa must be a whole label
+
+
+def test_a_careers_page_whose_only_oracle_cloud_link_is_a_file_names_no_system():
+    image = f'<img src="{FILE}" alt="Our team">'
+    fusion = '<a href="https://initech.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1">Jobs</a>'
+    client, asked = web({"https://careers.acme.example/": image, "https://careers.initech.example/": image + fusion})
+    found = registry.probe_url("https://careers.acme.example/", "Acme", client)
+    assert (found["matches"], found["unsupported"]) == ([], [])
+    assert found["next"].startswith("No link to a known career system on that page")
+    other = registry.probe_url("https://careers.initech.example/", "Initech", client)  # a link to a career site
+    assert (other["matches"], other["unsupported"]) == ([], [WHY])
+    assert asked == ["https://careers.acme.example/", "https://careers.initech.example/"]  # only the companies' pages

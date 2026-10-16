@@ -239,6 +239,14 @@ What changes for people who run a feed. Bring a feed repo up to date with
   Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
   the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.
 
+### The probe names Oracle Recruiting Cloud only for Oracle Fusion's hosts
+
+- `sources probe <url>` named Oracle Recruiting Cloud, and said there was no board to add, for a
+  careers page that linked to anything on `oraclecloud.com`, such as an image in Oracle's object
+  storage. It now names it only for Oracle Fusion's hosts, `<tenant>.fa.<region>.oraclecloud.com`
+  or `<tenant>.fa.oraclecloud.com`. Links to other Oracle Cloud hosts are passed over, like links
+  to any host no system is known for.
+
 ### A probe that cannot read a careers page says what to try instead
 
 - When `sources probe <url>` cannot read a company's careers page (a timeout, a refusal, or a bot

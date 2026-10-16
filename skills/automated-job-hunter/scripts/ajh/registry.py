@@ -20,7 +20,12 @@ from .state import read_json, write_text
 # Career systems this version cannot read, by the hosts their public pages are on. A probe names
 # them, so that nobody keeps looking for a board that no reader exists for.
 UNSUPPORTED = (
-    (r"(^|\.)oraclecloud\.com$", "Oracle Recruiting Cloud (its job APIs are only for Oracle and approved partners)"),
+    # Oracle Fusion's hosts, <tenant>.fa.<region>.oraclecloud.com with or without the region. Oracle Cloud
+    # serves much else under oraclecloud.com, such as files in object storage that a careers page shows.
+    (
+        r"(^|\.)fa(\.[a-z0-9-]+)*\.oraclecloud\.com$",
+        "Oracle Recruiting Cloud (its job APIs are only for Oracle and approved partners)",
+    ),
     (r"(^|\.)taleo\.net$", "Oracle Taleo"),
     (r"(^|\.)icims\.com$", "iCIMS (its terms forbid automated reading of its career sites)"),
     (r"(^|\.)(successfactors|sapsf)\.(com|eu)$", "SAP SuccessFactors on SAP's own hosts (closed by robots.txt)"),

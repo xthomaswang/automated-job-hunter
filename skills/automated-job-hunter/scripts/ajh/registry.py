@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -225,10 +226,38 @@ def _partial(slug: str, company: str, names: list[str]) -> bool:
     return not any(spelled[: len(words)] == words or "".join(spelled) == "".join(words) for spelled in given)
 
 
-def _rated(match: dict[str, Any], names: list[str], company: str) -> dict[str, Any]:
+def _abroad(stage0: C.Stage0, places: list[str]) -> str | None:
+    """A warning when every posting of a board whose place can be read is outside the wanted regions. As in
+    stage 0, a place that cannot be read is not outside, and with no regions set nothing is."""
+    if not stage0.allowed:
+        return None
+    known, counts = 0, Counter()
+    for place in places:
+        outside = stage0.outside(place)  # empty when it is in the regions, or when it cannot be read
+        if outside:
+            known += 1
+            counts.update(outside)
+        elif stage0.places.resolve(place)[1]:
+            return None  # a posting in the wanted regions
+    if not known:
+        return None
+    ranked = sorted(counts, key=lambda code: (-counts[code], code))  # the countries most postings are in first
+    shown = ", ".join(ranked[:5]) + (f" and {len(ranked) - 5} more" if len(ranked) > 5 else "")
+    postings = f"{known} posting{'' if known == 1 else 's'}" + ("" if known == len(places) else " with a known place")
+    return f"None of its {postings} is in the wanted regions ({shown})."
+
+
+def _rated(
+    match: dict[str, Any],
+    names: list[str],
+    company: str,
+    places: list[str] | None = None,
+    stage0: C.Stage0 | None = None,
+) -> dict[str, Any]:
     """A name probe's match with how sure it is that the board is the company's: high when the board names
-    the company, medium when it names none or its slug spells only part of the name, and low when it may
-    well be another company's. Every doubt comes with a warning."""
+    the company, medium when it names none, its slug spells only part of the name or none of its postings
+    is in the wanted regions, and low when it may well be another company's. Every doubt comes with a
+    warning. `places` are where its postings are, when the probe read every one."""
     count, low, medium = match["postings"], [], []
     if count < TINY:  # whatever name it gives: a company with the same short name gives that name too
         size = f"Only {count} posting{'' if count == 1 else 's'}" if count else "No postings"
@@ -237,13 +266,27 @@ def _rated(match: dict[str, Any], names: list[str], company: str) -> dict[str, A
         low.append(f"Its postings name the company {names[0]}, not the one asked for.")
     if _partial(match["slug"], company, names):
         medium.append("Its slug matches only part of the name asked for.")
+    abroad = _abroad(stage0, places) if stage0 is not None and places is not None else None
+    if abroad:
+        medium.append(abroad)
     confidence = "low" if low else "medium" if medium or not names else "high"
     warning = " ".join(low + medium)
     return {**match, "confidence": confidence, **({"warning": warning} if warning else {})}
 
 
-def probe(query: str, client: Client | None = None) -> dict[str, Any]:
-    """Find a company's board: by its name, trying likely slugs, or by a careers page URL."""
+def wanted(root: Path | str) -> C.Stage0 | None:
+    """A feed's hard constraints, for a name probe to say when none of a board's postings is in the wanted
+    regions. None outside a feed, or when its criteria cannot be read: the probe then leaves that out."""
+    places = C.Places.bundled()
+    try:
+        return C.Stage0(C.load(Layout(root).criteria, places), places)
+    except C.CriteriaError:
+        return None
+
+
+def probe(query: str, client: Client | None = None, stage0: C.Stage0 | None = None) -> dict[str, Any]:
+    """Find a company's board: by its name, trying likely slugs, or by a careers page URL. A name probe
+    with a feed's hard constraints (`wanted`) also checks where each board's postings are."""
     client = client or Client(retries=0, timeout=20)
     first, _, rest = query.strip().partition(" ")
     if first.lower().startswith(("https://", "http://")):
@@ -267,12 +310,26 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
                 "sample": [job.title for job in jobs[:3]],
                 "add": f"{kind}:{slug}:{company}",
             }
-            matches.append(_rated(match, _named(kind, payload), company))
+            places = [job.location for job in jobs]
+            matches.append(_rated(match, _named(kind, payload), company, places, stage0))
     for slug in slug_candidates(company):  # an unknown company answers with no postings, not an error
-        found = _try({"system": "SmartRecruiters", "ats": "smartrecruiters", "slug": slug}, company, client)
-        if found.get("postings"):
-            match = {k: found[k] for k in ("ats", "slug", "postings", "sample", "add")}
-            matches.append(_rated(match, found.get("named", []), company))
+        try:  # still one request, now for a whole page, so that the places of up to that many postings are known
+            data = smartrecruiters.search(client, smartrecruiters.root({"slug": slug}), "", limit=smartrecruiters.PAGE)
+            rows = data["content"]
+            owner = (rows[0].get("company") or {}).get("identifier") if rows else None  # the API's own spelling
+            places = [smartrecruiters._place(row.get("location")) for row in rows]
+        except Exception:  # blocked, or not in the expected shape: simply not a match
+            continue
+        if data["totalFound"]:
+            match = {
+                "ats": "smartrecruiters",
+                "slug": owner or slug,
+                "postings": data["totalFound"],
+                "sample": [row.get("name") for row in rows[:3]],
+                "add": f"smartrecruiters:{owner or slug}:{company}",
+            }
+            read = places if len(rows) == data["totalFound"] else None  # where every posting is, or nothing
+            matches.append(_rated(match, _named("smartrecruiters", data), company, read, stage0))
     result: dict[str, Any] = {"company": company, "tried": slug_candidates(company), "matches": matches}
     if not matches:
         result["next"] = (
@@ -363,9 +420,8 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             rows = data["content"]
             slug = ((rows[0].get("company") or {}).get("identifier") if rows else None) or found["slug"]
             count, sample = data["totalFound"], [row.get("name") for row in rows]
-            add, names = f"smartrecruiters:{slug}:{company}", _named("smartrecruiters", data)  # a name probe checks it
-            return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add,
-                    "named": names}  # fmt: skip
+            add = f"smartrecruiters:{slug}:{company}"
+            return {**found, "slug": slug, "supported": True, "postings": count, "sample": sample[:3], "add": add}
         elif found["ats"] == "eightfold":
             client.space(found["host"], eightfold.DELAY)
             named = found.get("domain") or eightfold.page_domain(

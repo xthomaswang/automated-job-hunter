@@ -127,8 +127,8 @@ def _sources(args: argparse.Namespace) -> dict[str, Any]:
         return registry.add(args.repo, args.items)
     if args.action == "remove":
         return registry.remove(args.repo, args.items)
-    if args.action == "probe":
-        return registry.probe(" ".join(args.items))
+    if args.action == "probe":  # in a feed, a name probe also checks a board's places against its regions
+        return registry.probe(" ".join(args.items), stage0=registry.wanted(args.repo))
     if args.action == "hosts":
         return registry.hosts(args.repo)
     return registry.test(args.repo)

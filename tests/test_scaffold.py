@@ -301,9 +301,9 @@ def test_a_name_probe_says_how_sure_it_is_of_each_board_and_warns_of_another_com
             },
             "https://api.lever.co/v0/postings/acme?mode=json": [lever_posting("a1", "acme", "Social Media Manager")],
             "https://acme.recruitee.com/api/offers/": {"offers": [offer(n, "Initech") for n in (1, 2, 3, 4, 5)]},
-            "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=3&offset=0": {
+            "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100&offset=0": {
                 "offset": 0,
-                "limit": 3,
+                "limit": 100,
                 "totalFound": 1,
                 "content": [{"id": "9", "name": "Test UAT", "company": {"identifier": "acme", "name": "Globex"}}],
             },
@@ -381,6 +381,66 @@ def test_a_name_probe_warns_when_a_boards_slug_matches_only_part_of_the_name():
         found = registry.probe(name, web)
         assert [(m["slug"], m["confidence"], m.get("warning")) for m in found["matches"]] == [("acme", "high", None)]
         assert "next" not in found
+
+
+ABROAD = "None of its 61 postings is in the wanted regions (DE, GB)."
+
+
+def test_a_name_probe_in_a_feed_warns_when_none_of_a_boards_postings_is_in_its_regions(repo, monkeypatch, capsys):
+    root = repo(criteria={"locations": {"regions": ["US"]}})
+    stage0 = registry.wanted(root)
+    assert stage0 is not None and registry.wanted(root / "elsewhere") is None  # outside a feed nothing is checked
+
+    def row(jid, place, company="Globex"):  # a SmartRecruiters posting, which names its company
+        return {"id": jid, "name": "UX Researcher", "company": {"identifier": company.lower(), "name": company},
+                "location": {"fullLocation": place}}  # fmt: skip
+
+    abroad = [posting(n, location="London, United Kingdom" if n % 3 == 0 else "Berlin, Germany") for n in range(1, 62)]
+    replies = {
+        "https://boards-api.greenhouse.io/v1/boards/globex/jobs?content=true": {  # a company of that name abroad
+            "jobs": [dict(job, company_name="Globex") for job in abroad]
+        },
+        "https://api.lever.co/v0/postings/globex?mode=json": [  # sales agents in another country, some placed vaguely
+            lever_posting(f"g{n}", "globex", location="Remote" if n < 3 else "Lagos, Nigeria") for n in range(39)
+        ],
+        "https://globex.recruitee.com/api/offers/": {  # one of its postings is in the wanted regions
+            "offers": [offer(n, "Globex", "Austin, TX" if n == 1 else "London") for n in range(1, 7)]
+        },
+        "https://api.smartrecruiters.com/v1/companies/globex/postings?limit=100&offset=0": {
+            "offset": 0,
+            "limit": 100,
+            "totalFound": 5,
+            "content": [row(str(n), "Munich, Bavaria, Germany") for n in range(5)],
+        },
+    }
+    found = registry.probe("Globex", serving(replies), stage0=stage0)
+    rated = [(m["ats"], m["confidence"], m.get("warning")) for m in found["matches"]]
+    assert rated == [
+        ("greenhouse", "medium", ABROAD),  # though its postings name the company asked for
+        ("lever", "medium", "None of its 36 postings with a known place is in the wanted regions (NG)."),
+        ("recruitee", "high", None),
+        ("smartrecruiters", "medium", "None of its 5 postings is in the wanted regions (DE)."),
+    ]
+    assert found["next"] == DOUBT
+    plain = registry.probe("Globex", serving(replies))  # no feed, no regions
+    assert [m.get("warning") for m in plain["matches"]] == [None] * 4 and "next" not in plain
+    page = [row(str(n), "Munich, Bavaria, Germany", "Initech") for n in range(100)]  # one page of more postings
+    more = {"https://api.smartrecruiters.com/v1/companies/initech/postings?limit=100&offset=0": {
+        "offset": 0, "limit": 100, "totalFound": 120, "content": page}}  # fmt: skip
+    assert registry.probe("Initech", serving(more), stage0=stage0)["matches"][0]["confidence"] == "high"  # unread
+    monkeypatch.setattr(registry, "Client", lambda **settings: serving(replies))  # what the command reads with
+    assert main(["--repo", str(root), "sources", "probe", "Globex"]) == 0
+    assert json.loads(capsys.readouterr().out)["matches"][0]["warning"] == ABROAD
+
+
+def test_a_name_probe_does_not_warn_of_a_board_whose_postings_are_in_the_wanted_regions(repo):
+    stage0 = registry.wanted(repo(criteria={"locations": {"regions": ["US"]}}))
+    places = ("Austin, TX", "New York, NY", "Remote", "San Francisco, CA", "London, United Kingdom")
+    jobs = [dict(posting(n, location=places[n % len(places)]), company_name="Initech") for n in range(1, 23)]
+    web = serving({"https://boards-api.greenhouse.io/v1/boards/initech/jobs?content=true": {"jobs": jobs}})
+    found = registry.probe("Initech", web, stage0=stage0)
+    assert [(m["postings"], m["confidence"], m.get("warning")) for m in found["matches"]] == [(22, "high", None)]
+    assert "next" not in found
 
 
 @pytest.mark.parametrize(

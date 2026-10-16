@@ -344,6 +344,14 @@ What changes for people who run a feed. Bring a feed repo up to date with
   - `medium`, with a `warning`, when the slug that found the board spells only the first words of the
     name, as `capital` does for "Capital One", and no name its postings give spells all of them.
     Many companies' names start with such a word.
+  - `medium`, with a `warning`, when the probe runs in a feed (`--repo`, with
+    `profile/criteria.json`) and every posting of the board whose place can be read is outside
+    `locations.regions`: "None of its 39 postings is in the wanted regions (NG)." The places are
+    read as stage 0 reads them, and a place that cannot be read is not outside, so a board with a
+    posting in the regions has no warning. Where some places cannot be read, the warning counts
+    the postings "with a known place". Outside a feed, or with no regions set, the places are not
+    checked. Name probes met same-named companies abroad this way, and a board of sales agents in
+    another country.
   - `low`, with a `warning`, when the board has fewer than 5 postings, or its postings name another
     company. A board that small is often another company's with the same name: name probes met
     such boards of one to three postings, and the sample of three titles then shows most or all of
@@ -359,5 +367,6 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - When any match has a warning, `next` says to check that its sample looks like the company's
   postings before adding it, or to probe the company's careers page, or one of its postings,
   instead.
-- No match is dropped, and the probe makes no more requests than before. A SmartRecruiters match
-  from `sources probe <url>` now also shows the company names its postings give, under `named`.
+- No match is dropped, and the probe makes no more requests than before. Its one request to a
+  SmartRecruiters company now asks for a page of 100 postings instead of 3, to know where they are;
+  a company with more postings than that is not checked for its places.

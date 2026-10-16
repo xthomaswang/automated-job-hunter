@@ -13,7 +13,7 @@ from ajh import feed, publish, registry, scaffold, tick
 from ajh.cli import main
 from ajh.http import Client
 from ajh.model import Job, SourceError
-from helpers import Boards, answer_assess, answer_triage, lever_posting, posting, prose, wd_posting
+from helpers import Boards, answer_assess, answer_triage, ashby_posting, lever_posting, posting, prose, wd_posting
 
 SKILL = Path(scaffold.SCRIPTS).parent
 REPO = SKILL.parent.parent
@@ -294,7 +294,7 @@ def test_a_name_probe_says_how_sure_it_is_of_each_board_and_warns_of_another_com
     web = serving(
         {
             "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": {
-                "jobs": [dict(posting(n), company_name="Acme, Inc.") for n in (1, 2, 3, 4)]
+                "jobs": [dict(posting(n), company_name="Acme, Inc.") for n in (1, 2, 3, 4, 5)]
             },
             "https://api.lever.co/v0/postings/acme?mode=json": [lever_posting("a1", "acme", "Social Media Manager")],
             "https://acme.recruitee.com/api/offers/": {"offers": [offer(n, "Initech") for n in (1, 2, 3, 4, 5)]},
@@ -309,7 +309,7 @@ def test_a_name_probe_says_how_sure_it_is_of_each_board_and_warns_of_another_com
     result = registry.probe("Acme", web)
     rated = [(m["ats"], m["postings"], m["confidence"], m.get("warning")) for m in result["matches"]]
     assert rated == [  # every board that answered, none dropped
-        ("greenhouse", 4, "high", None),  # its postings name the company asked for
+        ("greenhouse", 5, "high", None),  # its postings name the company asked for
         ("lever", 1, "low", f"Only 1 posting, and {SMALL}"),  # Lever names no company
         ("recruitee", 5, "low", "Its postings name the company Initech, not the one asked for."),
         ("smartrecruiters", 1, "low", f"Only 1 posting, and {SMALL} Its postings name the company Globex, not the one "
@@ -322,15 +322,34 @@ def test_a_name_probe_does_not_warn_of_boards_that_look_like_the_companys():
     web = serving(
         {
             "https://boards-api.greenhouse.io/v1/boards/globex/jobs?content=true": {
-                "jobs": [dict(posting(n), company_name="Globex Corporation") for n in (1, 2, 3)]
+                "jobs": [dict(posting(n), company_name="Globex Corporation") for n in range(1, 6)]
             },
-            "https://api.lever.co/v0/postings/globex?mode=json": [lever_posting(f"g{n}", "globex") for n in (1, 2, 3)],
+            "https://api.lever.co/v0/postings/globex?mode=json": [
+                lever_posting(f"g{n}", "globex") for n in range(1, 6)
+            ],
         }
     )
     result = registry.probe("Globex", web)
     rated = [(m["ats"], m["confidence"]) for m in result["matches"]]
     assert rated == [("greenhouse", "high"), ("lever", "medium")]  # Lever names no company: only its address matches
     assert not any("warning" in m for m in result["matches"]) and "next" not in result
+
+
+def test_a_name_probe_warns_of_a_board_of_fewer_than_five_postings():
+    web = serving(
+        {
+            "https://api.ashbyhq.com/posting-api/job-board/initech": {
+                "jobs": [ashby_posting(f"i{n}", "initech") for n in range(1, 4)]  # another company's, as it was met
+            },
+            "https://api.lever.co/v0/postings/initech?mode=json": [
+                lever_posting(f"i{n}", "initech") for n in range(1, 6)
+            ],
+        }
+    )
+    result = registry.probe("Initech", web)
+    rated = [(m["ats"], m["postings"], m["confidence"], m.get("warning")) for m in result["matches"]]
+    assert rated == [("ashby", 3, "low", f"Only 3 postings, and {SMALL}"), ("lever", 5, "medium", None)]
+    assert result["next"] == DOUBT
 
 
 @pytest.mark.parametrize(

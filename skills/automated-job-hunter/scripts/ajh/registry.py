@@ -166,9 +166,10 @@ def slug_candidates(company: str) -> list[str]:
 
 
 # A name probe labels a board with fewer postings than this as perhaps another company's. Another company
-# with the same short name often has a board of one or two postings, and the probe's sample of three titles
-# then shows all of it, which is too little to tell whose board it is.
-TINY = 3
+# with the same short name often has a board of one to three postings, and the probe's sample of three titles
+# then shows most or all of it, too little to tell whose board it is. A warning drops nothing, so a board
+# this small costs only a look at its sample.
+TINY = 5
 
 
 def _named(kind: str, payload: Any) -> list[str]:

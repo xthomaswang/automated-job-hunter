@@ -341,11 +341,12 @@ What changes for people who run a feed. Bring a feed repo up to date with
   - `high` when the board's postings name the company asked for. Greenhouse, Recruitee and
     SmartRecruiters name it in the reply the probe already reads.
   - `medium` when they name no company, as on Lever and Ashby, so only the board's address matches.
-  - `low`, with a `warning`, when the board has fewer than 3 postings, or its postings name another
-    company. A board that small is often another company's with the same name, and the sample of
-    three titles then shows all of it, too little to tell whose board it is. It is flagged even
-    when it names the company asked for, since a company with the same short name names itself the
-    same way.
+  - `low`, with a `warning`, when the board has fewer than 5 postings, or its postings name another
+    company. A board that small is often another company's with the same name: name probes met
+    such boards of one to three postings, and the sample of three titles then shows most or all of
+    it, too little to tell whose board it is. A warning drops nothing, so it costs only a look at
+    the sample. A small board is flagged even when it names the company asked for, since a company
+    with the same short name names itself the same way.
 - Names are compared word by word, without case, punctuation, a leading "The" or a trailing legal
   suffix such as Inc or GmbH. One beginning the other counts as the same, as "Acme" and "Acme Rocket
   Co." do, and so does a difference only in spaces, as in "Back Market" and "Backmarket".

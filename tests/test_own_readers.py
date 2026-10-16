@@ -326,6 +326,24 @@ def test_a_reader_that_breaks_fails_only_its_own_sources_which_keep_their_last_s
     assert status["readers"]["errors"]["readers/acme.py"].startswith("failed to load: SyntaxError")
 
 
+@pytest.mark.parametrize("length, shown", [(600, 600), (1500, 1000)])
+def test_sources_test_shows_a_sources_whole_error_and_collect_up_to_1000_characters(tmp_path, length, shown):
+    every = "; ".join(f"the search for 'role {n}' matches more than 500 postings" for n in range(40))
+    error = every[:length]  # from a reader that names every search too wide to read in full
+    failing = (
+        'from ajh.model import SourceError\n\nKIND = "acme-careers"\n\n\n'
+        f"def fetch(client, source, rank=None):\n    raise SourceError({error!r})\n"
+    )
+    root = make_feed(tmp_path, [ACME, GLOBEX], {"acme.py": failing})
+    site = Site(globex=[posting(1)])
+    summary = tick(root, site)
+    assert len(error) == length and summary["sources"]["failures"] == {"acme": f"SourceError: {error[:shown]}"}
+    info = json.loads((Layout(root).state / "sources.json").read_text())
+    assert info["acme"]["error"] == "SourceError" and "fail_since" in info["acme"]  # what the state keeps stays short
+    tested = registry.test(root, Client(site.transport, sleep=lambda s: None, retries=0))
+    assert tested["sources"]["acme"] == {"error": f"SourceError: {error}"}  # it stores nothing, so all of it
+
+
 def test_a_reader_may_not_take_a_built_in_type_or_one_another_reader_declares(tmp_path):
     readers = {
         "greenhouse.py": reader("greenhouse"),

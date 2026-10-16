@@ -239,6 +239,30 @@ What changes for people who run a feed. Bring a feed repo up to date with
   Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
   the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.
 
+### The probe names Oracle Recruiting Cloud only for Oracle Fusion's hosts
+
+- `sources probe <url>` named Oracle Recruiting Cloud, and said there was no board to add, for a
+  careers page that linked to anything on `oraclecloud.com`, such as an image in Oracle's object
+  storage. It now names it only for Oracle Fusion's hosts, `<tenant>.fa.<region>.oraclecloud.com`
+  or `<tenant>.fa.oraclecloud.com`. Links to other Oracle Cloud hosts are passed over, like links
+  to any host no system is known for.
+
+### A probe that cannot read a careers page says what to try instead
+
+- When `sources probe <url>` cannot read a company's careers page (a timeout, a refusal, or a bot
+  filter's 403), it still names the error and now says what to try: open one of the company's
+  postings and probe the URL of its page or its Apply link, or probe the company's name. Trying the
+  same page again seldom helps when a site refuses scripted requests.
+- An `http://` careers address is probed over `https://`, as the engine reads only https. It used to
+  fail on that alone.
+
+### `sources test` and `collect` show more of a source's error
+
+- `sources test` now shows a failing source's whole error, where it showed 160 characters, so an
+  error that lists several problems shows every one. `collect` shows up to 1,000 characters of it
+  under `sources.failures`, where it showed 200. The state still records only the error's type or
+  HTTP status, and the README and `feed/meta.json` still name only the failing sources.
+
 ### Every country's name is read in a posting's place
 
 - The place table now has every country, all 249 ISO 3166 codes, under its English name, common

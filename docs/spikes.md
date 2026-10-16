@@ -440,14 +440,15 @@ in a posting's shape alone proves nothing.
 **robots.txt** disallows the search, category, location and employment pages, such as
 `/search-jobs`, `/en/search-jobs`, `/location/`, `/category/`, `/employment/` and `/job_location/`, and
 names `Sitemap: https://careers.acme.com/sitemap.xml`. So the reader never reads those pages. Each
-update reads robots.txt first and refuses the site if it disallows the sitemap or any posting, for
-every crawler or for this reader by name. Python's `urllib.robotparser` does not read every file
-alike: on Python 3.9 it applies the first matching rule, reads `*` and `$` as plain characters, and
-reads only the first group for an agent, while the version shipped with Python 3.13 here follows RFC
-9309 (the longest match wins, with wildcards). `Allow: /` followed by `Disallow: /en/job/` allows the
-postings on 3.9 and disallows them under the RFC. So where the parser is the older one, only a file
-whose rules for these agents are plain Disallow prefixes, one group each, is trusted; any other is
-refused rather than possibly misread.
+update reads robots.txt first and refuses the site if it disallows the sitemap or any posting.
+The engine reads the rules itself (`ajh/robots.py`), as RFC 9309 says: the groups naming its product
+token (`automated-job-hunter`), or else every group for `*`, merged; the longest matching pattern
+wins, Allow on a tie; `*` matches any run of characters and a final `$` the end; an empty Disallow
+matches nothing. `urllib.robotparser` answers differently by Python version. On 3.9.6 here it
+applies the first matching rule and reads `*` and `$` as plain characters, so `Allow: /` followed by
+`Disallow: /en/job/` allows the postings, which the RFC disallows. It also rewrites a rule's path
+through urlparse and urlunparse, so `Disallow: /?` (the root with a query string) blocks `/about`
+and every other page there, while the 3.13.15 here reads both files as the RFC does.
 
 **The sitemap** is a sitemaps.org 0.9 `<urlset>` (an index of them, `<sitemapindex>`, is read too,
 only its sitemaps on the site's own host). A posting's `<loc>` is

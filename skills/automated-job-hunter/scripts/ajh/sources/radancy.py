@@ -24,10 +24,10 @@ from dataclasses import replace
 from html.parser import HTMLParser
 from typing import Any, NamedTuple
 from urllib.parse import SplitResult, quote, unquote, urlsplit
-from urllib.robotparser import RobotFileParser
 from xml.etree import ElementTree
 
-from ..http import USER_AGENT, Client, HttpError
+from .. import robots
+from ..http import Client, HttpError
 from ..model import Job, SourceError
 from ..textutil import html_to_text, words_key
 from . import lazy
@@ -42,7 +42,6 @@ MAX_SITEMAPS = 50  # the sitemaps an index names are all read on every update, o
 # of them break, and the source fails instead of closing its postings. `collect` holds only a sharp
 # shrink (over 40%, and only once), so a smaller loss has to be refused here.
 MALFORMED = 20
-AGENT = USER_AGENT.split("/")[0]  # this reader's own name, as a robots.txt would name it
 # A career site is on the employer's own domain: a plain host name, not an address.
 _HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]\Z")
 _LANG = re.compile(r"[a-z]{2}(?:-[a-z0-9]{2,4})?\Z", re.I)  # a language segment, such as en or fr-ca
@@ -71,68 +70,26 @@ def site(source: Mapping[str, Any]) -> str:
     return host
 
 
-def _follows_rfc9309() -> bool:
-    """Whether this Python's robots.txt parser follows RFC 9309, applying the longest matching rule.
-
-    Python 3.9's applies the first matching rule, reads `*` and `$` as plain characters, and reads
-    only the first group for an agent, so on some files it allows what the RFC disallows.
-    """
-    probe = RobotFileParser()
-    probe.parse(["User-agent: *", "Disallow: /", "Allow: /a"])
-    return probe.can_fetch("*", "/a")
+def _target(url: str) -> str:
+    """What robots.txt rules are matched against: a URL's path and query, as they are sent."""
+    parts = urlsplit(url)
+    return (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
 
 
-_RFC9309 = _follows_rfc9309()
+def _permits(client: Client, host: str) -> Callable[[str], bool]:
+    """What the site's robots.txt, as it reads now, lets this reader fetch: a test of one URL there.
 
-
-def _misread(lines: list[str]) -> bool:
-    """Whether a parser older than RFC 9309 may read this file as allowing what the RFC disallows.
-
-    It reads the same as the RFC when the groups that apply here (for every crawler, or naming this
-    reader) are one per agent and hold only Disallow rules without wildcards. An empty Disallow, which
-    allows everything, counts as an allowing rule unless it is the group's only rule.
-    """
-    groups: list[tuple[list[str], list[tuple[bool, str]]]] = []
-    for raw in lines:
-        field, _, value = raw.split("#", 1)[0].partition(":")
-        field, value = field.strip().lower(), value.strip()
-        if field == "user-agent":
-            if not groups or groups[-1][1]:
-                groups.append(([], []))
-            groups[-1][0].append(value.lower())
-        elif field in ("allow", "disallow") and groups:
-            groups[-1][1].append((field == "allow", value))
-    every = [rules for agents, rules in groups if "*" in agents]
-    ours = [rules for agents, rules in groups if any(a and a != "*" and a in AGENT for a in agents)]
-    if len(every) > 1 or len(ours) > 1:
-        return True
-    for rules in every + ours:
-        if any(allow or "*" in path or "$" in path or (not path and len(rules) > 1) for allow, path in rules):
-            return True
-    return False
-
-
-def robots(client: Client, host: str) -> Callable[[str], bool]:
-    """Whether the site's robots.txt, as it reads now, lets this reader fetch a URL there.
-
-    Read as Python's `RobotFileParser.read` would: none (another 4xx) disallows nothing; 401 or 403
-    disallows everything; a 429, a 5xx or a failed request says nothing now, so nothing is read. A URL
-    must be allowed for every crawler (`*`) and for this reader by name.
+    None (another 4xx) disallows nothing; 401 or 403 disallows everything; a 429, a 5xx or a failed
+    request says nothing now, so nothing is read (RFC 9309, 2.3.1). The rules are read as the RFC
+    says (`ajh.robots`), the same on every Python version.
     """
     reply = client.get(f"https://{host}/robots.txt")
     if reply.status in (401, 403):
         raise SourceError(f"robots.txt on {host} answers HTTP {reply.status}, which disallows the whole site")
     if 400 <= reply.status < 500 and reply.status != 429:
         return lambda url: True  # no robots.txt: nothing is disallowed (RFC 9309, 2.3.1.3)
-    lines = reply.raise_for_status().text.splitlines()
-    if not _RFC9309 and _misread(lines):
-        raise SourceError(
-            f"robots.txt on {host} has rules that this Python's robots.txt parser, older than RFC 9309, may "
-            "misread (Allow, wildcards, or several groups for one agent), so the site is not read here"
-        )
-    parser = RobotFileParser()
-    parser.parse(lines)
-    return lambda url: all(parser.can_fetch(agent, url) for agent in ("*", AGENT))
+    text = reply.raise_for_status().text
+    return lambda url: robots.allowed(text, client.user_agent, _target(url))
 
 
 def _split(loc: str | None) -> SplitResult | None:
@@ -227,22 +184,22 @@ def _postings(host: str, locs: list[str | None]) -> list[Listed]:
 
 def listing(client: Client, host: str) -> list[Listed]:
     """Every posting the site's sitemap names, once robots.txt allows reading it and them."""
-    allowed = robots(client, host)
+    permits = _permits(client, host)
     root = f"https://{host}/sitemap.xml"
-    if not allowed(root):
+    if not permits(root):
         raise SourceError(f"robots.txt on {host} disallows its sitemap, so the site cannot be read")
     index, locs = _read(client, root)
     if index:
         children, locs = _children(host, locs), []
         for child in children:
-            if not allowed(child):
+            if not permits(child):
                 raise SourceError(f"robots.txt on {host} disallows its sitemap {child}, so the site cannot be read")
             nested, found = _read(client, child)
             if nested:
                 raise SourceError(f"The sitemap {child} is an index inside an index, which sitemaps do not allow")
             locs += found
     postings = _postings(host, locs)
-    refused = next((posting.url for posting in postings if not allowed(posting.url)), None)
+    refused = next((posting.url for posting in postings if not permits(posting.url)), None)
     if refused:
         raise SourceError(
             f"robots.txt on {host} disallows postings such as {urlsplit(refused).path}, so the site cannot be read"

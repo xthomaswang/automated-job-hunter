@@ -11,7 +11,6 @@ from ajh import sources as S
 from ajh.criteria import Places, Stage0
 from ajh.http import Client, HttpError
 from ajh.model import SourceError
-from ajh.sources import radancy
 from ajh.state import tag
 from helpers import rows, tick
 
@@ -180,19 +179,33 @@ def test_stage_0_reads_the_links_and_a_posting_its_own_record_puts_elsewhere_is_
         ("User-agent: *\nDisallow: /en/job/\n", ["/robots.txt", "/sitemap.xml"]),
         ("User-agent: *\nDisallow: /job/\n", ["/robots.txt", "/sitemap.xml"]),  # the link without a language
         ("User-agent: automated-job-hunter\nDisallow: /\n\nUser-agent: *\nDisallow: /search-jobs\n", ["/robots.txt"]),
-        # Read as allowing the postings by Python 3.9's parser, which applies the first matching rule and reads
-        # no wildcards; refused there before anything else is read, and by the RFC's longest match elsewhere.
-        ("User-agent: *\nAllow: /\nDisallow: /en/job/\n", None),
-        ("User-agent: *\nDisallow: /*/job/\n", None),
+        ("User-agent: *\nAllow: /\nDisallow: /en/job/\n", ["/robots.txt", "/sitemap.xml"]),  # the longest rule wins
+        ("User-agent: *\nDisallow: /*/job/\n", ["/robots.txt", "/sitemap.xml"]),  # a wildcard
+        ("User-agent: *\nDisallow: /search-jobs\n\nUser-agent: *\nDisallow: /job/\n", ["/robots.txt", "/sitemap.xml"]),
     ],
 )
 def test_whatever_robots_txt_disallows_fails_the_source_before_it_is_asked(robots, asked):
     site = Site()
     site.files["/robots.txt"] = robots
-    with pytest.raises(SourceError, match=r"robots\.txt on careers\.acme\.com"):
+    with pytest.raises(SourceError, match=r"robots\.txt on careers\.acme\.com disallows"):
         S.fetch(client(site), ACME, lambda job: S.NEW)
-    assert site.pages() == []
-    assert asked is None or site.requests == asked
+    assert site.requests == asked  # no posting page, and nothing after what was refused
+
+
+@pytest.mark.parametrize(
+    "robots",
+    [
+        "User-agent: *\nDisallow: /?\n",  # the root with a query string, not the whole site
+        "User-agent: *\nDisallow: /\n\nUser-agent: automated-job-hunter\nDisallow: /search-jobs\n",  # its own group
+        "User-agent: otherbot\nDisallow: /\n\nUser-agent: *\nDisallow: /search-jobs\n",  # another crawler's group
+        "User-agent: *\nDisallow: /\nAllow: /sitemap.xml\nAllow: /*/job/\nAllow: /job/\n",  # the longest rule wins
+        "User-agent: *\nDisallow:\n",  # an empty Disallow matches nothing
+    ],
+)
+def test_robots_txt_that_allows_the_sitemap_and_the_postings_lets_the_site_be_read(robots):
+    site = Site()
+    site.files["/robots.txt"] = robots
+    assert len(S.fetch(client(site), ACME)) == 5
 
 
 def test_robots_txt_that_cannot_be_read_now_reads_nothing_and_none_at_all_disallows_nothing():
@@ -205,28 +218,6 @@ def test_robots_txt_that_cannot_be_read_now_reads_nothing_and_none_at_all_disall
     site = Site()
     del site.files["/robots.txt"]  # 404: there is none, so nothing is disallowed (RFC 9309, 2.3.1.3)
     assert len(S.fetch(client(site), ACME)) == 5
-
-
-def test_on_a_parser_older_than_rfc_9309_only_plain_disallow_rules_are_trusted(monkeypatch):
-    monkeypatch.setattr(radancy, "_RFC9309", False)
-    site = Site()
-    assert len(S.fetch(client(site), ACME)) == 5  # the usual file: plain Disallow prefixes, read alike everywhere
-    for robots in (
-        "User-agent: *\nAllow: /\nDisallow: /en/job/\n",  # the first matching rule wins there, the longest in the RFC
-        "User-agent: *\nDisallow: /*/job/\n",  # read there as the characters
-        "User-agent: *\nDisallow: /search-jobs\n\nUser-agent: *\nDisallow: /job/\n",  # a second group, ignored there
-        "User-agent: *\nDisallow:\nDisallow: /en/job/\n",  # an empty Disallow, which allows everything, comes first
-        "User-agent: automated-job-hunter\nDisallow: /x\n\nUser-agent: automated-job-hunter\nDisallow: /en/job/\n",
-    ):
-        site.files["/robots.txt"] = robots
-        with pytest.raises(SourceError, match="may misread"):
-            S.fetch(client(site), ACME)
-    for robots in (
-        "User-agent: Googlebot\nAllow: /\nDisallow: /*.pdf$\n\nUser-agent: *\nDisallow: /search-jobs\n",  # another's
-        "User-agent: *\nDisallow:\n",  # allows everything, in every version
-    ):
-        site.files["/robots.txt"] = robots
-        assert len(S.fetch(client(site), ACME)) == 5
 
 
 def test_a_sitemap_index_is_read_sitemap_by_sitemap_on_the_sites_own_host():

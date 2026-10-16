@@ -177,9 +177,9 @@ What changes for people who run a feed. Bring a feed repo up to date with
   or the postings. A sitemap that cannot be read, one sitemap of an index that fails, or more than
   one posting link in twenty in a shape the reader does not know also fails the source, which keeps
   its last snapshot.
-- On a Python whose robots.txt parser is older than RFC 9309, such as 3.9, a site whose robots.txt
-  has Allow lines, wildcards or repeated groups is not read, because that parser can read them as
-  allowing what the file disallows.
+- The engine reads robots.txt itself, as RFC 9309 says, so a file gives the same answer on every
+  Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
+  the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.
 
 ### One Workday requisition that a list names on two sites is judged once
 

@@ -1,4 +1,5 @@
 import json
+import threading
 
 import pytest
 from ajh import http as ajh_http
@@ -10,7 +11,7 @@ def scripted(replies):
     calls = []
 
     def transport(method, url, headers, body, timeout):
-        calls.append({"method": method, "url": url, "headers": headers, "body": body})
+        calls.append({"method": method, "url": url, "headers": dict(headers), "body": body})
         reply = replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
@@ -57,6 +58,60 @@ def test_retry_after_is_honored_but_capped():
     )
     c.get("https://api.example.com/x")
     assert sleeps == [7.0, 30.0]
+
+
+def test_a_429_is_asked_again_after_waits_that_double_then_succeeds():
+    c, calls, sleeps = client([ok(status=429)] * 3 + [ok({"done": True})])
+    assert c.get("https://api.example.com/x").raise_for_status().json() == {"done": True}
+    assert len(calls) == 4 and sleeps == [1.0, 2.0, 4.0]
+    assert c.rate_limited == {"api.example.com": 3}
+
+
+def test_a_429_gets_eight_attempts_in_all_with_the_same_identity_then_fails_cleanly():
+    c, calls, sleeps = client([ok(status=429)] * 7 + [ok({"done": True})])
+    assert c.get("https://api.example.com/x", params={"q": "ux"}).raise_for_status().json() == {"done": True}
+    assert len(calls) == 8 and sleeps == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]
+    assert all(call == calls[0] for call in calls)  # the same request every time: User-Agent, headers, URL
+    c, calls, _ = client([ok(status=429)] * 9)
+    with pytest.raises(HttpError) as failure:
+        c.get("https://api.example.com/x").raise_for_status()
+    assert failure.value.status == 429 and len(calls) == 8 and c.rate_limited == {"api.example.com": 7}
+
+
+def test_retry_after_on_a_429_is_honored_but_capped_and_the_waits_go_on_doubling():
+    refused = [ok(status=429, headers={"retry-after": "3"}), ok(status=429, headers={"retry-after": "120"})]
+    c, _, sleeps = client([*refused, ok(status=429), ok()])
+    assert c.get("https://api.example.com/x").status == 200
+    assert sleeps == [3.0, 30.0, 4.0]
+
+
+def test_a_5xx_still_gets_two_retries_and_is_not_counted_as_refused():
+    c, calls, sleeps = client([ok(status=503)] * 4)
+    assert c.get("https://api.example.com/x").status == 503
+    assert len(calls) == 3 and sleeps == [1.0, 2.0] and c.rate_limited == {}
+
+
+def test_a_client_built_to_ask_once_does_not_ask_again_after_a_429():
+    c, calls, sleeps = client([ok(status=429), ok()], retries=0)
+    assert c.get("https://api.example.com/x").status == 429
+    assert len(calls) == 1 and sleeps == [] and c.rate_limit_retries == 0 and c.rate_limited == {}
+    c, calls, sleeps = client([ok(status=429), ok(status=503), ok()], retries=0, rate_limit_retries=2)
+    assert c.get("https://api.example.com/x").status == 503  # given explicitly, it holds for a 429 alone
+    assert len(calls) == 2 and sleeps == [1.0]
+
+
+def test_a_tally_counts_by_host_the_429_retries_its_own_thread_makes_inside_it():
+    c, _, _ = client([ok(status=429), ok()] * 4)
+    c.get("https://before.example.com/x")
+    with c.tally() as outer:
+        other = threading.Thread(target=c.get, args=("https://api.example.com/y",))  # another thread's
+        other.start()
+        other.join()
+        c.get("https://api.example.com/x")
+        with c.tally() as inner:
+            c.get("https://more.example.com/x")
+    assert outer == {"api.example.com": 1, "more.example.com": 1} and inner == {"more.example.com": 1}
+    assert c.rate_limited == {"before.example.com": 1, "api.example.com": 2, "more.example.com": 1}
 
 
 def test_a_persistent_failure_surfaces_as_an_error_not_an_empty_result():

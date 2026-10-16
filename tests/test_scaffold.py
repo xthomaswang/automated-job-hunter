@@ -13,7 +13,7 @@ from ajh import feed, publish, registry, scaffold, tick
 from ajh.cli import main
 from ajh.http import Client
 from ajh.model import Job, SourceError
-from helpers import Boards, answer_assess, answer_triage, posting, wd_posting
+from helpers import Boards, answer_assess, answer_triage, ashby_posting, posting, wd_posting
 
 SKILL = Path(scaffold.SCRIPTS).parent
 REPO = SKILL.parent.parent
@@ -267,6 +267,36 @@ def test_probe_finds_a_companys_board_by_trying_likely_slugs():
     assert registry.probe("Nobody Inc", Client(transport, retries=0))["matches"] == []
 
 
+def test_an_ashby_board_whose_name_has_a_space_or_a_dot_is_added_and_its_host_named(repo):
+    root = repo(sources=())
+    assert main(["--repo", str(root), "sources", "add", "ashby:Acme AI:Acme", "ashby:acme.com:Acme"]) == 0
+    assert json.loads((root / "config/sources.json").read_text()) == [
+        {"id": "acme-ai", "company": "Acme", "ats": "ashby", "slug": "Acme AI"},
+        {"id": "acme-com", "company": "Acme", "ats": "ashby", "slug": "acme.com"},
+    ]
+    assert registry.add(root, ["ashby:Acme%20AI:Acme"])["added"] == []  # the name as its link writes it: the same board
+    assert registry.hosts(root) == {"hosts": ["api.ashbyhq.com"]}
+    for bad in ("ashby:Acme/AI:Acme", "ashby:..:Acme", "ashby:Acme%2FAI:Acme", "greenhouse:Acme AI:Acme",
+                "lever:acme.com:Acme"):  # fmt: skip
+        with pytest.raises(SourceError):
+            registry.add(root, [bad])
+
+
+def test_probe_reads_an_ashby_board_whose_name_has_a_space_or_a_dot_from_its_link():
+    uuid = "1a2b3c4d-5555-6666-7777-888899990000"
+    board = Boards()
+    board.ashby = {"Acme%20AI": [ashby_posting(uuid, board="Acme%20AI")],  # asked for by its percent-encoded name
+                   "acme.com": [ashby_posting(uuid, board="acme.com", title="Data Analyst")]}  # fmt: skip
+    web = Client(board.transport, retries=0)
+    assert registry.probe("https://jobs.ashbyhq.com/Acme%20AI Acme", web)["matches"] == [
+        {"system": "Ashby", "ats": "ashby", "slug": "Acme AI", "supported": True, "postings": 1,
+         "sample": ["UX Researcher"], "add": "ashby:Acme AI:Acme"}
+    ]  # fmt: skip
+    dotted = registry.probe(f"https://jobs.ashbyhq.com/acme.com/{uuid} Acme", web)["matches"]  # one posting's link
+    assert [(m["add"], m["postings"], m["sample"]) for m in dotted] == [("ashby:acme.com:Acme", 1, ["Data Analyst"])]
+    assert board.requests == [("board", "Acme%20AI"), ("board", "acme.com")]
+
+
 ICIMS = "iCIMS (its terms forbid automated reading of its career sites)"  # docs/spikes.md, E10
 
 
@@ -368,6 +398,33 @@ def test_probe_says_what_to_try_when_a_careers_page_cannot_be_read():
         assert "seldom helps" in said and "Apply link" in said and "probe the company's name" in said
         assert "Greenhouse, Ashby, Lever, Recruitee and SmartRecruiters" in said  # what a name probe tries
     assert said.startswith("The page could not be read: HttpError. ")  # the last one, the 403
+
+
+def test_probe_says_a_workday_sites_http_422_means_a_wrong_site_name():
+    answers = {  # what each jobs API answers: a Workday site answers 422 for a site name it does not have
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/careers/jobs": 422,
+        "https://wd1.myworkdaysite.com/wday/cxs/acme/careers/jobs": 422,
+        "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs": 404,
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true": 422,
+    }
+
+    def transport(method, url, headers, body, timeout):
+        return answers[url], {}, b'{"errorCode":"HTTP_422"}'
+
+    web = Client(transport, retries=0)
+    hint = (
+        "HTTP 422 from this Workday site: the site name 'careers' is probably wrong, or the site is not public. "
+        "Open one of the company's postings and probe its URL, which carries the right tenant and site."
+    )
+    guessed = registry.probe("https://acme.wd1.myworkdayjobs.com/en-US/careers Acme", web)
+    assert guessed["matches"] == [{"system": "Workday", "ats": "workday", "host": "acme.wd1.myworkdayjobs.com",
+                                   "site": "careers", "supported": True, "error": hint}]  # fmt: skip
+    shared = registry.probe("https://wd1.myworkdaysite.com/recruiting/acme/careers Acme", web)["matches"][0]
+    assert (shared["tenant"], shared["error"]) == ("acme", hint)
+    other = registry.probe("https://acme.wd1.myworkdayjobs.com/External Acme", web)["matches"][0]  # as it was
+    assert other["error"] == "HttpError: HTTP 404 for https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs"
+    board = registry.probe("https://boards.greenhouse.io/acme Acme", web)["matches"][0]  # not a Workday site
+    assert board["error"] == "HttpError: HTTP 422 for https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"
 
 
 def test_probe_reads_an_http_careers_address_over_https():

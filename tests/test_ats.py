@@ -5,6 +5,7 @@ import pytest
 from ajh import sources
 from ajh.http import Client, HttpError
 from ajh.model import Job, SourceError, path_id
+from ajh.sources import lists as L
 from ajh.sources.ats import feed_url, parse_feed
 
 GREENHOUSE = {"id": "acme", "company": "Acme", "ats": "greenhouse", "slug": "acme"}
@@ -162,14 +163,33 @@ def broken(feed, **changes):
         {"content": "&lt;script&gt;x&lt;/script&gt;"},
         {"title": "  "},
         {"title": None},
-        {"absolute_url": "http://insecure.example.com/1"},
-        {"absolute_url": None},
+        {"title": None, "absolute_url": None},
         {"id": None},
+        {"id": None, "absolute_url": None},  # nor can its page on Greenhouse be named without its id
+        {"id": "4001/x", "absolute_url": "http://insecure.example.com/1"},  # nor by an id that is not a number
     ],
 )
 def test_one_incomplete_posting_aborts_the_snapshot_instead_of_dropping_the_job(changes):
     with pytest.raises(SourceError):
         parse_feed(GREENHOUSE, broken(GREENHOUSE_FEED, **changes))
+
+
+def test_a_greenhouse_posting_without_an_https_link_of_its_own_is_linked_to_its_page_on_greenhouse():
+    own = "https://www.acme.example/careers?gh_jid=4001"  # on the employer's own site
+    feed = broken(GREENHOUSE_FEED, absolute_url=own)
+    assert [job.url for job in parse_feed(GREENHOUSE, feed)] == [own]  # a board whose links are https is unchanged
+    row = feed["jobs"][0]
+    missing = {field: value for field, value in row.items() if field != "absolute_url"}
+    insecure = dict(row, id=4003, absolute_url="http://www.acme.example/careers?gh_jid=4003")
+    feed["jobs"] += [dict(missing, id=4002), insecure, dict(row, id=4004, absolute_url=None)]
+    jobs = parse_feed(GREENHOUSE, feed)  # read whole
+    assert [(job.source_id, job.url) for job in jobs] == [
+        ("4001", own),
+        ("4002", "https://job-boards.greenhouse.io/acme/jobs/4002"),
+        ("4003", "https://job-boards.greenhouse.io/acme/jobs/4003"),
+        ("4004", "https://job-boards.greenhouse.io/acme/jobs/4004"),
+    ]
+    assert [L.link(job.url).source_id for job in jobs[1:]] == [f"greenhouse~acme~{n}" for n in (4002, 4003, 4004)]
 
 
 def test_duplicate_ids_abort_the_snapshot():
@@ -178,10 +198,20 @@ def test_duplicate_ids_abort_the_snapshot():
         parse_feed(GREENHOUSE, feed)
 
 
-@pytest.mark.parametrize("slug", ["", "acme/../x", "acme?x=1", "a b", None])
-def test_board_slugs_cannot_smuggle_url_syntax(slug):
+@pytest.mark.parametrize(
+    "source,slug",
+    [
+        *[(GREENHOUSE, slug) for slug in ("", "acme/../x", "acme?x=1", "a b", None)],
+        *[(other, name) for other in (GREENHOUSE, LEVER, RECRUITEE) for name in ("Acme AI", "acme.com")],
+        *[
+            (ASHBY, name)
+            for name in ("", ".", "..", " Acme", "Acme ", "Acme/AI", "Acme%20AI", "Acme?x=1", "a\tb", None)
+        ],
+    ],
+)
+def test_board_slugs_cannot_smuggle_url_syntax(source, slug):
     with pytest.raises(SourceError):
-        feed_url(dict(GREENHOUSE, slug=slug))
+        feed_url(dict(source, slug=slug))
 
 
 def transport_for(payload, status=200):
@@ -207,6 +237,16 @@ def test_fetch_reads_each_board_from_its_public_endpoint(source, feed, url):
     transport, seen = transport_for(feed)
     jobs = sources.fetch(Client(transport), source)
     assert seen == [url] and jobs and all(job.source == source["id"] for job in jobs)
+
+
+@pytest.mark.parametrize("name,path", [("Acme AI", "Acme%20AI"), ("acme.com", "acme.com")])
+def test_an_ashby_board_whose_name_has_a_space_or_a_dot_is_read_like_any_other(name, path):
+    feed = json.loads(json.dumps(ASHBY_FEED).replace("/globex/", f"/{path}/"))  # its links, as Ashby writes them
+    transport, seen = transport_for(feed)
+    analyst, plain = sources.fetch(Client(transport), dict(ASHBY, slug=name))
+    assert seen == [f"https://api.ashbyhq.com/posting-api/job-board/{path}"]
+    assert analyst.url == f"https://jobs.ashbyhq.com/{path}/1b2c3d4e-0000-4000-8000-000000000001"
+    assert (analyst.source_id, plain.source_id) == ("1b2c3d4e-0000-4000-8000-000000000001", "plain-1")
 
 
 def test_a_blocked_board_is_a_failure_not_an_empty_board():

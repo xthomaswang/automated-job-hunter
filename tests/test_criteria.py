@@ -297,6 +297,9 @@ def test_the_code_lists_agree_with_the_countries():
     alone = set(data["codes_read_alone"])
     assert alone <= countries and not alone & ambiguous
     assert set(data["ambiguous_state_names"]) <= set(data["us_states"].values())
+    groups = data["groups"]
+    assert {name: codes for name, codes in groups.items() if not set(codes) <= countries} == {}
+    assert [name for name in groups if name in countries and name not in groups[name]] == []  # US keeps the US
 
 
 def stage0(**criteria):
@@ -325,6 +328,22 @@ def test_an_own_address_in_panama_or_lebanon_is_outside_us_regions():
     outside = stage0(locations={"regions": ["US"]}).outside  # what parks a posting by its own record (#54)
     assert outside("Panamá, Panamá, Panama") == ["PA"] and outside("Beirut, Beyrouth, Lebanon") == ["LB"]
     assert outside("Lebanon, PA") == [] and outside("Lebanon, Pennsylvania, United States") == []
+
+
+def test_the_us_region_takes_in_the_us_territories():
+    us, canada = stage0(locations={"regions": ["US"]}), stage0(locations={"regions": ["CA"]})
+    for place, territory in (("San Juan, Puerto Rico", "PR"), ("Hagåtña, Guam", "GU")):
+        assert PLACES.resolve(place) == ({territory}, True)  # still its own code, as a place tag would say
+        assert us.check(job(location=place)) is None and us.outside(place) == []  # neither dropped nor parked
+        assert canada.outside(place) == [territory]
+    assert PLACES.expand(["US"]) == {"US", "PR", "VI", "GU", "AS", "MP", "UM"}
+    assert PLACES.expand(["EU"]) == set(
+        "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split()
+    )
+    assert C.normalize(dict(MINIMAL, locations={"regions": ["US", "PR"]}), PLACES)["locations"]["regions"] == [
+        "US",
+        "PR",
+    ]
 
 
 def test_profile_hashes_change_only_with_what_each_stage_reads():

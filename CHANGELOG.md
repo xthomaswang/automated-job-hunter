@@ -247,6 +247,12 @@ What changes for people who run a feed. Bring a feed repo up to date with
   "Beirut, Beyrouth, Lebanon" read as Panama and Lebanon: a posting whose own address is there is
   parked as outside `locations.regions` instead of going to triage (#63). Any country code can now
   go in `locations.regions`.
+- `US` in `locations.regions` takes in the US territories, where US law applies: Puerto Rico, the
+  US Virgin Islands, Guam, American Samoa, the Northern Mariana Islands and the US Minor Outlying
+  Islands. So a posting in "San Juan, Puerto Rico" is still neither left out nor parked for
+  `["US"]`, as when the table did not know Puerto Rico. A place there still reads as the territory,
+  so regions that leave out `US` leave it out, and a posting parked there is tagged with its own
+  code, such as `PR`.
 - A country's name before a US state or Canadian province is a town there. "Lebanon,
   Pennsylvania" and "Holland, MI" are in the US. "Lebanon, PA", "Peru, IN" and "Mexico, MO" are
   unknown, since PA, IN and MO are also the codes of Panama, India and Macao. "Holland, MI" and

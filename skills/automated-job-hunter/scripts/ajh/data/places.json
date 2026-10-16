@@ -261,8 +261,10 @@
   "apac": ["asia", "oceania"], "asia": ["asia"], "asia pacific": ["asia", "oceania"],
   "middle east": ["middle_east"], "africa": ["africa"], "oceania": ["oceania"]
  },
+ "_groups_note": "Codes in locations.regions that stand for several countries. EU is the European Union's members. US is the United States with its territories, where US law applies: Puerto Rico, the US Virgin Islands, Guam, American Samoa, the Northern Mariana Islands and the US Minor Outlying Islands. A place there still reads as the territory's own code, so regions that leave out US leave it out, and a posting parked there is tagged with that code. A group named like a country must list that country too.",
  "groups": {
-  "EU": ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"]
+  "EU": ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"],
+  "US": ["US", "PR", "VI", "GU", "AS", "MP", "UM"]
  },
  "us_states": {
   "AL": "alabama", "AK": "alaska", "AZ": "arizona", "AR": "arkansas", "CA": "california", "CO": "colorado",

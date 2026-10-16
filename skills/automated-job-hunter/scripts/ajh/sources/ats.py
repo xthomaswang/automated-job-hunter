@@ -23,7 +23,7 @@ _ASHBY_NAME = re.compile(r"(?!\.*\Z)(?! )[A-Za-z0-9 ._-]+(?<! )\Z")
 # A Gem board is the vanity path of its page, jobs.gem.com/<board>: lowercase letters, digits and hyphens.
 _GEM_BOARD = re.compile(r"[a-z0-9-]+\Z")
 # A Gem posting's id is a string of digits or a UUID-like token. It goes into a link's path and a file's name.
-_GEM_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
+_GEM_ID = re.compile(r"[A-Za-z0-9_=-]+\Z")  # numeric, or URL-safe base64 (padding included)
 
 
 def feed_url(source: Mapping[str, Any]) -> str:

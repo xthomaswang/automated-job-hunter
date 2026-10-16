@@ -109,6 +109,14 @@ def test_a_postings_place_reads_the_same_whatever_order_its_offices_come_in():
 FEED = [post("5550001"), post(UUID, "Design Researcher")]
 
 
+@pytest.mark.parametrize("jid", ["7536752003", "am9icG9zdDrZLFyPcSMeCt06o_hrUOTT", "am9icG9zdDo-NTU1MDAwMQ=="])
+def test_a_gem_posting_id_is_digits_or_url_safe_base64(jid):
+    feed = copy.deepcopy(FEED)
+    feed[0]["id"], feed[0]["absolute_url"] = jid, f"https://jobs.gem.com/acme/{jid}"
+    assert parse_feed(ACME, feed)[0].source_id == jid  # both forms were seen on a live board, padding is possible
+    assert L.link(f"https://jobs.gem.com/acme/{jid}").source_id == f"gem~acme~{jid}"
+
+
 @pytest.mark.parametrize(
     "changes",
     [

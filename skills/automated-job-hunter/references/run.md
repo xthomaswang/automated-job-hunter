@@ -19,7 +19,9 @@ Read the JSON it prints and tell the user, in plain words:
 - how many postings were new, and how many are still waiting (`deferred`, when the caps were hit);
 - how many matches were added, re-assessed or closed (`apply`);
 - any source that failed (`collect.sources.failures`). `collect.sources.rate_limited`, when
-  present, counts the times each source's site answered HTTP 429 and was asked again;
+  present, counts the times each source's site answered HTTP 429 and was asked again, and
+  `collect.sources.rows_skipped` the rows of a source's listing that were no posting, such as a
+  Workday row with neither a link nor a title;
 - whether a judging stage is complete: `judge_triage.ok` and `judge_assess.ok` are true only when
   every packet got an answer. `packets` and `results` are counted by the engine, and `missing` names
   any packet still without a result after one retry. `failures`, when present, lists orchestrator

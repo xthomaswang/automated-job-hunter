@@ -126,7 +126,9 @@ class Boards:
 
     `workday` holds the fake Workday site's postings by id. Its search matches a title containing
     the query, within the job categories asked for and on the posting's own site if it has one, and
-    `workday_down` lists ids whose detail request fails. `hooli` is the same for the fake
+    `workday_down` lists ids whose detail request fails. `workday_bare` holds rows listed at the end
+    of every search, counted in its total, such as a half-published posting's row with neither a
+    link nor a title. `hooli` is the same for the fake
     SmartRecruiters API, where only the company Hooli exists (in any case, as there) and an unknown
     company has no postings. `gem` holds Gem boards by name, each the list its listing returns; only
     that listing is served, and `status["gem:<board>"]` makes it answer that status instead.
@@ -135,7 +137,7 @@ class Boards:
     def __init__(self, **boards):
         self.jobs = {slug: {p["id"]: p for p in postings} for slug, postings in boards.items()}
         self.status, self.remotive, self.jobicy, self.requests = {}, [], [], []
-        self.workday, self.workday_down = {}, set()
+        self.workday, self.workday_down, self.workday_bare = {}, set(), []
         self.hooli, self.hooli_down = {}, set()
         self.lists, self.lever, self.ashby = {}, {}, {}  # files by repo/branch/path; boards by name
         self.gem = {}
@@ -172,7 +174,7 @@ class Boards:
                 for p in self.workday.values()
                 if p.get("site") in (None, site) and ask["searchText"].lower() in p["row"]["title"].lower()
             ]
-            rows = [p["row"] for p in matched if not wanted or f"cat-{p['category']}" in wanted]
+            rows = [p["row"] for p in matched if not wanted or f"cat-{p['category']}" in wanted] + self.workday_bare
             page = rows[ask["offset"] : ask["offset"] + ask["limit"]]
             counts = {}
             for p in matched:

@@ -185,6 +185,9 @@ public endpoints by hand while writing the readers (#37). No model was involved.
   assumption.
 - The requisition id ends `externalPath` after the last `_` and is also `bulletFields[0]`. They
   agreed in all 20 rows checked.
+- Later, on 2026-10-16, one search of another site (298 postings) listed one row that was only
+  `{"bulletFields": ["<requisition id>"]}`, with no `externalPath` and no `title`, two updates in a
+  row. It looked like a half-published posting, and the reader now skips and counts such rows (#96).
 - `locationsText` is either one place, such as `US, CA, Santa Clara`, or a count such as
   `2 Locations`. So stage 0 can read single places from the listing alone.
 - The text is one more request per posting: `GET /wday/cxs/<tenant>/<site><externalPath>` returns

@@ -3,11 +3,12 @@
 import json
 
 import pytest
+from ajh import registry
 from ajh import sources as S
 from ajh.http import Client
 from ajh.layout import Layout
 from ajh.model import SourceError
-from ajh.sources import workday
+from ajh.sources import skips, workday
 from helpers import INITECH, Boards, full_tick, good_assessment, plan, rows, tick, wd_posting
 
 SEARCHED = dict(INITECH, queries=["UX Researcher"])
@@ -78,6 +79,32 @@ def test_every_page_is_read_and_anything_short_of_the_total_fails_the_source(mon
     monkeypatch.setattr(workday, "MAX_PER_QUERY", 20)
     with pytest.raises(SourceError, match="set `categories`"):
         S.fetch(client(board), SEARCHED)
+
+
+def test_a_row_with_neither_link_nor_title_is_skipped_and_counted_while_such_rows_are_few(repo):
+    board = site(*(wd_posting(f"R{n:02d}") for n in range(25)))
+    board.workday_bare = [{"bulletFields": ["R99"]}]  # a half-published posting, on the second page
+    with skips.counting() as skipped:
+        assert len(S.fetch(client(board), SEARCHED)) == 25
+    assert skipped == {"no link or title": 1}
+    root = repo(sources=(INITECH,))
+    summary = tick(root, board)
+    assert summary["sources"]["failed"] == 0 and len(rows(root, "initech")) == 25
+    assert summary["sources"]["rows_skipped"] == {"initech": {"no link or title": 1}}
+    tested = registry.test(root, client(board))["sources"]["initech"]
+    assert tested == {"postings": 25, "rows_skipped": {"no link or title": 1}}
+
+    for bare, problem in (
+        ([{"bulletFields": ["R98"]}, {"bulletFields": ["R99"]}], "lists 2 of its 27 rows"),  # more than one in 20
+        ([{"title": "UX Researcher", "bulletFields": ["R99"]}], "missing or unsafe"),  # a title but no link
+    ):
+        board.workday_bare = bare
+        with pytest.raises(SourceError, match=problem):
+            S.fetch(client(board), SEARCHED)
+    alone = site()  # every row bare: a new shape, which must not empty the snapshot
+    alone.workday_bare = [{"bulletFields": ["R99"]}]
+    with pytest.raises(SourceError, match="only rows with neither a link nor a title"):
+        S.fetch(client(alone), SEARCHED)
 
 
 def test_new_postings_wait_for_their_text_and_settled_ones_need_none(repo):

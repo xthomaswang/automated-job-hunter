@@ -6,12 +6,12 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import criteria as C
 from . import robots
 from . import sources as S
-from .http import Client
+from .http import Client, HttpError
 from .layout import Layout
 from .model import SourceError
 from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
@@ -41,6 +41,9 @@ UNSUPPORTED = (
     (r"(^|\.)(ultipro|ukg)\.com$", "UKG"),
     (r"(^|\.)dayforcehcm\.com$", "Dayforce"),
 )
+# Of those, the ones a company's career site may run on only as a front end: its postings are applied for
+# through another system, which one posting's Apply link leads to and which this version may read.
+FRONT_ENDS = ("Avature", "Phenom")
 # Never read, whose terms forbid it. Named only for a URL probed directly: almost every careers page
 # links to them in its footer, which says nothing about where its postings are.
 _FORBIDDEN = re.compile(r"(^|\.)(linkedin|indeed)\.com$")
@@ -77,6 +80,8 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
         parts = item.split(":", 2)
         if len(parts) == 3 and parts[0] in ats.ATS:
             kind, slug, company = parts
+            if kind == "ashby":  # the name, or the name as the board's link writes it: `Acme%20AI` is `Acme AI`
+                slug = unquote(slug)
             entry = {
                 "id": re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-"),
                 "company": company,
@@ -145,7 +150,7 @@ def add(root: Path | str, items: list[str]) -> dict[str, Any]:
         else:
             unknown.append(item)
             continue
-        ats.feed_url(entry) if entry["ats"] in ats.ATS else None  # rejects a slug that is not a plain token
+        ats.feed_url(entry) if entry["ats"] in ats.ATS else None  # rejects a name its board's system does not allow
         if entry["id"] not in current:
             added.append(entry["id"])
         current[entry["id"]] = entry
@@ -221,8 +226,8 @@ def _system(url: str) -> dict[str, Any] | None:
         kind = "greenhouse"
         slug = (parse_qs(parts.query).get("for") or [None])[0] if path[:2] == ["embed", "job_board"] else None
         slug = slug or (path[0] if path and path[0] != "embed" else None)
-    elif host == "jobs.ashbyhq.com":
-        kind, slug = "ashby", path[0] if path else None
+    elif host == "jobs.ashbyhq.com":  # a name with spaces is percent-encoded in the link
+        kind, slug = "ashby", unquote(path[0]) if path else None
     elif host == "jobs.lever.co":
         kind, slug = "lever", path[0] if path else None
     elif re.fullmatch(r"[a-z0-9-]+\.recruitee\.com", host):
@@ -268,7 +273,18 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             source = {"id": "probe", "company": company, "ats": "workday", "host": found["host"], "site": found["site"]}
             if found.get("tenant"):
                 source["tenant"] = found["tenant"]
-            data = workday.search(client, workday.site(source)[2], "", limit=3)
+            try:
+                data = workday.search(client, workday.site(source)[2], "", limit=3)
+            except HttpError as error:
+                if error.status != 422:
+                    raise
+                return {  # what a site answers for a site name it does not have, which reads like a refusal
+                    **{k: v for k, v in found.items() if v is not None},
+                    "supported": True,
+                    "error": f"HTTP 422 from this Workday site: the site name {found['site']!r} is probably wrong, "
+                    "or the site is not public. Open one of the company's postings and probe its URL, which carries "
+                    "the right tenant and site.",
+                }
             count, sample = data["total"], [row.get("title") for row in data["jobPostings"]]
             target = "/".join(p for p in (found["host"], found.get("tenant"), found["site"]) if p)
             add = f"workday:{target}:{company}"
@@ -393,9 +409,12 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
             "posting and probe the URL of its page or its Apply link."
         )
     elif not result["matches"]:
-        result["next"] = (
-            f"This company uses {', '.join(result['unsupported'])}, which this version cannot read. "
-            "There is no board to add."
+        fronts = [system for system in result["unsupported"] if system in FRONT_ENDS]
+        result["next"] = f"This company uses {', '.join(result['unsupported'])}, which this version cannot read. " + (
+            f"{' or '.join(fronts)} may be only a front end for another system: open one posting and probe its "
+            "Apply link, which can lead to a system this version reads, such as Workday."
+            if fronts
+            else "There is no board to add."
         )
     return result
 

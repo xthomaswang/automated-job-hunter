@@ -246,3 +246,12 @@ What changes for people who run a feed. Bring a feed repo up to date with
   storage. It now names it only for Oracle Fusion's hosts, `<tenant>.fa.<region>.oraclecloud.com`
   or `<tenant>.fa.oraclecloud.com`. Links to other Oracle Cloud hosts are passed over, like links
   to any host no system is known for.
+
+### A probe that cannot read a careers page says what to try instead
+
+- When `sources probe <url>` cannot read a company's careers page (a timeout, a refusal, or a bot
+  filter's 403), it still names the error and now says what to try: open one of the company's
+  postings and probe the URL of its page or its Apply link, or probe the company's name. Trying the
+  same page again seldom helps when a site refuses scripted requests.
+- An `http://` careers address is probed over `https://`, as the engine reads only https. It used to
+  fail on that alone.

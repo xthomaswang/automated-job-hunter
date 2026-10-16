@@ -15,7 +15,7 @@ from . import sources as S
 from .http import Client, HttpError
 from .layout import Layout
 from .model import SourceError
-from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
+from .sources import ats, eightfold, lists, radancy, skips, smartrecruiters, successfactors, workday
 from .sources.aggregators import PROVIDERS
 from .state import read_json, write_text
 from .textutil import LEGAL_SUFFIXES, words_key
@@ -680,7 +680,9 @@ def test(root: Path | str, client: Client | None = None) -> dict[str, Any]:
             if source.get("ats") in lists.KINDS:  # what became of each row, as no update reports it
                 report[source["id"]] = lists.read(client, source)[1]
             else:
-                report[source["id"]] = {"postings": len(S.fetch(client, searched))}
+                with skips.counting() as skipped:
+                    postings = S.fetch(client, searched)
+                report[source["id"]] = {"postings": len(postings), **({"rows_skipped": skipped} if skipped else {})}
         except Exception as error:  # the whole message: this stores nothing, and it may list several problems
             report[source["id"]] = {"error": f"{type(error).__name__}: {error}"}
     failing = sorted(sid for sid, result in report.items() if "error" in result)

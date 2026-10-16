@@ -269,8 +269,8 @@ Engine modules (`scripts/ajh/`): `model` (Job, keys, path-safe ids), `textutil` 
 normalization, wrapping, simhash, snippet), `http` (retries, more of them for a 429 but never
 under another identity; per-host delay; injectable transport),
 `robots` (robots.txt rules, read as RFC 9309 says), `sources/` (ATS adapters, aggregators, lazy
-details, a feed's own readers, probing, registry), `state`, `criteria` (schema, stage-0 filters,
-profile hashes), `rules` (flag rules, years, seniority), `queue`, `packets`, `verdicts`, `render`,
+details, counts of listing rows that were no posting, a feed's own readers, probing, registry),
+`state`, `criteria` (schema, stage-0 filters, profile hashes), `rules` (flag rules, years, seniority), `queue`, `packets`, `verdicts`, `render`,
 `publish`, `audit`, `scaffold`, `cli`.
 
 ### CLI (stdout is one JSON object; exit 0 ok, 2 needs a human)

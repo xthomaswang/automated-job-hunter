@@ -24,6 +24,7 @@ from .layout import Layout
 from .model import Job, digest
 from .rules import age_days, parse_date
 from .sources import lists as L
+from .sources import skips
 from .state import SOURCE_ID, Row, State, dump_json, read_json, set_tag, tag, write_text
 from .textutil import company_key, hamming, simhash64, words_key
 
@@ -571,14 +572,16 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
     to_fetch = [s for s in sources if due(s)]
     ranks = {s["id"]: detail_rank(state.rows(s["id"]), stage0, generations) for s in to_fetch}
 
-    def fetch(source: Mapping[str, Any]) -> tuple[list[Job] | Exception, int]:
-        """The source's postings, or why it failed, and how many 429 retries reading it took."""
-        with client.tally() as by_host:  # this thread reads only this source until the block ends
+    def fetch(source: Mapping[str, Any]) -> tuple[list[Job] | Exception, int, dict[str, int]]:
+        """The source's postings, or why it failed, how many 429 retries reading it took, and the
+        rows of its listing it skipped, by reason."""
+        # this thread reads only this source until the block ends
+        with client.tally() as by_host, skips.counting() as skipped:
             try:
                 result: list[Job] | Exception = S.fetch(client, source, ranks[source["id"]])
             except Exception as error:  # any failure keeps this source's previous snapshot in force
                 result = error
-        return result, sum(by_host.values())
+        return result, sum(by_host.values()), skipped
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         fetched = dict(zip((s["id"] for s in to_fetch), pool.map(fetch, to_fetch)))
@@ -611,9 +614,11 @@ def run(root: Path | str, client: Client | None = None, now: datetime | None = N
         interval = source.get("min_fetch_interval_seconds", 0)
         if interval:  # a failed attempt uses up the interval too
             info["next_after"] = (now + timedelta(seconds=interval)).replace(second=0, microsecond=0).isoformat()
-        result, refused = fetched[sid]
+        result, refused, skipped = fetched[sid]
         if refused:  # for display only, like `failures`: so a site's real rate can be read off a run
             summary["sources"].setdefault("rate_limited", {})[sid] = refused
+        if skipped and not isinstance(result, Exception):  # for display only too: rows that were no posting
+            summary["sources"].setdefault("rows_skipped", {})[sid] = skipped
         if isinstance(result, Exception):
             info["error"] = _failure(result)
             info.setdefault("fail_since", today.isoformat())

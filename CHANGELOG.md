@@ -488,3 +488,17 @@ What changes for people who run a feed. Bring a feed repo up to date with
   one posting and probe its Apply link, since Avature can also be only a front end (#88).
 - Where the page also links a system the probe reads, that board is reported as before. Only those
   markers make a page a portal, not a mention of Avature in its text.
+
+### A Workday row with neither a link nor a title no longer fails the source
+
+- A Workday site can list a row that holds only a requisition id in `bulletFields`, with no link
+  and no title, apparently for a posting that is half published. On a real feed, one such row in a
+  search of 298 postings failed the whole source, update after update (#96). Such a row is now
+  skipped, counted toward the search's total, and reported: `collect` shows it under
+  `sources.rows_skipped` (`collect.sources.rows_skipped` in what `tick` prints), and `sources test`
+  as `rows_skipped`, by source and reason. Like the 429 counts, these are shown, never stored.
+- Only rows that look half published are skipped. A row with a title but no link, or with a link
+  that is not a plain posting path, still fails the source, as any other change of shape does.
+- So do too many skipped rows: more than one row in 20 of a search (one is always allowed), or a
+  source where every row it found was skipped. That looks like a change of shape, and skipping
+  every row would return an empty snapshot that later closes every posting it hides.

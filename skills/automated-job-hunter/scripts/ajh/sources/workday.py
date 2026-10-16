@@ -5,7 +5,9 @@ each posting's text is one more request. So a site is read through searches (`qu
 the wanted roles), every matching posting is listed, and text is fetched only for the postings the
 rank function asks for, at most `max_details` per update, one request a second. docs/spikes.md (E8)
 records what the endpoints returned when this was written; this is not a versioned API, so any
-change of shape fails the source and keeps its last good snapshot.
+change of shape fails the source and keeps its last good snapshot. The exception is a row with
+neither a link nor a title, as a site may list a half-published posting: it is skipped and counted
+(`skips`) while such rows are few.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from typing import Any
 from ..http import Client, HttpError
 from ..model import Job, SourceError
 from ..textutil import html_to_text
-from . import lazy
+from . import lazy, skips
 
 KINDS = ("workday",)
 HOST = re.compile(r"([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com\Z")  # <tenant>.wd5.myworkdayjobs.com/<site>
@@ -123,9 +125,24 @@ def _narrowed(client: Client, root: str, names: list[str]) -> dict[str, Any]:
     return applied
 
 
-def _listing(client: Client, root: str, query: str, applied: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Every posting one search matches. Anything short of its total aborts the snapshot."""
+def _bare(row: Any) -> bool:
+    """A row with neither a link nor a title: no posting a person could open on the site.
+
+    A site sometimes lists one, holding only its requisition id in `bulletFields`, while a posting
+    is half published.
+    """
+    return isinstance(row, dict) and row.get("externalPath") in (None, "") and row.get("title") in (None, "")
+
+
+def _listing(client: Client, root: str, query: str, applied: Mapping[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """Every posting one search matches, and how many bare rows (`_bare`) it skipped. Anything short
+    of its total aborts the snapshot.
+
+    A search may skip at most one row in 20 (always one). More means the listing has changed shape,
+    and skipping them would return a snapshot that closes the postings they hide.
+    """
     rows: dict[str, dict[str, Any]] = {}
+    bare = 0
     total: int | None = None
     offset = 0
     while True:
@@ -142,6 +159,9 @@ def _listing(client: Client, root: str, query: str, applied: Mapping[str, Any]) 
             raise SourceError("Workday listing changed while it was read; the next update retries")
         batch = data["jobPostings"]
         for row in batch:
+            if _bare(row):
+                bare += 1
+                continue
             path = row.get("externalPath") if isinstance(row, dict) else None
             if not isinstance(path, str) or not _PATH.match(path) or ".." in path:
                 raise SourceError("Workday posting path is missing or unsafe")
@@ -149,9 +169,14 @@ def _listing(client: Client, root: str, query: str, applied: Mapping[str, Any]) 
         offset += len(batch)
         if not batch or offset >= total:
             break
-    if len(rows) != total:
+    if bare > max(1, total // 20):
+        raise SourceError(
+            f"Workday search {query!r} lists {bare} of its {total} rows with neither a link nor a title; "
+            "the listing may have changed shape"
+        )
+    if len(rows) + bare != total:
         raise SourceError("Workday listing ended short of its total; the next update retries")
-    return list(rows.values())
+    return list(rows.values()), bare
 
 
 def _listed(source: Mapping[str, Any], base: str, row: Mapping[str, Any]) -> Job:
@@ -229,9 +254,18 @@ def fetch(client: Client, source: Mapping[str, Any], rank: Callable[[Job], int |
         raise SourceError("Workday categories must be a list of the site's job category names")
     applied = _narrowed(client, root, names) if names else {}
     listed: dict[str, tuple[Job, str]] = {}
+    bare = 0
     for query in dict.fromkeys(q.strip() for q in queries):
-        for row in _listing(client, root, query, applied):
+        rows, skipped = _listing(client, root, query, applied)
+        bare += skipped
+        for row in rows:
             job = _listed(source, base, row)
             listed.setdefault(job.source_id, (job, row["externalPath"]))
+    if bare and not listed:  # every row bare: a change of shape, not a half-published posting or two
+        raise SourceError(
+            "Workday listed only rows with neither a link nor a title; the listing may have changed shape"
+        )
+    if bare:  # once for each search that lists one
+        skips.add("no link or title", bare)
 
     return lazy.complete(listed, rank, lazy.budget(source, DETAILS), lambda job, path: _detail(client, root, job, path))

@@ -267,7 +267,7 @@ class Places:
         self.us_states = set(data["us_states"])
         self.state_names = {key for name in data["us_states"].values() for key in _keys(name)} - ambiguous_names
         self.ca_provinces = set(data["ca_provinces"])
-        self.province_names = {key for name in data["ca_provinces"].values() for key in _keys(name)}
+        self.province_names = {key for names in data["ca_provinces"].values() for name in names for key in _keys(name)}
         self.cities = {key: code for code, cities in data["cities"].items() for city in cities for key in _keys(city)}
 
     @classmethod
@@ -290,7 +290,8 @@ class Places:
         - ("name", {code}): a country's name, which a state or province after it makes a town's;
         - ("country", codes): a region word, or a country's code where codes are read;
         - ("state", codes): a US state or Canadian province, with the countries it could be in: {"US"}
-          for Ohio, {"CA"} for ON, {"US", "IL"} for IL, which is also Israel's code;
+          for Ohio, {"CA"} for ON, {"US", "IL"} for IL, which is also Israel's code, and {"CA", "SK"}
+          for SK, which is also Slovakia's;
         - ("", set()): nothing the table reads.
         """
         key = _fold(token)
@@ -302,12 +303,9 @@ class Places:
             return "country", self.region_words[key]
         if len(token) == 2 and token.isalpha():
             code = token.upper()
-            if code in self.ambiguous:
-                return "state", {"US", code}
-            if code in self.us_states:
-                return "state", {"US"}
-            if code in self.ca_provinces:
-                return "state", {"CA"}
+            home = "US" if code in self.us_states else "CA" if code in self.ca_provinces else None
+            if home:
+                return "state", {home, code} if code in self.ambiguous else {home}
             # A code that career sites write alone ("Paris, FR") is read anywhere. Any other only where an
             # address puts its country, after a locality and a region ("Beirut, Beyrouth, LB"): elsewhere
             # a two-letter part is as often a region, as GD (Guangdong) is in "Guangzhou, GD, CN".
@@ -329,7 +327,7 @@ class Places:
         last = len(tokens) - 1
         parts = [self._part(token, country_slot=last >= 2 and i == last) for i, token in enumerate(tokens)]
         countries: set[str] = set()
-        ambiguous: set[str] = set()
+        ambiguous: list[set[str]] = []  # the countries each state or province of two could be in
         us = canada = False
         for i, (kind, codes) in enumerate(parts):
             if kind == "country":
@@ -348,16 +346,22 @@ class Places:
                 elif codes == {"CA"}:
                     canada = True
                 else:
-                    ambiguous |= codes - {"US"}
+                    ambiguous.append(codes)
         if countries:
             return countries
         if us != canada:
             return {"US"} if us else {"CA"}
         city = self.cities.get(_fold(tokens[0]))
         if ambiguous:
-            # "Chicago, IL" and "Tel Aviv, IL", "Atlanta, Georgia" and "Tbilisi, Georgia": only a known
-            # city settles which one this is.
-            return {city} if city and (city == "US" or city in ambiguous) else None
+            if city:
+                # "Chicago, IL" and "Tel Aviv, IL", "Atlanta, Georgia" and "Tbilisi, Georgia", "Amsterdam,
+                # NL": a known city settles which one this is.
+                return {city} if any(city in codes for codes in ambiguous) else None
+            # CA is Canada's code and also California's, while the US's code is a name and settles its
+            # states by itself. So CA beside a province's code that is also a country's settles both:
+            # "Saskatoon, SK, CA" is Saskatchewan, Canada, not Slovakia or California.
+            provinces = [codes for codes in ambiguous if "CA" in codes and "US" not in codes]
+            return {"CA"} if provinces and {"US", "CA"} in ambiguous else None
         return {city} if city and not (us and canada) else None
 
     def resolve(self, location: str | None) -> tuple[set[str], bool]:

@@ -198,10 +198,20 @@ def test_duplicate_ids_abort_the_snapshot():
         parse_feed(GREENHOUSE, feed)
 
 
-@pytest.mark.parametrize("slug", ["", "acme/../x", "acme?x=1", "a b", None])
-def test_board_slugs_cannot_smuggle_url_syntax(slug):
+@pytest.mark.parametrize(
+    "source,slug",
+    [
+        *[(GREENHOUSE, slug) for slug in ("", "acme/../x", "acme?x=1", "a b", None)],
+        *[(other, name) for other in (GREENHOUSE, LEVER, RECRUITEE) for name in ("Acme AI", "acme.com")],
+        *[
+            (ASHBY, name)
+            for name in ("", ".", "..", " Acme", "Acme ", "Acme/AI", "Acme%20AI", "Acme?x=1", "a\tb", None)
+        ],
+    ],
+)
+def test_board_slugs_cannot_smuggle_url_syntax(source, slug):
     with pytest.raises(SourceError):
-        feed_url(dict(GREENHOUSE, slug=slug))
+        feed_url(dict(source, slug=slug))
 
 
 def transport_for(payload, status=200):
@@ -227,6 +237,16 @@ def test_fetch_reads_each_board_from_its_public_endpoint(source, feed, url):
     transport, seen = transport_for(feed)
     jobs = sources.fetch(Client(transport), source)
     assert seen == [url] and jobs and all(job.source == source["id"] for job in jobs)
+
+
+@pytest.mark.parametrize("name,path", [("Acme AI", "Acme%20AI"), ("acme.com", "acme.com")])
+def test_an_ashby_board_whose_name_has_a_space_or_a_dot_is_read_like_any_other(name, path):
+    feed = json.loads(json.dumps(ASHBY_FEED).replace("/globex/", f"/{path}/"))  # its links, as Ashby writes them
+    transport, seen = transport_for(feed)
+    analyst, plain = sources.fetch(Client(transport), dict(ASHBY, slug=name))
+    assert seen == [f"https://api.ashbyhq.com/posting-api/job-board/{path}"]
+    assert analyst.url == f"https://jobs.ashbyhq.com/{path}/1b2c3d4e-0000-4000-8000-000000000001"
+    assert (analyst.source_id, plain.source_id) == ("1b2c3d4e-0000-4000-8000-000000000001", "plain-1")
 
 
 def test_a_blocked_board_is_a_failure_not_an_empty_board():

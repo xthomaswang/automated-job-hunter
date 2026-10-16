@@ -194,6 +194,27 @@ def test_a_watched_boards_posting_lives_where_a_lists_link_to_it_says():
     assert L.board_identity(REMOTIVE, "1") is None and L.identity("acme-123") is None
 
 
+def test_a_lists_link_to_a_watched_ashby_board_whose_name_has_a_space_or_a_dot_is_that_boards_posting(repo):
+    spaced = {"id": "acme-ai", "company": "Acme", "ats": "ashby", "slug": "Acme AI"}
+    dotted = {"id": "acme-com", "company": "Acme", "ats": "ashby", "slug": "acme.com"}
+    root = repo(sources=(spaced, dotted, JSON_LIST))
+    other = ASHBY_ID[:-1] + "1"
+    found = Boards()
+    found.ashby = {"Acme%20AI": [ashby_posting(ASHBY_ID, board="Acme%20AI")],  # asked for by its percent-encoded name
+                   "acme.com": [ashby_posting(other, board="acme.com", title="Data Analyst")]}  # fmt: skip
+    found.lists["someone/job-list/main/jobs.json"] = json.dumps(
+        [role("Acme", f"https://jobs.ashbyhq.com/Acme%20AI/{ASHBY_ID}"),
+         role("Acme", f"https://jobs.ashbyhq.com/acme.com/{other}/application", title="Data Analyst")]
+    )  # fmt: skip
+    tick(root, found)
+    assert (list(rows(root, "acme-ai")), list(rows(root, "acme-com"))) == ([ASHBY_ID], [other])
+    assert {jid: (row.status, row.note) for jid, row in rows(root, "joblist").items()} == {
+        f"ashby~Acme%20AI~{ASHBY_ID}": ("V", f"acme-ai:{ASHBY_ID}"),  # the name stays percent-encoded in the id
+        f"ashby~acme.com~{other}": ("V", f"acme-com:{other}"),
+    }
+    assert sorted(plan(root)["queue"]["triage"]) == [f"acme-ai:{ASHBY_ID}", f"acme-com:{other}"]
+
+
 @pytest.mark.parametrize(
     "source_id, where",
     [

@@ -20,7 +20,12 @@ from .state import read_json, write_text
 # Career systems this version cannot read, by the hosts their public pages are on. A probe names
 # them, so that nobody keeps looking for a board that no reader exists for.
 UNSUPPORTED = (
-    (r"(^|\.)oraclecloud\.com$", "Oracle Recruiting Cloud (its job APIs are only for Oracle and approved partners)"),
+    # Oracle Fusion's hosts, <tenant>.fa.<region>.oraclecloud.com with or without the region. Oracle Cloud
+    # serves much else under oraclecloud.com, such as files in object storage that a careers page shows.
+    (
+        r"(^|\.)fa(\.[a-z0-9-]+)*\.oraclecloud\.com$",
+        "Oracle Recruiting Cloud (its job APIs are only for Oracle and approved partners)",
+    ),
     (r"(^|\.)taleo\.net$", "Oracle Taleo"),
     (r"(^|\.)icims\.com$", "iCIMS (its terms forbid automated reading of its career sites)"),
     (r"(^|\.)(successfactors|sapsf)\.(com|eu)$", "SAP SuccessFactors on SAP's own hosts (closed by robots.txt)"),
@@ -164,6 +169,8 @@ def probe(query: str, client: Client | None = None) -> dict[str, Any]:
     client = client or Client(retries=0, timeout=20)
     first, _, rest = query.strip().partition(" ")
     if first.lower().startswith(("https://", "http://")):
+        if first[:7].lower() == "http://":  # only https is read, and a careers site serves it too
+            first = "https://" + first[7:]
         return probe_url(first, rest.strip() or None, client)
     company = query
     matches = []
@@ -323,12 +330,17 @@ def probe_url(url: str, company: str | None, client: Client) -> dict[str, Any]:
     if found is None:  # a company's own careers page: look for links to a known system on it, one request
         try:
             reply = client.get(url).raise_for_status()
-        except Exception as error:
+        except Exception as error:  # a timeout, a refusal, or a bot filter's 403
             return {
                 "url": url,
                 "matches": [],
                 "unsupported": [],
-                "next": f"The page could not be read: {type(error).__name__}",
+                "next": (
+                    f"The page could not be read: {type(error).__name__}. Trying it again seldom helps when a site "
+                    "refuses scripted requests. Open one of the company's postings instead (a job site's Apply button "
+                    "often leads to one) and probe the URL of its page or its Apply link, or probe the company's "
+                    "name, which tries Greenhouse, Ashby, Lever, Recruitee and SmartRecruiters."
+                ),
             }
         page, landed = reply.text, reply.url  # an old address may move to the site's own host
         found = _system(landed)

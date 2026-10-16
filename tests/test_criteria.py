@@ -278,6 +278,78 @@ def test_a_new_countrys_code_is_read_only_where_an_address_puts_its_country():
     assert {location: PLACES.resolve(location) for location in expected} == expected
 
 
+def test_every_canadian_province_and_territory_is_read_by_code_and_name():
+    expected = {
+        "Saskatoon, SK, CA": ({"CA"}, True),  # read as Slovakia before (#68)
+        "Regina, SK, Canada": ({"CA"}, True),  # with Slovakia too, before
+        "St. John's, NL, Canada": ({"CA"}, True),
+        "Charlottetown, PE, Canada": ({"CA"}, True),
+        "Whitehorse, YT, Canada": ({"CA"}, True),
+        "Iqaluit, NU, CA": ({"CA"}, True),
+        "Yellowknife, NT": ({"CA"}, True),
+        "Saskatoon, Saskatchewan": ({"CA"}, True),
+        "St. John's, Newfoundland and Labrador": ({"CA"}, True),
+        "Charlottetown, Prince Edward Island": ({"CA"}, True),
+        "Iqaluit, Nunavut": ({"CA"}, True),
+        "Yellowknife, Northwest Territories": ({"CA"}, True),
+        "Whitehorse, Yukon": ({"CA"}, True),
+        "Halifax, Nouvelle-Écosse": ({"CA"}, True),
+        "Charlottetown, Île-du-Prince-Édouard": ({"CA"}, True),
+        "St. John's, Terre-Neuve-et-Labrador": ({"CA"}, True),
+        "Moncton, Nouveau-Brunswick": ({"CA"}, True),
+        "Kelowna, Colombie-Britannique": ({"CA"}, True),
+        "Laval, Québec": ({"CA"}, True),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def test_a_province_code_that_is_also_a_countrys_proves_nothing_alone():
+    expected = {
+        "Amsterdam, NL": ({"NL"}, True),  # a known city settles it
+        "Lima, PE": ({"PE"}, True),
+        "Bratislava, SK": ({"SK"}, True),
+        "Toronto, SK": ({"CA"}, True),
+        "Humboldt, SK": (set(), False),  # read as Slovakia before: a town the table does not know settles nothing
+        "Seattle, SK": (set(), False),  # a US city settles no Canadian province
+        "NL, PE": (set(), False),  # two such codes settle nothing: CA must be one of them
+        "Monterrey, NL, Mexico": ({"MX"}, True),  # Nuevo León's NL: read as the Netherlands too, before
+        "Netherlands": ({"NL"}, True),  # the countries by name are read as before
+        "Peru": ({"PE"}, True),
+        "Slovakia": ({"SK"}, True),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def test_the_cities_of_the_provinces_whose_codes_are_also_countries_settle_them():
+    expected = {
+        "Saskatoon, SK": ({"CA"}, True),
+        "Regina, SK": ({"CA"}, True),
+        "St. John's, NL": ({"CA"}, True),
+        "Charlottetown, PE": ({"CA"}, True),
+        "Whitehorse, YT": ({"CA"}, True),
+        "Iqaluit, NU": ({"CA"}, True),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def test_the_main_job_cities_of_the_netherlands_peru_and_slovakia_settle_their_codes():
+    expected = {
+        "Delft, NL": ({"NL"}, True),  # Dutch employers write this form: NL alone proves nothing
+        "Leiden, Zuid-Holland, NL": ({"NL"}, True),
+        "The Hague, NL": ({"NL"}, True),
+        "Den Haag, NL": ({"NL"}, True),
+        "'s-Hertogenbosch, NL": ({"NL"}, True),
+        "Hoofddorp, NL": ({"NL"}, True),
+        "Cusco, PE": ({"PE"}, True),
+        "Arequipa, PE": ({"PE"}, True),
+        "Košice, SK": ({"SK"}, True),
+        "Banska Bystrica, SK": ({"SK"}, True),  # without its accent
+        "Breda, IA": ({"US"}, True),  # a state of its own still decides
+        "Zwolle, LA": (set(), False),  # and a state code that is also a country's (Laos) is no Dutch one
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
 def unique_keys(pairs):
     keys = [key for key, _ in pairs]
     assert len(keys) == len(set(keys)), sorted({key for key in keys if keys.count(key) > 1})
@@ -308,13 +380,22 @@ def test_no_name_reads_as_two_countries():
     assert {
         key: (owners[key], cities[key]) for key in owners.keys() & cities.keys() if owners[key] != {cities[key]}
     } == {}
+    towns: dict[str, set[str]] = {}  # nor a city under two countries
+    for code, names in data["cities"].items():
+        for name in names:
+            for key in C._keys(name):
+                towns.setdefault(key, set()).add(code)
+    assert {key: codes for key, codes in towns.items() if len(codes) > 1} == {}
 
 
 def test_the_code_lists_agree_with_the_countries():
     data = json.loads(TABLE.read_text(encoding="utf-8"))
     countries, ambiguous = set(data["countries"]), set(data["ambiguous_state_codes"])
-    assert ambiguous == set(data["us_states"]) & countries  # every US state code that is also a country's
-    assert not set(data["ca_provinces"]) & countries  # such a province code would read as Canada
+    # Every US state or Canadian province code that is also a country's, and no other code.
+    assert ambiguous == (set(data["us_states"]) | set(data["ca_provinces"])) & countries
+    assert not set(data["us_states"]) & set(data["ca_provinces"])  # each such code has one home
+    provinces = data["ca_provinces"]
+    assert len(provinces) == 13 and all(names and isinstance(names, list) for names in provinces.values())
     alone = set(data["codes_read_alone"])
     assert alone <= countries and not alone & ambiguous
     assert set(data["ambiguous_state_names"]) <= set(data["us_states"].values())
@@ -349,6 +430,12 @@ def test_an_own_address_in_panama_or_lebanon_is_outside_us_regions():
     outside = stage0(locations={"regions": ["US"]}).outside  # what parks a posting by its own record (#54)
     assert outside("Panamá, Panamá, Panama") == ["PA"] and outside("Beirut, Beyrouth, Lebanon") == ["LB"]
     assert outside("Lebanon, PA") == [] and outside("Lebanon, Pennsylvania, United States") == []
+
+
+def test_a_place_in_saskatchewan_is_in_canada_for_stage_0():
+    canada, slovakia = stage0(locations={"regions": ["CA"]}), stage0(locations={"regions": ["SK"]})
+    assert canada.check(job(location="Saskatoon, SK, CA")) is None  # dropped as Slovakia before (#68)
+    assert canada.outside("Regina, SK, Canada") == [] and slovakia.outside("Regina, SK, Canada") == ["CA"]
 
 
 def test_the_us_region_takes_in_the_us_territories():

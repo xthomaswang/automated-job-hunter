@@ -238,3 +238,28 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - The engine reads robots.txt itself, as RFC 9309 says, so a file gives the same answer on every
   Python version. Python's own parser does not: on 3.9 it applies the first matching rule instead of
   the longest, reads no wildcards, and reads `Disallow: /?` as disallowing the whole site.
+
+### Every country's name is read in a posting's place
+
+- The place table now has every country, all 249 ISO 3166 codes, under its English name, common
+  alternates such as Czechia or Ivory Coast, and its own names, such as Deutschland, Suomi or
+  República Dominicana. Accents and capitals don't matter, so "Panamá, Panamá, Panama" and
+  "Beirut, Beyrouth, Lebanon" read as Panama and Lebanon: a posting whose own address is there is
+  parked as outside `locations.regions` instead of going to triage (#63). Any country code can now
+  go in `locations.regions`.
+- A country's name before a US state or Canadian province is a town there. "Lebanon,
+  Pennsylvania" and "Holland, MI" are in the US. "Lebanon, PA", "Peru, IN" and "Mexico, MO" are
+  unknown, since PA, IN and MO are also the codes of Panama, India and Macao. "Holland, MI" and
+  "Mexico, MO" were read as the Netherlands and Mexico before.
+- A two-letter code of a country the table did not have before is read only at the end of an
+  address with a locality and a region, as in "Beirut, Beyrouth, LB". Elsewhere such a code is as
+  often a region: MH in "Mumbai, MH" is Maharashtra, not the Marshall Islands, and "Remote - NA" is
+  North America, not Namibia. The codes read before are read as before.
+- "Georgia" alone is still unknown, since it names a US state too. "Tbilisi, Georgia" is the
+  country and "Atlanta, Georgia" the US state, as the table knows both cities. Another city no longer
+  outweighs it: "Rome, Georgia" was read as Italy and is now unknown.
+- Known limit: a country's name alone is that country. A listing that gives only the town, as a
+  Radancy link does, reads a US town named like a country, such as Lebanon, Pennsylvania, as
+  abroad, as it already read Dublin, Ohio as Ireland.
+- From the next update, a posting whose listing or own record names one of the newly read countries
+  outside `locations.regions` is left out or parked, as other postings outside the regions are.

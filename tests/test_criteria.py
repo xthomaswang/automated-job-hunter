@@ -1,9 +1,25 @@
+import json
+import re
+from pathlib import Path
+
 import pytest
 from ajh import criteria as C
 from ajh.model import Job
 
 PLACES = C.Places.bundled()
 MINIMAL = {"schema_version": 1, "targets": {"roles": ["UX Researcher"]}}
+TABLE = Path(C.__file__).with_name("data") / "places.json"
+ISO_3166_1 = set(
+    "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ "
+    "BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM "
+    "DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS "
+    "GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN "
+    "KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ "
+    "MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM "
+    "PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV "
+    "SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI "
+    "VN VU WF WS YE YT ZA ZM ZW".split()
+)
 
 
 def job(**changes):
@@ -128,6 +144,161 @@ def test_region_words_and_groups_expand_to_countries():
     assert PLACES.resolve("Americas")[0] >= {"US", "CA", "BR"}
 
 
+@pytest.mark.parametrize(
+    "location,countries",
+    [
+        ("Beirut, Beyrouth, Lebanon", {"LB"}),  # the two own addresses in #63
+        ("Panamá, Panamá, Panama", {"PA"}),
+        ("Amman, Jordan", {"JO"}),
+        ("Kathmandu, Nepal", {"NP"}),
+        ("Quito, Ecuador", {"EC"}),
+        ("Sarajevo, Bosnia and Herzegovina", {"BA"}),
+        ("Port of Spain, Trinidad & Tobago", {"TT"}),
+        ("Castries, St. Lucia", {"LC"}),
+        ("Kingstown, Saint Vincent and the Grenadines", {"VC"}),  # read without its lowercase "the"
+        ("Banjul, the Gambia", {"GM"}),
+        ("Abidjan, Ivory Coast", {"CI"}),
+        ("Yangon, Myanmar (Burma)", {"MM"}),
+        ("Mbabane, Swaziland", {"SZ"}),
+        ("Praia, Cape Verde", {"CV"}),
+        ("Dili, East Timor", {"TL"}),
+        ("Kinshasa, DRC", {"CD"}),
+        ("Brazzaville, Republic of the Congo", {"CG"}),
+        ("Riyadh, KSA", {"SA"}),
+        ("Basseterre, St Kitts & Nevis", {"KN"}),
+        ("Santo Domingo, República Dominicana", {"DO"}),
+        ("Abidjan, Côte d’Ivoire", {"CI"}),  # with a curly apostrophe
+        ("Alger, Algérie", {"DZ"}),
+        ("Maputo, Moçambique", {"MZ"}),
+        ("São Tomé e Príncipe", {"ST"}),
+        ("Willemstad, Curacao", {"CW"}),  # Curaçao without its cedilla
+        ("Brno, Česko", {"CZ"}),
+        ("Debrecen, Magyarország", {"HU"}),
+        ("Liège, Belgique", {"BE"}),
+        ("Gent, België", {"BE"}),
+        ("Lugano, Svizzera", {"CH"}),
+        ("Esch-sur-Alzette, Lëtzebuerg", {"LU"}),
+        ("Tórshavn, Føroyar", {"FO"}),
+        ("Nuuk, Kalaallit Nunaat", {"GL"}),
+        ("Tashkent, Oʻzbekiston", {"UZ"}),
+        ("Galway, Éire", {"IE"}),
+    ],
+)
+def test_every_country_is_read_by_its_english_alternate_and_local_names(location, countries):
+    assert PLACES.resolve(location) == (countries, True)
+
+
+def test_names_are_compared_without_accents_or_case():
+    spellings = {
+        "PE": ["Perú", "Peru", "PERÚ"],
+        "MX": ["México", "Mexico"],
+        "TR": ["Türkiye", "Turkiye", "TÜRKİYE"],  # a Turkish capital İ
+        "PA": ["Panamá", "Panama", "PANAMA"],
+        "CI": ["Côte d’Ivoire", "Côte d'Ivoire", "Cote d'Ivoire", "COTE D'IVOIRE"],
+    }
+    assert {name: PLACES.resolve(name) for names in spellings.values() for name in names} == {
+        name: ({code}, True) for code, names in spellings.items() for name in names
+    }
+    # The cities, states and provinces are compared the same way. Ł has no accent to drop: both are listed.
+    for one, other, country in (
+        ("München", "Munchen", "DE"),
+        ("Zürich", "ZURICH", "CH"),
+        ("Wrocław", "Wroclaw", "PL"),
+        ("Laval, Québec", "Laval, Quebec", "CA"),
+        ("Springfield, PENNSYLVANIA", "Springfield, pennsylvania", "US"),
+    ):
+        assert PLACES.resolve(one) == PLACES.resolve(other) == ({country}, True), one
+
+
+def test_a_country_named_before_a_state_or_province_is_a_town_there():
+    expected = {
+        "Lebanon, PA": (set(), False),  # Pennsylvania's or Panama's PA, and no known city to settle it
+        "Lebanon, Pennsylvania": ({"US"}, True),
+        "Lebanon, Pennsylvania, United States": ({"US"}, True),
+        "Peru, IN": (set(), False),
+        "Mexico, MO": (set(), False),  # read as Mexico before
+        "Holland, MI": ({"US"}, True),  # read as the Netherlands before
+        "Jordan, Minnesota": ({"US"}, True),
+        "Mexico City, Mexico": ({"MX"}, True),
+        "US, CA, Santa Clara": ({"US"}, True),  # a state of the country named does not make it a town
+        "United States, Georgia": ({"US"}, True),
+        "Toronto, Ontario, Canada": ({"CA"}, True),
+        # Known limit: a country's name alone is the country, even where a listing means a US town.
+        "Lebanon": ({"LB"}, True),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def test_georgia_is_settled_only_by_a_known_city():
+    expected = {
+        "Georgia": (set(), False),  # the US state's name or the country's
+        "Atlanta, Georgia": ({"US"}, True),
+        "Tbilisi, Georgia": ({"GE"}, True),
+        "Rome, Georgia": (set(), False),  # a town in the US state: read as Italy before
+        "Tbilisi, GE": ({"GE"}, True),
+        "Republic of Georgia": ({"GE"}, True),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def test_a_new_countrys_code_is_read_only_where_an_address_puts_its_country():
+    expected = {
+        "Beirut, Beyrouth, LB": ({"LB"}, True),  # locality, region, country
+        "Remote - NA": (set(), False),  # North America, not Namibia
+        "Mumbai, MH": ({"IN"}, True),  # Maharashtra, not the Marshall Islands: the known city decides
+        "Hyderabad, TG, IN": ({"IN"}, True),  # Telangana, not Togo
+        "Walldorf, BW, DE, 69190": (set(), False),  # Baden-Württemberg, not Botswana; the postcode is no part
+        "Curitiba, PR, Brazil": ({"BR"}, True),  # Paraná, not Puerto Rico
+        "Paris, FR": ({"FR"}, True),  # the codes career sites write alone are still read alone
+        "Remote, PL": ({"PL"}, True),
+        "Congo": (set(), False),  # a name two countries share is no country's
+        "Virgin Islands": (set(), False),
+    }
+    assert {location: PLACES.resolve(location) for location in expected} == expected
+
+
+def unique_keys(pairs):
+    keys = [key for key, _ in pairs]
+    assert len(keys) == len(set(keys)), sorted({key for key in keys if keys.count(key) > 1})
+    return dict(pairs)
+
+
+def test_the_table_has_every_iso_3166_country_once_with_a_known_region():
+    data = json.loads(TABLE.read_text(encoding="utf-8"), object_pairs_hook=unique_keys)
+    countries = data["countries"]
+    assert len(countries) == 249 and set(countries) == ISO_3166_1
+    assert [code for code in countries if not re.fullmatch(r"[A-Z]{2}", code)] == []
+    tags = {tag for tags in data["region_words"].values() for tag in tags}
+    assert {code: entry["region"] for code, entry in countries.items() if entry["region"] not in tags} == {}
+    assert [code for code, entry in countries.items() if not entry["names"]] == []
+    regions = C.normalize(dict(MINIMAL, locations={"regions": ["LB", "PA", "GE"]}), PLACES)["locations"]["regions"]
+    assert regions == ["LB", "PA", "GE"]  # any country's code is a region criteria accept
+
+
+def test_no_name_reads_as_two_countries():
+    data = json.loads(TABLE.read_text(encoding="utf-8"))
+    owners: dict[str, set[str]] = {}
+    for code, entry in data["countries"].items():
+        for name in entry["names"]:
+            for key in C._keys(name):  # as the reader compares it: folded, with and without noise words
+                owners.setdefault(key, set()).add(code)
+    assert {key: codes for key, codes in owners.items() if len(codes) > 1} == {}
+    cities = {key: code for code, names in data["cities"].items() for name in names for key in C._keys(name)}
+    assert {
+        key: (owners[key], cities[key]) for key in owners.keys() & cities.keys() if owners[key] != {cities[key]}
+    } == {}
+
+
+def test_the_code_lists_agree_with_the_countries():
+    data = json.loads(TABLE.read_text(encoding="utf-8"))
+    countries, ambiguous = set(data["countries"]), set(data["ambiguous_state_codes"])
+    assert ambiguous == set(data["us_states"]) & countries  # every US state code that is also a country's
+    assert not set(data["ca_provinces"]) & countries  # such a province code would read as Canada
+    alone = set(data["codes_read_alone"])
+    assert alone <= countries and not alone & ambiguous
+    assert set(data["ambiguous_state_names"]) <= set(data["us_states"].values())
+
+
 def stage0(**criteria):
     return C.Stage0(C.normalize(dict(MINIMAL, **criteria), PLACES), PLACES)
 
@@ -148,6 +319,12 @@ def test_stage0_drops_only_on_positive_evidence():
 def test_no_constraints_means_nothing_is_dropped():
     check = stage0().check
     assert check(job(location="Berlin, Germany", employment_type="Internship")) is None
+
+
+def test_an_own_address_in_panama_or_lebanon_is_outside_us_regions():
+    outside = stage0(locations={"regions": ["US"]}).outside  # what parks a posting by its own record (#54)
+    assert outside("Panamá, Panamá, Panama") == ["PA"] and outside("Beirut, Beyrouth, Lebanon") == ["LB"]
+    assert outside("Lebanon, PA") == [] and outside("Lebanon, Pennsylvania, United States") == []
 
 
 def test_profile_hashes_change_only_with_what_each_stage_reads():

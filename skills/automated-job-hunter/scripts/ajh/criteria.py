@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import unicodedata
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -218,6 +219,26 @@ _NOISE = re.compile(
     r"|(?-i:in|the|within|from))\b",
     re.I,
 )
+# U+2018 and U+2019 (curly quotes) and U+02BB and U+02BC (modifier letters, as Uzbek writes) read as "'".
+_APOSTROPHES = str.maketrans(dict.fromkeys("‘’ʻʼ", "'"))
+
+
+def _fold(text: str) -> str:
+    """Text as places are compared: without accents or case, and with curly apostrophes straight. "Panamá"
+    and "PANAMA" are both "panama", and "Côte d'Ivoire" is "cote d'ivoire" however its apostrophe is written."""
+    decomposed = unicodedata.normalize("NFKD", text.translate(_APOSTROPHES))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
+def _clean(part: str) -> str:
+    """One comma-separated part of a place without its noise words, such as Remote or a lowercase "the"."""
+    return " ".join(_NOISE.sub(" ", part).split()).strip("- ")
+
+
+def _keys(name: str) -> set[str]:
+    """What a name in the table matches: folded as written, and as a place's part is read, without the
+    noise words ("Saint Vincent and the Grenadines" is read as "saint vincent and grenadines")."""
+    return {_fold(name), _fold(_clean(name))}
 
 
 class Places:
@@ -230,19 +251,24 @@ class Places:
         for code, entry in data["countries"].items():
             by_region.setdefault(entry["region"], set()).add(code)
             for name in entry["names"]:
-                self.names[name.casefold()] = code
+                self.names.update(dict.fromkeys(_keys(name), code))
+        ambiguous_names = {key for name in data["ambiguous_state_names"] for key in _keys(name)}
+        # A name that is also a US state's, such as Georgia, is no country's on its own: like IL, only a
+        # known city settles it.
+        self.ambiguous_names = {key: self.names.pop(key) for key in ambiguous_names if key in self.names}
         self.region_words = {
-            word.casefold(): set().union(*(by_region.get(tag, set()) for tag in tags))
+            key: set().union(*(by_region.get(tag, set()) for tag in tags))
             for word, tags in data["region_words"].items()
+            for key in _keys(word)
         }
         self.groups = {name: set(codes) for name, codes in data["groups"].items()}
         self.ambiguous = set(data["ambiguous_state_codes"])
-        ambiguous_names = set(data["ambiguous_state_names"])
+        self.alone = set(data["codes_read_alone"])
         self.us_states = set(data["us_states"])
-        self.state_names = {name for name in data["us_states"].values() if name not in ambiguous_names}
+        self.state_names = {key for name in data["us_states"].values() for key in _keys(name)} - ambiguous_names
         self.ca_provinces = set(data["ca_provinces"])
-        self.province_names = set(data["ca_provinces"].values())
-        self.cities = {city.casefold(): code for code, cities in data["cities"].items() for city in cities}
+        self.province_names = {key for name in data["ca_provinces"].values() for key in _keys(name)}
+        self.cities = {key: code for code, cities in data["cities"].items() for city in cities for key in _keys(city)}
 
     @classmethod
     def bundled(cls) -> Places:
@@ -258,46 +284,79 @@ class Places:
             out |= self.groups.get(code, {code})
         return out
 
+    def _part(self, token: str, country_slot: bool) -> tuple[str, set[str]]:
+        """What one part of a place says, with the countries that go with it:
+
+        - ("name", {code}): a country's name, which a state or province after it makes a town's;
+        - ("country", codes): a region word, or a country's code where codes are read;
+        - ("state", codes): a US state or Canadian province, with the countries it could be in: {"US"}
+          for Ohio, {"CA"} for ON, {"US", "IL"} for IL, which is also Israel's code;
+        - ("", set()): nothing the table reads.
+        """
+        key = _fold(token)
+        if key in self.ambiguous_names:
+            return "state", {"US", self.ambiguous_names[key]}
+        if key in self.names:
+            return "name", {self.names[key]}
+        if key in self.region_words:
+            return "country", self.region_words[key]
+        if len(token) == 2 and token.isalpha():
+            code = token.upper()
+            if code in self.ambiguous:
+                return "state", {"US", code}
+            if code in self.us_states:
+                return "state", {"US"}
+            if code in self.ca_provinces:
+                return "state", {"CA"}
+            # A code that career sites write alone ("Paris, FR") is read anywhere. Any other only where an
+            # address puts its country, after a locality and a region ("Beirut, Beyrouth, LB"): elsewhere
+            # a two-letter part is as often a region, as GD (Guangdong) is in "Guangzhou, GD, CN".
+            if code in self.alone or (country_slot and code in self.countries):
+                return "country", {code}
+            return "", set()
+        if key in self.state_names:
+            return "state", {"US"}
+        if key in self.province_names:
+            return "state", {"CA"}
+        return "", set()
+
     def _place(self, place: str) -> set[str] | None:
         """Countries one place certainly names, or None when it cannot be read with certainty."""
         text = re.sub(r"[()\[\]:]|\s+[-–—]\s+|[–—]", ",", place)
-        tokens = [
-            t
-            for t in (" ".join(_NOISE.sub(" ", raw).split()).strip("- ") for raw in text.split(","))
-            if t and not t.isdigit()
-        ]
+        tokens = [t for t in (_clean(raw) for raw in text.split(",")) if t and not t.isdigit()]
         if not tokens:
             return None
+        last = len(tokens) - 1
+        parts = [self._part(token, country_slot=last >= 2 and i == last) for i, token in enumerate(tokens)]
         countries: set[str] = set()
         ambiguous: set[str] = set()
         us = canada = False
-        for token in tokens:
-            low = token.casefold()
-            if low in self.names:
-                countries.add(self.names[low])
-            elif low in self.region_words:
-                countries |= self.region_words[low]
-            elif len(token) == 2 and token.isalpha():
-                code = token.upper()
-                if code in self.ambiguous:
-                    ambiguous.add(code)
-                elif code in self.us_states:
+        for i, (kind, codes) in enumerate(parts):
+            if kind == "country":
+                countries |= codes
+            elif kind == "name":
+                # A country named before a state or province it cannot be in is a town there: "Lebanon,
+                # PA" and "Peru, Indiana" are not abroad, while "United States, CA" is still the US.
+                # Known limit: a country's name alone is that country, so a listing that gives only the
+                # town of a US town named like a country ("Lebanon") reads it as abroad, as a listing
+                # of only "Dublin" reads Dublin, Ohio as Ireland (docs/spikes.md, E13).
+                if all(later != "state" or codes <= homes for later, homes in parts[i + 1 :]):
+                    countries |= codes
+            elif kind == "state":
+                if codes == {"US"}:
                     us = True
-                elif code in self.ca_provinces:
+                elif codes == {"CA"}:
                     canada = True
-                elif code in self.countries:
-                    countries.add(code)
-            elif low in self.state_names:
-                us = True
-            elif low in self.province_names:
-                canada = True
+                else:
+                    ambiguous |= codes - {"US"}
         if countries:
             return countries
         if us != canada:
             return {"US"} if us else {"CA"}
-        city = self.cities.get(tokens[0].casefold())
+        city = self.cities.get(_fold(tokens[0]))
         if ambiguous:
-            # "Chicago, IL" and "Tel Aviv, IL": only a known city settles which IL this is.
+            # "Chicago, IL" and "Tel Aviv, IL", "Atlanta, Georgia" and "Tbilisi, Georgia": only a known
+            # city settles which one this is.
             return {city} if city and (city == "US" or city in ambiguous) else None
         return {city} if city and not (us and canada) else None
 

@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import criteria as C
 from . import sources as S
-from .http import Client
+from .http import Client, HttpError
 from .layout import Layout
 from .model import SourceError
 from .sources import ats, eightfold, lists, radancy, smartrecruiters, successfactors, workday
@@ -265,7 +265,18 @@ def _try(found: dict[str, Any], company: str, client: Client) -> dict[str, Any]:
             source = {"id": "probe", "company": company, "ats": "workday", "host": found["host"], "site": found["site"]}
             if found.get("tenant"):
                 source["tenant"] = found["tenant"]
-            data = workday.search(client, workday.site(source)[2], "", limit=3)
+            try:
+                data = workday.search(client, workday.site(source)[2], "", limit=3)
+            except HttpError as error:
+                if error.status != 422:
+                    raise
+                return {  # what a site answers for a site name it does not have, which reads like a refusal
+                    **{k: v for k, v in found.items() if v is not None},
+                    "supported": True,
+                    "error": f"HTTP 422 from this Workday site: the site name {found['site']!r} is probably wrong, "
+                    "or the site is not public. Open one of the company's postings and probe its URL, which carries "
+                    "the right tenant and site.",
+                }
             count, sample = data["total"], [row.get("title") for row in data["jobPostings"]]
             target = "/".join(p for p in (found["host"], found.get("tenant"), found["site"]) if p)
             add = f"workday:{target}:{company}"

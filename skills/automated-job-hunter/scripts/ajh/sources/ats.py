@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ..http import Client
-from ..model import Job, SourceError
+from ..model import Job, SourceError, public_https
 from ..textutil import html_to_text
 
 ATS = ("greenhouse", "ashby", "lever", "recruitee")
@@ -44,11 +44,15 @@ def _names(items: Any) -> str:
     return " / ".join(dict.fromkeys(str(x["name"]) for x in items if isinstance(x, dict) and x.get("name")))
 
 
-def _greenhouse(row: Mapping[str, Any]) -> dict:
+def _greenhouse(row: Mapping[str, Any], board: str) -> dict:
+    jid, url = str(row["id"]), row.get("absolute_url")
+    # Some boards give a posting no link, or not an https one: its page on Greenhouse, as `lists.link` writes it.
+    if not public_https(url) and jid.isdigit():
+        url = f"https://job-boards.greenhouse.io/{board}/jobs/{jid}"
     return dict(
-        source_id=str(row["id"]),
+        source_id=jid,
         title=row["title"],
-        url=row["absolute_url"],
+        url=url,
         description=html_to_text(row.get("content")),
         location=(row.get("location") or {}).get("name") or "unknown",
         posted_at=row.get("first_published") or row.get("updated_at"),
@@ -112,7 +116,7 @@ def _recruitee(row: Mapping[str, Any]) -> dict:
     )
 
 
-_PARSERS = {"greenhouse": _greenhouse, "ashby": _ashby, "lever": _lever, "recruitee": _recruitee}
+_PARSERS = {"ashby": _ashby, "lever": _lever, "recruitee": _recruitee}  # and `_greenhouse`, given the board too
 
 
 def parse_feed(source: Mapping[str, Any], payload: Any) -> list[Job]:
@@ -131,7 +135,7 @@ def parse_feed(source: Mapping[str, Any], payload: Any) -> list[Job]:
         if kind == "ashby" and row.get("isListed") is False:
             continue  # unlisted positions are not part of the public board
         try:
-            facts = _PARSERS[kind](row)
+            facts = _greenhouse(row, source["slug"]) if kind == "greenhouse" else _PARSERS[kind](row)
         except (KeyError, TypeError, AttributeError) as error:
             raise SourceError(f"Posting is missing a required field: {error!r}") from error
         if not facts["description"]:

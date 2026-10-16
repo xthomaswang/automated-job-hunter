@@ -109,6 +109,11 @@ and companies they named, and for a company that is not listed run
 `hunter sources probe "Company Name"`. Show the user the list and let them adjust it. Twenty to
 sixty boards is a normal size.
 
+The name probe tries Greenhouse, Ashby, Lever, Recruitee, Gem and SmartRecruiters. A Gem board's page
+is `jobs.gem.com/<board>`: probing that link, or one posting's, prints its add line,
+`gem:<board>:Company`. A Gem board is read like a Greenhouse one: every posting with its text, in one
+request an update.
+
 For a large employer the name probe often finds nothing, because many use Workday or a system
 this version cannot read (it does find SmartRecruiters companies by name). Find its careers page (or the link of one of its postings) and run
 `hunter sources probe <url> Company Name`; add what it reports, or tell the user the system it
@@ -165,7 +170,7 @@ broad and noisy; add them only if the user wants remote work.
 
 A job list someone keeps on GitHub, as a JSON file or Markdown tables, can be a source too, when
 the user names one. Each row is only a pointer. A row whose link is one posting on Greenhouse,
-Lever, Ashby, SmartRecruiters or Workday is read from that system, with its own text and date, and
+Lever, Ashby, Gem, SmartRecruiters or Workday is read from that system, with its own text and date, and
 judged like a posting from the employer's board. Rows that link anywhere else (sites that re-post
 jobs, systems this version cannot read such as iCIMS, an employer's own page) are skipped. Add the list
 to `config/sources.json` by hand:

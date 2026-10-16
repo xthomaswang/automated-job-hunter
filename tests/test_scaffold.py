@@ -589,7 +589,7 @@ def test_probe_says_what_to_try_when_a_careers_page_cannot_be_read():
         said = found["next"]
         assert said.startswith("The page could not be read: ")  # with the error's name
         assert "seldom helps" in said and "Apply link" in said and "probe the company's name" in said
-        assert "Greenhouse, Ashby, Lever, Recruitee and SmartRecruiters" in said  # what a name probe tries
+        assert "Greenhouse, Ashby, Lever, Recruitee, Gem and SmartRecruiters" in said  # what a name probe tries
     assert said.startswith("The page could not be read: HttpError. ")  # the last one, the 403
 
 

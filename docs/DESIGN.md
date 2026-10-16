@@ -142,9 +142,19 @@ and reads `Disallow: /?` as `Disallow: /`). The sitemap's dates are when it was 
 used, and more than one posting link in twenty in another shape fails the source rather than
 shrinking it. Spike E13 in [spikes.md](spikes.md) records the structure.
 
+**Gem.** Gem documents a public Job Board API whose listing,
+`api.gem.com/job_board/v0/<board>/job_posts/`, returns every open posting of a board with its text in
+one response, without pages. So a Gem board is read like a Greenhouse one: one request an update, and
+a complete snapshot or a failure. A posting's place is its location, then any other place its
+offices are in, sorted so that the order the API lists them in never changes it, and remote or hybrid
+work leads it, as on SmartRecruiters. Its date is when it was first published, else when it was
+created. Like the other documented public board APIs, it is read without consulting robots.txt:
+`api.gem.com/robots.txt` answers 403 from the API's gateway, which is no crawler policy, and
+`jobs.gem.com/robots.txt` answers 404. Spike E14 in [spikes.md](spikes.md) records what was checked.
+
 **Job lists.** A list kept in a public GitHub repo (a JSON file, or Markdown tables) is a detail
 source whose listing is the file. A row is only a pointer: it is used when its link is one posting
-on a system with a public API this engine reads (Greenhouse, Lever, Ashby, SmartRecruiters,
+on a system with a public API this engine reads (Greenhouse, Lever, Ashby, Gem, SmartRecruiters,
 Workday), and that posting's text, date and link come from the system, so the posting is
 `official`. Rows linking to re-posters, redirects, systems without such an API, or employers' own
 pages are skipped, and `sources test` counts every row by outcome. A list posting's id is where it

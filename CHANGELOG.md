@@ -429,3 +429,20 @@ What changes for people who run a feed. Bring a feed repo up to date with
 - No match is dropped, and the probe makes no more requests than before. Its one request to a
   SmartRecruiters company now asks for a page of 100 postings instead of 3, to know where they are;
   a company with more postings than that is not checked for its places.
+
+### Gem job boards
+
+- New source type `gem`, added as `gem:<board>:Company` for a board whose page is
+  `jobs.gem.com/<board>` (#86). It reads Gem's public Job Board API like a Greenhouse board: every
+  posting with its text in one request an update. A reply that is not a whole board, or a posting
+  without its id, title, link or text, fails the source instead of closing postings.
+- `sources probe` reads a board's link, one posting's link (`jobs.gem.com/<board>/<id>`) or an
+  `api.gem.com/job_board/v0/<board>/...` address, and prints the add line. A name probe tries Gem as
+  well, with one more request for each name it tries. `sources hosts` lists `api.gem.com`.
+- A posting's place is its location, then the places of its other offices, sorted; remote or hybrid
+  work leads it, as in "Remote, London, United Kingdom". Its date is when it was first published,
+  and its employment type is Gem's own, such as `full_time`, which the hard limits read.
+- A job list's link to one Gem posting is read from Gem, and a posting on a Gem board the feed
+  watches is judged once.
+- Gem documents this API as public, so, like the other documented public board APIs, it is read
+  without consulting robots.txt. Spike E14 in `docs/spikes.md` records what was checked.

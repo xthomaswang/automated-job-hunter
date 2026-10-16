@@ -536,6 +536,67 @@ What the reader makes of it:
 - More than one posting link in twenty that is not in the shape above (one stray link always may)
   fails the source, as does a sitemap that cannot be read or a sitemap of an index that fails.
 
+## E14: Gem job boards
+
+2026-10-16, macOS 27.2 build 26B5101f, Xcode 27.1 (27A9275), Claude Code 2.1.299. Written with the reader
+(#86) from the facts below, which a read-only check for #79 found, with no login, key or cookie, and #86
+relays. Every test reads synthetic fixtures offline: no request went to a real site while writing the
+reader, and no model was involved.
+
+**What Gem documents.** Gem's documentation of its Job Board API says: "Most endpoints in the Job Board
+API are public and do not require authentication — job board information can be read by anyone using
+your job board's vanity URL path." And: "Endpoints return complete lists of all matching resources in a
+single response." Only `POST .../applications`, which submits an application, needs a key.
+
+**The listing.**
+
+- `GET https://api.gem.com/job_board/v0/<board>/job_posts/` returns a JSON array of every open posting
+  of the board, with no pages and no total. `<board>` is the board's vanity path, as in its page
+  `https://jobs.gem.com/<board>`.
+- A row has `id` (a string) and `title`; `absolute_url` (`https://jobs.gem.com/<board>/<id>`);
+  `location` (`{"name": "New York, NY"}`) and `location_type` (such as `remote`, `hybrid` or
+  `in_office`); `offices` (`[{"name": …, "location": {"name": …}}]`) and `departments`
+  (`[{"name": …}]`); `employment_type` (such as `full_time`); `created_at`, `first_published_at` and
+  `updated_at` (ISO timestamps); `requisition_id` and `internal_job_id`; and the text, as `content`
+  (HTML) and `content_plain`.
+- One live board: 71 postings, about 1.6 MB with texts.
+- `.../job_posts/<id>` (one posting), `.../departments/` and `.../offices/` are public too. The reader
+  does not use them.
+- The board's page, `https://jobs.gem.com/<board>`, is an app shell with no data, so the probe reads
+  the API even for a link to the page.
+
+**robots.txt.** `jobs.gem.com/robots.txt` answers 404, and `api.gem.com/robots.txt` answers 403, which
+is the API gateway's answer, not a crawler policy. Read as this engine reads the robots.txt of a site
+it crawls (`robots.permits`), that 403 would disallow the whole host, and no Gem board could be read.
+But robots.txt tells crawlers which of a site's pages to fetch, and Gem documents this API, in the words
+above, as public for anyone with a board's vanity path. So, as for the other documented public board
+APIs (Greenhouse, Lever, Ashby and SmartRecruiters), the reader does not consult robots.txt; a comment
+at `feed_url` in `sources/ats.py` says so.
+
+What the reader makes of it:
+
+- One request a board an update, which returns every posting with its text. As on Greenhouse, a
+  reply that is not a list, a row that is not an object, a row without its id, title or link, a
+  posting with no text, or two rows with one id fails the source, so nothing closes.
+- A board's name is lowercase letters, digits and hyphens. A name in another form is refused when it
+  is added, not guessed at.
+- A posting's id must be a string of letters, digits, hyphens or underscores, so digits and UUID-like
+  tokens pass and nothing in one can leave a link's path or a file's name. Anything else fails the
+  source.
+- Its place is `location.name`, then the place of each office not named already (compared without
+  case), sorted. An office's own name is a label, such as "HQ", and is not used. Stage 0 leaves a
+  posting out only when every place it names is outside the wanted regions, so one open in an office
+  in the regions is not left out for its first place; and the sorting keeps the place, which change is
+  measured on, the same whatever order the API lists offices in. A `location_type` of `remote` or
+  `hybrid` leads the place ("Remote, London, United Kingdom"), as SmartRecruiters' and Eightfold's
+  readers write it, unless the place says so already; stage 0 reads past the word.
+- Its date is `first_published_at`, else `created_at`. Its text is `content`, read by the engine's HTML
+  reader; `content_plain` is not used. Its employment type is `employment_type` as given, as the Ashby,
+  Lever and Recruitee readers keep theirs, and stage 0 reads `full_time` and the others.
+- A job list's link to one posting, `jobs.gem.com/<board>/<id>`, is read from the board's listing, once
+  an update for all of the list's postings on that board, and the posting is judged once with a
+  watched board's own.
+
 ## Still open
 
 | Spike | Needs |

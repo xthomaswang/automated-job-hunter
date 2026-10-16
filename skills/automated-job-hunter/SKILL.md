@@ -78,7 +78,8 @@ arrives. Group several edits into one commit rather than paying for each.
 
 Companies are `config/sources.json`. `hunter sources list` shows the boards this skill already
 knows; `hunter sources probe "Company Name"` looks for a company's board on Greenhouse, Ashby, Lever,
-Recruitee and SmartRecruiters; `hunter sources add <id or ats:slug:Company>` adds one. Large employers mostly use
+Recruitee, Gem and SmartRecruiters; `hunter sources add <id or ats:slug:Company>` adds one (a Gem board
+at `jobs.gem.com/<board>` is `gem:<board>:Company`). Large employers mostly use
 other systems: find the company's careers page, or one posting's link, and run
 `hunter sources probe <url> Company Name`. It reads Workday sites (added as
 `workday:<host>/<site>:Company`; on a very large site, also set `categories` from the job

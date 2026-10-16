@@ -43,10 +43,12 @@ A source uses the type with `"ats"` and whatever other fields the module reads:
 {"id": "acme", "ats": "acme-careers", "company": "Acme"}
 ```
 
-The engine checks only `id` and `ats` on such an entry; the module checks the rest itself, and
-raises `SourceError` for an entry it cannot read. The fields every source has work as usual:
-`enabled`, `min_fetch_interval_seconds`, `membership_mode`, and for a searched or detailed reader
-`queries`, `categories` and `max_details` (read the last with `lazy.budget`).
+The engine checks `id`, `ats` and the fields every source may have (`enabled`,
+`min_fetch_interval_seconds`, `membership_mode`), which work as usual; a wrong value there stops
+`collect` with a configuration error, as for any source. The module checks the rest itself, and
+raises `SourceError` for an entry it cannot read; `company` is not required unless the module needs
+it. A searched or detailed reader also gets `queries`, `categories` and `max_details` as the
+built-in ones do (read the last with `lazy.budget`).
 
 Each `Job` must belong to the entry it was read for (`source` is the entry's `id`, and `key` is
 `<id>:<source_id>`), and each `source_id` may appear once. A reader that returns anything else
@@ -99,7 +101,7 @@ def _posting(source, row):
         key=f"{source['id']}:{jid}",
         source=source["id"],
         source_id=jid,
-        company=source["company"],
+        company=source.get("company") or "Acme",
         title=row.get("title") or "",  # Job refuses an empty title, which fails the whole source
         location=row.get("location") or "unknown",
         url=f"{SITE}/jobs/{jid}",

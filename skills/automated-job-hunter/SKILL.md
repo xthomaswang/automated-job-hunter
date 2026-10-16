@@ -93,7 +93,10 @@ own career site (often `jobs.<company>.com`) before giving up. Only
 boards with a public, no-login listing are supported. Never scrape LinkedIn or Indeed: their terms
 forbid it. A job list kept on GitHub can be a source as well (`"ats": "github-list"`, step 4 of
 [references/setup.md](references/setup.md)): its rows that link to one posting on a supported
-system are read from that system, and the rest are skipped.
+system are read from that system, and the rest are skipped. For a career site no reader here reads,
+the feed repo can carry a reader of its own in `readers/`, when the user asks for one: it is code
+that runs during every update, and [references/own-readers.md](references/own-readers.md) is the
+contract it must follow.
 
 ## Rules that always hold
 

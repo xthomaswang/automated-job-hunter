@@ -6,8 +6,9 @@ This needs the feed repo on GitHub and the GitHub CLI logged in with the `workfl
 [setup.md](setup.md) says how to install it and log in.
 
 The feed repo already contains `.github/workflows/job-hunter.yml`. Once the repo is on GitHub the
-workflow runs on its schedule, and also whenever `profile/` or `config/` changes on `main`. Most
-runs only read the boards and use no model. The judging steps start only when something is waiting.
+workflow runs on its schedule, and also whenever `profile/`, `config/` or `readers/` changes on
+`main`. Most runs only read the boards and use no model. The judging steps start only when something
+is waiting.
 
 The workflow needs one secret so its judging steps can use Claude. The token must not pass through
 you. Give the user these two commands to run in their own terminal:

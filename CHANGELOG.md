@@ -197,3 +197,24 @@ What changes for people who run a feed. Bring a feed repo up to date with
   - Otherwise it keeps the grouping it had. No new variant is made without a comparison.
 - Variants that came apart under an earlier version are not all grouped again. One whose lead was
   dropped at triage is triaged once on its own.
+
+### A feed can carry its own readers
+
+- A feed repo can keep reader modules in a `readers/` folder at its root, for a career site no
+  built-in reader reads: one employer's own site, say, or one whose employer you would rather not
+  name in a public repo. Each module declares a source type (`KIND`), which a source in
+  `config/sources.json` names with `"ats"`, and a `fetch` that returns every posting or raises
+  `SourceError`, as the built-in readers do. Optional flags have it searched for the wanted roles
+  (`QUERY_SCOPED`) or fetch texts on demand (`DETAILED`), and `HOSTS` or `hosts(source)` names its
+  hosts for `sources hosts`. `references/own-readers.md` has the contract, the names a reader may
+  import, and a skeleton.
+- A reader is code. It runs during `collect`, `sources test` and `sources hosts`, with the
+  workflow's permissions, and must keep to the built-in readers' rules. `status` loads the readers
+  too, to list the types they provide and every file not used, with the reason. Nothing the judging
+  step runs ever loads them.
+- A file that fails to load, or declares an invalid type, a built-in one or one another file
+  declares, fails only the sources of that type, with the file and the reason; they keep their last
+  snapshot. A type that no reader declares is still a configuration error, unless a reader file
+  failed before its type was known.
+- `upgrade` and `init` leave `readers/` alone. The workflow now also starts when `readers/` changes
+  on `main`; run `upgrade` to bring that line into a feed's workflow.

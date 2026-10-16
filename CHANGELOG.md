@@ -255,3 +255,10 @@ What changes for people who run a feed. Bring a feed repo up to date with
   same page again seldom helps when a site refuses scripted requests.
 - An `http://` careers address is probed over `https://`, as the engine reads only https. It used to
   fail on that alone.
+
+### `sources test` and `collect` show more of a source's error
+
+- `sources test` now shows a failing source's whole error, where it showed 160 characters, so an
+  error that lists several problems shows every one. `collect` shows up to 1,000 characters of it
+  under `sources.failures`, where it showed 200. The state still records only the error's type or
+  HTTP status, and the README and `feed/meta.json` still name only the failing sources.

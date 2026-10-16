@@ -70,28 +70,6 @@ def site(source: Mapping[str, Any]) -> str:
     return host
 
 
-def _target(url: str) -> str:
-    """What robots.txt rules are matched against: a URL's path and query, as they are sent."""
-    parts = urlsplit(url)
-    return (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
-
-
-def _permits(client: Client, host: str) -> Callable[[str], bool]:
-    """What the site's robots.txt, as it reads now, lets this reader fetch: a test of one URL there.
-
-    None (another 4xx) disallows nothing; 401 or 403 disallows everything; a 429, a 5xx or a failed
-    request says nothing now, so nothing is read (RFC 9309, 2.3.1). The rules are read as the RFC
-    says (`ajh.robots`), the same on every Python version.
-    """
-    reply = client.get(f"https://{host}/robots.txt")
-    if reply.status in (401, 403):
-        raise SourceError(f"robots.txt on {host} answers HTTP {reply.status}, which disallows the whole site")
-    if 400 <= reply.status < 500 and reply.status != 429:
-        return lambda url: True  # no robots.txt: nothing is disallowed (RFC 9309, 2.3.1.3)
-    text = reply.raise_for_status().text
-    return lambda url: robots.allowed(text, client.user_agent, _target(url))
-
-
 def _split(loc: str | None) -> SplitResult | None:
     try:
         return urlsplit(loc) if loc else None
@@ -184,7 +162,7 @@ def _postings(host: str, locs: list[str | None]) -> list[Listed]:
 
 def listing(client: Client, host: str) -> list[Listed]:
     """Every posting the site's sitemap names, once robots.txt allows reading it and them."""
-    permits = _permits(client, host)
+    permits = robots.permits(client, host)
     root = f"https://{host}/sitemap.xml"
     if not permits(root):
         raise SourceError(f"robots.txt on {host} disallows its sitemap, so the site cannot be read")

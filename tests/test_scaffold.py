@@ -541,9 +541,11 @@ def test_probe_points_to_a_postings_apply_link_when_it_finds_only_a_front_end():
     def transport(method, url, headers, body, timeout):
         if url in pages:
             return 200, {}, pages[url].encode()
+        if ".example/" in url:  # robots.txt, or a Phenom site's search-results page: none here
+            return 404, {}, b"Not found"
         return board.transport(method, url, headers, body, timeout)
 
-    web = Client(transport, retries=0)
+    web = Client(transport, sleep=lambda seconds: None, retries=0)
     hint = (
         "may be only a front end for another system: open one posting and probe its Apply link, which can lead to "
         "a system this version reads, such as Workday."
@@ -559,6 +561,140 @@ def test_probe_points_to_a_postings_apply_link_when_it_finds_only_a_front_end():
     direct = registry.probe("https://acme.avature.net/careers Acme", web)
     assert direct["next"] == f"This company uses Avature, which this version cannot read. Avature {hint}"
     assert set(registry.FRONT_ENDS) <= {system for _, system in registry.UNSUPPORTED}  # named as the probe names them
+
+
+SITE = "https://careers.acme.example"
+HOME = (  # a Phenom site's home page: the site's settings and the vendor's assets, and no posting's link
+    '<script>var phApp = phApp || {"widgetApiEndpoint":"https://careers.acme.example/widgets","country":"us",'
+    '"locale":"en_us","baseUrl":"https://careers.acme.example/us/en/","pageName":"home"};</script>' + PHENOM
+)
+FRONT = (
+    "This company uses Phenom, which this version cannot read. Phenom may be only a front end for another system: "
+    "open one posting and probe its Apply link, which can lead to a system this version reads, such as Workday."
+)
+CXS = "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/jobs"  # where the Workday site is searched
+
+
+def search_page(*links):
+    """A Phenom site's search-results page: its first postings, each with the link it is applied through."""
+    jobs = [{"jobSeqNo": f"ACMEUS{n}", "title": "UX Researcher", "applyUrl": link} for n, link in enumerate(links)]
+    return f'<script>phApp.ddo = {{"eagerLoadRefineSearch":{{"data":{{"jobs":{json.dumps(jobs)}}}}}}};</script>{PHENOM}'
+
+
+def apply_at(jid):
+    """A posting's Apply link, on the employer's Workday site."""
+    return f"https://acme.wd5.myworkdayjobs.com/External/job/San-Jose/UX-Researcher_{jid}"
+
+
+def phenom_site(files, board=None):
+    """A client for fake sites serving `files` by URL (a page, or a whole reply) and 404 for anything else,
+    with `board`'s fake Workday site; and the list of every URL asked for."""
+    asked = []
+
+    def transport(method, url, headers, body, timeout):
+        asked.append(url)
+        if board is not None and "/wday/cxs/" in url:
+            return board.transport(method, url, headers, body, timeout)
+        reply = files.get(url)
+        if isinstance(reply, tuple):
+            return reply
+        return (404, {}, b"Not found") if reply is None else (200, {}, reply.encode())
+
+    return Client(transport, sleep=lambda seconds: None, retries=0), asked
+
+
+def test_probe_reads_a_phenom_sites_search_results_page_for_the_board_behind_it():
+    board = Boards()
+    board.workday = {jid: wd_posting(jid) for jid in ("R1", "R2")}
+    files = {
+        f"{SITE}/": HOME,  # what people paste: no posting's link
+        f"{SITE}/robots.txt": "User-agent: *\nDisallow: */apply\nDisallow: /chatbot/\n",  # as the sites checked
+        f"{SITE}/us/en/search-results": search_page(*[apply_at(jid) for jid in ("R1", "R2", "R1")]),
+    }
+    web, asked = phenom_site(files, board)
+    found = registry.probe(f"{SITE}/ Acme", web)
+    assert [(m["add"], m["postings"]) for m in found["matches"]] == [
+        ("workday:acme.wd5.myworkdayjobs.com/External:Acme", 2)
+    ]
+    assert found["unsupported"] == ["Phenom"] and "next" not in found
+    assert asked == [f"{SITE}/", f"{SITE}/robots.txt", f"{SITE}/us/en/search-results", CXS]  # the board read once
+    asked.clear()
+    files[f"{SITE}/ca/fr/c/design"] = PHENOM  # a page without the site's settings: its own path says where
+    files[f"{SITE}/ca/fr/search-results"] = search_page(apply_at("R1"))
+    anonymous = registry.probe(f"{SITE}/ca/fr/c/design", web)
+    assert [m["add"] for m in anonymous["matches"]] == ["workday:acme.wd5.myworkdayjobs.com/External:<Company Name>"]
+    assert anonymous["next"].startswith("Put the company's name after the URL")
+    assert asked == [f"{SITE}/ca/fr/c/design", f"{SITE}/robots.txt", f"{SITE}/ca/fr/search-results", CXS]
+
+
+def test_probe_keeps_its_advice_when_a_phenom_sites_search_results_page_links_no_board_it_reads():
+    own = [f"{SITE}/us/en/apply?jobSeqNo=ACMEUS{n}" for n in range(3)]  # applied for on the site itself
+    files = {f"{SITE}/": HOME, f"{SITE}/us/en/search-results": search_page(*own)}
+    web, asked = phenom_site(files)
+    found = registry.probe(f"{SITE}/ Acme", web)
+    assert (found["matches"], found["unsupported"], found["next"]) == ([], ["Phenom"], FRONT)
+    assert asked == [f"{SITE}/", f"{SITE}/robots.txt", f"{SITE}/us/en/search-results"]
+    asked.clear()
+    itself = registry.probe(f"{SITE}/us/en/search-results Acme", web)  # that page probed: not asked for again
+    assert (itself["next"], asked) == (FRONT, [f"{SITE}/us/en/search-results"])
+    away = (200, {}, search_page(apply_at("R1")).encode(), "https://login.globex.example/")
+    for reply in ((404, {}, b"Not found"), away):  # no such page, or a redirect off the site: nothing read
+        files[f"{SITE}/us/en/search-results"] = reply
+        asked.clear()
+        found = registry.probe(f"{SITE}/ Acme", web)
+        assert (found["matches"], found["next"]) == ([], FRONT)
+        assert asked == [f"{SITE}/", f"{SITE}/robots.txt", f"{SITE}/us/en/search-results"]
+
+
+def test_probe_does_not_ask_for_a_search_results_page_that_robots_txt_disallows():
+    files = {f"{SITE}/": HOME, f"{SITE}/us/en/search-results": search_page(apply_at("R1"))}
+    disallowing = (
+        "User-agent: *\nDisallow: */search-results\n",
+        "User-agent: *\nDisallow:\n\nUser-agent: automated-job-hunter\nDisallow: /us/\n",  # this engine by name
+        (403, {}, b"Forbidden"),  # which disallows the whole site
+        (503, {}, b"Unavailable"),  # which says nothing now, so nothing is read
+    )
+    for robots_txt in disallowing:
+        files[f"{SITE}/robots.txt"] = robots_txt
+        web, asked = phenom_site(files, Boards())
+        found = registry.probe(f"{SITE}/ Acme", web)
+        assert (found["matches"], found["unsupported"], found["next"]) == ([], ["Phenom"], FRONT)
+        assert asked == [f"{SITE}/", f"{SITE}/robots.txt"]
+
+
+def test_probe_does_not_follow_a_phenom_sites_base_url_to_another_host():
+    elsewhere = "https://careers.globex.example/us/en/"
+    files = {
+        f"{SITE}/": HOME.replace('"https://careers.acme.example/us/en/"', f'"{elsewhere}"'),
+        f"{elsewhere}search-results": search_page(apply_at("R1")),
+    }
+    web, asked = phenom_site(files, Boards())
+    found = registry.probe(f"{SITE}/ Acme", web)
+    assert (found["matches"], found["next"]) == ([], FRONT)
+    assert asked == [f"{SITE}/", f"{SITE}/robots.txt", f"{SITE}/global/en/search-results"]  # this host's own
+
+
+def test_probe_asks_a_site_for_more_only_when_its_page_is_phenom_and_links_no_board():
+    board = Boards()
+    board.workday = {"R1": wd_posting("R1")}
+    pages = {
+        "https://careers.initech.example/": '<a href="https://careers-initech.icims.com/jobs/intro">Jobs</a>',
+        "https://careers.hooli.example/": f'<a href="{apply_at("R1")}">Jobs</a>',  # not Phenom, linking a board
+        "https://careers.globex.example/": "<p>Our career site moved off Phenom last year.</p>",  # only the word
+        "https://careers.umbrella.example/": PHENOM + f'<a href="{apply_at("R1")}">Jobs</a>',  # Phenom, with a board
+        f"{SITE}/": HOME,
+    }
+    web, asked = phenom_site(pages, board)
+    for url, extra in [
+        ("https://careers.initech.example/", []),
+        ("https://careers.hooli.example/", [CXS]),
+        ("https://careers.globex.example/", []),
+        ("https://careers.umbrella.example/", [CXS]),
+        (f"{SITE}/", [f"{SITE}/robots.txt", f"{SITE}/us/en/search-results"]),  # the one page that is asked for more
+    ]:
+        asked.clear()
+        registry.probe(f"{url} Acme", web)
+        assert asked == [url, *extra]
 
 
 def test_probe_knows_a_board_that_an_old_careers_address_moved_to():
